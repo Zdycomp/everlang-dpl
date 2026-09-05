@@ -27,6 +27,57 @@ int main() {
        !PhaseEngine::sameSpectrum(e_int("a",1,10,E_LANG_CPP),
                                   e_int("b",1,200,E_LANG_CPP)));
 
+    std::printf("\nThe Zeroth Law — proximity is not equilibrium\n");
+    {
+        /* The counterexample, stated in the layer that owns the
+         * predicate: proximity chains across a boundary, the law does
+         * not. 100 is Subfloor, 170 is Executable. */
+        e_particle lo  = e_int("lo",  1, 100, E_LANG_CPP);
+        e_particle hi  = e_int("hi",  1, 170, E_LANG_CPP);
+        ok("proximity says these are near",
+           PhaseEngine::sameSpectrum(lo, hi));
+        ok("the law says they are not comparable",
+           !PhaseEngine::equilibrium(lo, hi));
+
+        e_particle a = e_int("a", 1, 130, E_LANG_CPP);
+        e_particle b = e_int("b", 1, 200, E_LANG_CPP);
+        e_particle c = e_int("c", 1, 255, E_LANG_CPP);
+        ok("equilibrium a~b", PhaseEngine::equilibrium(a, b));
+        ok("equilibrium b~c", PhaseEngine::equilibrium(b, c));
+        ok("equilibrium a~c — transitivity holds",
+           PhaseEngine::equilibrium(a, c));
+
+        /* Same three under proximity: the chain breaks. */
+        ok("proximity a~b", PhaseEngine::sameSpectrum(a, b));
+        ok("proximity b~c", PhaseEngine::sameSpectrum(b, c));
+        ok("proximity a!~c — the chain breaks",
+           !PhaseEngine::sameSpectrum(a, c));
+
+        /* Certain stands alone, so nothing corroborates its way in. */
+        e_particle certain = e_int("v", 1, E_CERTAIN,     E_LANG_CPP);
+        e_particle nearly  = e_int("w", 1, E_CERTAIN - 1, E_LANG_CPP);
+        ok("255 is not in equilibrium with 256",
+           !PhaseEngine::equilibrium(nearly, certain));
+        ok("but proximity would have said yes",
+           PhaseEngine::sameSpectrum(nearly, certain));
+    }
+
+    std::printf("\nPauli is unchanged by naming the right relation\n");
+    {
+        bool agree = true;
+        for (int x = 0; x <= E_CERTAIN && agree; x++)
+            for (int y = 0; y <= E_CERTAIN; y++) {
+                e_particle p = e_int("p", 1, (int16_t)x, E_LANG_CPP);
+                e_particle q = e_int("q", 1, (int16_t)y, E_LANG_CPP);
+                bool old_way = (p.confidence == q.confidence) &&
+                               PhaseEngine::sameSpectrum(p, q);
+                if (PhaseEngine::pauliCollision(p, q) != old_way) {
+                    agree = false; break;
+                }
+            }
+        ok("pauliCollision identical over all 66,049 pairs", agree);
+    }
+
     std::printf("\nValue comparison — impossible in v1\n");
     e_particle v1 = e_int("a", 500, 180, E_LANG_CPP);
     e_particle v2 = e_int("b", 500, 160, E_LANG_CPP);

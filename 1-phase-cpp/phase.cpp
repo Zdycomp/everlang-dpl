@@ -38,8 +38,16 @@ bool PhaseEngine::sameSpectrum(const e_particle& a, const e_particle& b) {
     return std::abs((int)a.confidence - (int)b.confidence) < E_PI_WIDTH_WARN;
 }
 
+bool PhaseEngine::equilibrium(const e_particle& a, const e_particle& b) {
+    return e_equilibrium(&a, &b) != 0;
+}
+
+/* Equal confidences fall in the same band trivially, so the second
+ * clause cannot change the answer. It is here to say which relation a
+ * Pauli collision is a collision IN. It used to read sameSpectrum,
+ * which was equally inert and named the wrong relation. */
 bool PhaseEngine::pauliCollision(const e_particle& a, const e_particle& b) {
-    return a.confidence == b.confidence && sameSpectrum(a, b);
+    return a.confidence == b.confidence && equilibrium(a, b);
 }
 
 bool PhaseEngine::sameType(const e_particle& a, const e_particle& b) {

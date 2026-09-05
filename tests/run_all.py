@@ -37,6 +37,8 @@ SUITES = [
     #    plus the polyglot inspector and the applied product. Layers
     #    whose toolchain is absent report SKIP; they never report PASS.
     ("Repair archive", f"{sys.executable} 4-archive-sql/repair_test.py"),
+    ("Zeroth (SQL)",   f"{sys.executable} 4-archive-sql/zeroth_test.py"),
+    ("Zeroth Law",     f"{sys.executable} tests/test_zeroth.py"),
     ("Inspect (Py)",   f"{sys.executable} 2-inspect-python/translate_test.py"),
     ("Cross-layer",    f"{sys.executable} tests/cross_layer_test.py"),
     ("Ruby DSL",       "if command -v ruby >/dev/null 2>&1; then "
@@ -70,7 +72,7 @@ def run(label, cmd):
         return False, 300, "TIMEOUT", "timed out"
 
 def main():
-    print("\n" + "="*66 + "\n  CODRIC — full test suite, layer 0 through layer 7\n" + "="*66 + "\n")
+    print("\n" + "="*66 + "\n  4EVER — full test suite, layer 0 through layer 7\n" + "="*66 + "\n")
     results = []
     for label, cmd in SUITES:
         print(f"  [{label:<18}]", end="", flush=True)

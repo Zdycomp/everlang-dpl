@@ -591,6 +591,7 @@ footer p { max-width: none; }
       <li><a href="#anchor"><span class="n">§</span><span class="l">Depth is earned</span></a></li>
       <li><a href="#refusal"><span class="n">§</span><span class="l">The refusal</span></a></li>
       <li><a href="#scale"><span class="n">§</span><span class="l">The scale</span></a></li>
+      <li><a href="#zeroth"><span class="n">0ᵗʰ</span><span class="l">The Zeroth Law</span></a></li>
       <li><a href="#atom"><span class="n">0·1</span><span class="l">Atom &amp; phase</span></a></li>
       <li><a href="#language"><span class="n">2</span><span class="l">The language</span></a></li>
       <li><a href="#instrument"><span class="n">3·6</span><span class="l">DSL &amp; interface</span></a></li>
@@ -605,7 +606,7 @@ footer p { max-width: none; }
 
   <!-- ── Hero ─────────────────────────────────────────────── -->
   <section class="hero" id="anchor">
-    <p class="wordmark">Codric Enterprise</p>
+    <p class="wordmark">4Ever &nbsp;·&nbsp; Codric Enterprise</p>
     <div class="hero-grid">
       <div>
         <h1>Depth is<br><em>earned.</em></h1>
@@ -778,6 +779,140 @@ reason                recursive function has no
     the language inferring Certain from accumulated evidence, in direct
     contradiction of its own rule. True value: 255.78. Fixed in C, Python and
     Ruby; combination now caps at 255.</p>
+  </section>
+
+  <!-- ── The Zeroth Law ───────────────────────────────────── -->
+  <section id="zeroth">
+    <p class="eyebrow">The Zeroth Law</p>
+    <h2>Before you can combine two readings, they have to be readings of
+    the same thing.</h2>
+    <p class="lede">The First Law says what happens when evidence combines. The
+    Zeroth says confidence is a comparable quantity at all — and it is numbered
+    first because everything above it had quietly assumed it.</p>
+
+    <div class="pull">
+      <p>If two threads are each in equilibrium with a third, they are in
+      equilibrium with each other.</p>
+      <cite>The law</cite>
+    </div>
+
+    <p>Thermodynamics named this one last and numbered it first for exactly the
+    same reason. Without transitive equilibrium, two thermometers can each agree
+    with a third and disagree with each other — and then temperature is not a
+    property of anything, just a reading on a particular instrument.</p>
+
+    <h3 style="margin-top:2.5rem">The stack had that hole</h3>
+    <p>Six layers compared confidence to confidence. The only predicate for it,
+    written identically in C++ and Java, was proximity:</p>
+
+    <div class="term">
+      <div class="term-bar"><span>1-phase-cpp/phase.cpp — before</span><span class="run">measured</span></div>
+<pre>std::abs(a.confidence - b.confidence) &lt; E_PI_WIDTH_WARN   <span class="c-dim">// &lt; 81</span>
+
+  |0 - 1|   =  1   &lt; 81   <span class="c-sig">✓</span>
+  |1 - 81|  = 80   &lt; 81   <span class="c-sig">✓</span>
+  |0 - 81|  = 81   &lt; 81   <span class="c-void">✗</span>   <span class="c-dim">the chain breaks</span>
+
+  <span class="c-void">969,840</span> of 4,922,897 candidate triples break it — <span class="c-void">19.7%</span></pre>
+    </div>
+
+    <p>Reflexive and symmetric, and <strong>not transitive</strong>. That is a
+    tolerance relation, and no tolerance relation is transitive — so widening
+    the threshold does not fix it. A predicate that cannot be chained cannot
+    license a scale.</p>
+
+    <p>There was a quieter finding underneath. Proximity had exactly one caller,
+    <span class="mono">a.confidence == b.confidence &amp;&amp; sameSpectrum(a, b)</span>
+    — and equal confidences have a gap of zero, which is inside any width. The
+    system's only comparison predicate was both non-transitive <em>and</em>
+    inert at its only call site.</p>
+
+    <h3 style="margin-top:2.5rem">The fix is structural, not numeric</h3>
+    <p>Equilibrium is now equality of <strong>band</strong>, and band is a
+    <em>total function</em> of confidence. That single fact is the entire proof:
+    <span class="mono">a ~ b ⟺ f(a) = f(b)</span> is the kernel of a function,
+    and the kernel of a function is an equivalence relation by construction —
+    not by luck, and not by testing. So the thing to protect is the totality of
+    <span class="mono">band</span>, which is what every layer's test checks.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Band</th><th class="num">Range</th><th>Boundary from</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Z</td><td class="num" style="color:var(--void)">0</td><td>its own state, never a low band</td></tr>
+          <tr><td class="k">Vestigial</td><td class="num">1–24</td><td>below ⌊256/π²⌋ = 25</td></tr>
+          <tr><td class="k">Approaching</td><td class="num">25–80</td><td>below ⌊256/π⌋ = 81</td></tr>
+          <tr><td class="k">Subfloor</td><td class="num">81–127</td><td>below 256/2 = 128</td></tr>
+          <tr><td class="k">Executable</td><td class="num">128–255</td><td>cleared to execute, not verified</td></tr>
+          <tr><td class="k">Certain</td><td class="num" style="color:var(--ember)">256</td><td>4⁴ exactly</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top:1.5rem">Every boundary is a constant the scale already
+    had. Nothing was chosen for this. And two bands are deliberately singletons:
+    <strong>255 and 256 are not in equilibrium</strong> — proximity said they
+    were, with a gap of 1, which is the same laundering that made
+    <span class="mono">excel(250,250)</span> return Certain.</p>
+
+    <h3 style="margin-top:2.5rem">And it travels exactly as far as an anchor does</h3>
+    <p>An unanchored thread pays one confidence per language crossing. One point
+    is nothing — unless the thread is standing on the floor of its band.</p>
+
+    <div class="term">
+      <div class="term-bar"><span>0-atom-c/tapestry_test.c — through the real operator</span><span class="run">executed</span></div>
+<pre>edge thread at 128  <span class="c-dim">(Executable — the band floor)</span>
+
+  unanchored  →  127  →  <span class="c-void">Subfloor</span>     band changed. equilibrium lost.
+  anchored    →  128  →  <span class="c-emb">Executable</span>   band held.    equilibrium survives.</pre>
+    </div>
+
+    <p>Two threads comparable at home are not comparable abroad — and nothing in
+    the old code could have noticed, because the old predicate had no notion of
+    a boundary to cross.</p>
+
+    <div class="pull">
+      <p>Depth is earned. So is comparability.</p>
+      <cite>The Zeroth Law survives assimilation exactly for anchored threads</cite>
+    </div>
+
+    <p>Which is the sentence this whole page has been saying at every scale.
+    <span class="mono">fact</span> earns unbounded depth with three Examples and
+    a decreasing measure. A fixture earns rulehood with three distinct sources
+    and a clean replay. A thread earns the right to mean the same thing in
+    another language by being anchored.</p>
+
+    <h3 style="margin-top:2.5rem">One law, or four opinions</h3>
+    <p>The law is stated in C, C++, Python, SQL and Java. Stating it five times
+    is only worth anything if they can be checked against each other — a law
+    five layers each hold privately is five laws.</p>
+
+    <div class="term">
+      <div class="term-bar"><span>python3 tests/test_zeroth.py</span><span class="run">executed</span></div>
+<pre>The law: reflexive, symmetric, transitive
+  <span class="c-sig">✓</span> reflexive over all 257 values
+  <span class="c-sig">✓</span> symmetric over all 66,049 pairs
+  <span class="c-sig">✓</span> transitive over every triple
+
+  proximity |a-b| &lt; 81: <span class="c-void">969,840</span> of 4,922,897 triples break the chain  (19.7%)
+
+Agreement — one law, or four opinions
+  <span class="c-sig">✓</span> Python and C agree on all 257 values
+  <span class="c-sig">✓</span> Python and SQL agree on all 257 values
+  <span class="c-sig">✓</span> Python and Java agree on all 257 values
+  <span class="c-sig">✓</span> <span class="c-emb">all of Python, C, SQL, Java agree on every boundary</span></pre>
+    </div>
+
+    <p>Only one layer can <em>refuse</em>. Everywhere else the law is a predicate
+    a caller may forget to consult; in the archive it is a constraint at the
+    storage boundary — an anchored crossing that changed band is rejected, and
+    the table that defines the bands is closed to editing, because moving one
+    boundary to overlap its neighbour would silently destroy transitivity in
+    every view above it.</p>
+
+    <p>An <em>unanchored</em> crossing that changes band is allowed, and lands in
+    <span class="mono">v_band_drift</span> naming both bands. Drift that is
+    recorded is the design. Drift that is silent is the failure.</p>
   </section>
 
   <!-- ── Layer 0/1 ────────────────────────────────────────── -->
@@ -1039,10 +1174,10 @@ Nothing is ever deleted, nothing is ever edited
     whose toolchain is missing report SKIP — they never report PASS.</p>
 
     <ul class="stat-row" style="margin-bottom:0.5rem">
-      <li><span class="stat-n" style="color:var(--ember)">32</span><span class="stat-l">suites passed</span></li>
+      <li><span class="stat-n" style="color:var(--ember)">34</span><span class="stat-l">suites passed</span></li>
       <li><span class="stat-n" style="color:var(--ink-3)">0</span><span class="stat-l">skipped</span></li>
       <li><span class="stat-n" style="color:var(--ink-3)">0</span><span class="stat-l">failed</span></li>
-      <li><span class="stat-n" style="color:var(--ember)">1,292</span><span class="stat-l">counted assertions</span></li>
+      <li><span class="stat-n" style="color:var(--ember)">1,385</span><span class="stat-l">counted assertions</span></li>
     </ul>
 
     <div class="tw">
@@ -1051,10 +1186,10 @@ Nothing is ever deleted, nothing is ever edited
           <tr><th class="layer">Layer</th><th>Suite</th><th>Language</th><th class="num">Assertions</th></tr>
         </thead>
         <tbody>
-          <tr><td class="layer">0</td><td class="k">Atom</td><td>C</td><td class="num">88</td></tr>
+          <tr><td class="layer">0</td><td class="k">Atom</td><td>C</td><td class="num">107</td></tr>
           <tr><td class="layer">0</td><td class="k">EValue</td><td>C</td><td class="num">98</td></tr>
           <tr><td class="layer">0</td><td class="k">IR + arena</td><td>C</td><td class="num">70</td></tr>
-          <tr><td class="layer">1</td><td class="k">Phase engine</td><td>C++</td><td class="num">50</td></tr>
+          <tr><td class="layer">1</td><td class="k">Phase engine</td><td>C++</td><td class="num">61</td></tr>
           <tr><td class="layer">2</td><td class="k">Lexer</td><td>Python</td><td class="num">91</td></tr>
           <tr><td class="layer">2</td><td class="k">Parser</td><td>Python</td><td class="num">74</td></tr>
           <tr><td class="layer">2</td><td class="k">ABI boundary</td><td>Python / C</td><td class="num">46</td></tr>
@@ -1068,20 +1203,22 @@ Nothing is ever deleted, nothing is ever edited
           <tr><td class="layer">2</td><td class="k">Source inspector</td><td>Python</td><td class="num">62</td></tr>
           <tr><td class="layer">3</td><td class="k">DSL</td><td>Ruby</td><td class="num" style="color:var(--ink-3)">runs clean</td></tr>
           <tr><td class="layer">4</td><td class="k">Archive</td><td>SQL</td><td class="num">56</td></tr>
-          <tr><td class="layer">4</td><td class="k">Repair archive <em>(new)</em></td><td>SQL</td><td class="num">55</td></tr>
-          <tr><td class="layer">5</td><td class="k">Runtime <em>(first execution)</em></td><td>Java</td><td class="num" style="color:var(--ember)">78</td></tr>
+          <tr><td class="layer">4</td><td class="k">Repair archive</td><td>SQL</td><td class="num">55</td></tr>
+          <tr><td class="layer">4</td><td class="k">Zeroth Law <em>(new)</em></td><td>SQL</td><td class="num" style="color:var(--ember)">37</td></tr>
+          <tr><td class="layer">5</td><td class="k">Runtime <em>(first execution)</em></td><td>Java</td><td class="num" style="color:var(--ember)">86</td></tr>
           <tr><td class="layer">6</td><td class="k">Inspector</td><td>hand HTML</td><td class="num">39</td></tr>
           <tr><td class="layer">7</td><td class="k">ReFix</td><td>Node</td><td class="num">15</td></tr>
           <tr><td class="layer">·</td><td class="k">Cross-layer agreement</td><td>Python ↔ HTML</td><td class="num">11</td></tr>
+          <tr><td class="layer">·</td><td class="k">Zeroth Law agreement <em>(new)</em></td><td>Py · C · SQL · Java</td><td class="num" style="color:var(--ember)">18</td></tr>
           <tr><td class="layer">·</td><td class="k">Golden master</td><td>Python / C</td><td class="num">31</td></tr>
         </tbody>
       </table>
     </div>
     <p style="margin-top:1rem;font-size:0.875rem;color:var(--ink-3)">The
-    twenty-two suites above are the ones that report a count, and they sum to
-    1,292. Nine further suites — C bridge, kitchen sink, form IR, native C99,
+    twenty-four suites above are the ones that report a count, and they sum to
+    1,385. Ten further suites — C bridge, kitchen sink, form IR, native C99,
     profiler, integration, gold standard, notebook and research — pass without
-    emitting one, and are counted in the 32 but not in the 1,292.</p>
+    emitting one, and are counted in the 34 but not in the 1,385.</p>
   </section>
 
   <!-- ── Not claimed ──────────────────────────────────────── -->

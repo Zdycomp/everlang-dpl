@@ -236,7 +236,70 @@ public final class EverTest {
 
         System.out.println(result.report());
 
-        System.out.println("=== Layer 5: " + passed + " passed, "
+        // ── The Zeroth Law ────────────────────────────────────────
+        // The runtime travels into other people's pipelines, so it is
+        // the layer with the most to lose from holding a private
+        // opinion about where the boundaries are. Checked exhaustively.
+        System.out.println("\nThe Zeroth Law");
+
+        boolean total = true, reflexive = true, symmetric = true,
+                transitive = true, pauliSame = true;
+
+        for (int c = 0; c <= EParticle.CERTAIN; c++)
+            if (EverRuntime.band(c) == null) total = false;
+        ok("band is total on 0..256", total);
+
+        ok("boundaries are the derived constants",
+           EverRuntime.band(0)   == EverRuntime.Band.Z &&
+           EverRuntime.band(1)   == EverRuntime.Band.VESTIGIAL &&
+           EverRuntime.band(24)  == EverRuntime.Band.VESTIGIAL &&
+           EverRuntime.band(25)  == EverRuntime.Band.APPROACHING &&
+           EverRuntime.band(80)  == EverRuntime.Band.APPROACHING &&
+           EverRuntime.band(81)  == EverRuntime.Band.SUBFLOOR &&
+           EverRuntime.band(127) == EverRuntime.Band.SUBFLOOR &&
+           EverRuntime.band(128) == EverRuntime.Band.EXECUTABLE &&
+           EverRuntime.band(255) == EverRuntime.Band.EXECUTABLE &&
+           EverRuntime.band(256) == EverRuntime.Band.CERTAIN);
+
+        for (int a = 0; a <= EParticle.CERTAIN; a++) {
+            if (EverRuntime.band(a) != EverRuntime.band(a)) reflexive = false;
+            for (int b = 0; b <= EParticle.CERTAIN; b++) {
+                boolean ab = EverRuntime.band(a) == EverRuntime.band(b);
+                boolean ba = EverRuntime.band(b) == EverRuntime.band(a);
+                if (ab != ba) symmetric = false;
+                if (!ab) continue;
+                for (int c = 0; c <= EParticle.CERTAIN; c++) {
+                    if (EverRuntime.band(b) != EverRuntime.band(c)) continue;
+                    if (EverRuntime.band(a) != EverRuntime.band(c))
+                        transitive = false;
+                }
+            }
+        }
+        ok("reflexive over all 257 values",   reflexive);
+        ok("symmetric over all 66,049 pairs", symmetric);
+        ok("transitive over every triple",    transitive);
+
+        // Proximity is not the law, stated where the second copy lives.
+        EParticle p1  = EParticle.confident("p1",   1, Lang.JAVA);
+        EParticle p81 = EParticle.confident("p81", 81, Lang.JAVA);
+        ok("proximity chains 1~81",  EverRuntime.sameSpectrum(p1, p81));
+        ok("the law refuses it — different bands",
+           !EverRuntime.equilibrium(p1, p81));
+
+        // Switching pauliCollision to the right relation changed nothing.
+        for (int a = 1; a <= EParticle.CERTAIN && pauliSame; a++)
+            for (int b = 1; b <= EParticle.CERTAIN; b++) {
+                EParticle x = EParticle.confident("x", a, Lang.JAVA);
+                EParticle y = EParticle.confident("y", b, Lang.JAVA);
+                boolean oldWay = x.confidence() == y.confidence()
+                                 && EverRuntime.sameSpectrum(x, y);
+                if (EverRuntime.pauliCollision(x, y) != oldWay) {
+                    pauliSame = false; break;
+                }
+            }
+        ok("pauliCollision unchanged across the scale", pauliSame);
+
+        System.out.println("\n=== Layer 5: " + passed + " passed, "
                 + failed + " failed ===\n");
         System.exit(failed == 0 ? 0 : 1);
     }

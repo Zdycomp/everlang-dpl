@@ -173,6 +173,59 @@ e_pi_status e_pi_check(const e_particle *p) {
 }
 
 /* ═════════════════════════════════════════════
+ * THE ZEROTH LAW
+ *
+ * Band is a total function of confidence. Everything the law claims
+ * follows from that one fact, so the fact is the thing to protect:
+ * exactly one branch below can fire for any input.
+ * ═════════════════════════════════════════════ */
+
+e_band_id e_band(int16_t confidence) {
+    if (confidence <= E_ZERO)                return E_BAND_Z;
+    if (confidence >  E_CERTAIN)             return E_BAND_Z;
+    if (confidence >= E_CERTAIN)             return E_BAND_CERTAIN;
+    if (confidence >= E_EXECUTE_FLOOR)       return E_BAND_EXECUTABLE;
+    if (confidence >= E_PI_WIDTH_WARN)       return E_BAND_SUBFLOOR;
+    if (confidence >= E_PI_WIDTH_ENUMERATE)  return E_BAND_APPROACHING;
+    return E_BAND_VESTIGIAL;
+}
+
+const char *e_band_name(e_band_id b) {
+    switch (b) {
+        case E_BAND_Z:           return "Z";
+        case E_BAND_VESTIGIAL:   return "Vestigial";
+        case E_BAND_APPROACHING: return "Approaching";
+        case E_BAND_SUBFLOOR:    return "Subfloor";
+        case E_BAND_EXECUTABLE:  return "Executable";
+        case E_BAND_CERTAIN:     return "Certain";
+        default:                 return "?";
+    }
+}
+
+/* Z is in equilibrium only with Z. That falls out of e_band rather than
+ * being special-cased here: Z is the only member of its own band, which
+ * is the structural statement of "Z is not a low confidence". */
+int e_equilibrium(const e_particle *a, const e_particle *b) {
+    return e_band(a->confidence) == e_band(b->confidence);
+}
+
+/* An anchored particle crosses a language boundary without loss, so its
+ * band is unchanged and equilibrium is preserved. An unanchored one pays
+ * 1, which only matters when it is standing on the lowest value of its
+ * band — there, one hop demotes it and two threads that were equal at
+ * home disagree abroad.
+ *
+ * This is why anchoring is what makes the scale portable, and it is the
+ * same rule as [ANCHOR-BOTTOM] one level down: what has not been earned
+ * does not travel. */
+int e_equilibrium_survives_crossing(const e_particle *p) {
+    if (e_is_z(p))        return 1;   /* Z crosses as Z, or not at all */
+    if (e_is_anchored(p)) return 1;
+    if (p->confidence <= 1) return 1; /* a_assimilate floors at 1      */
+    return e_band((int16_t)(p->confidence - 1)) == e_band(p->confidence);
+}
+
+/* ═════════════════════════════════════════════
  * A-OPERATORS
  * ═════════════════════════════════════════════ */
 

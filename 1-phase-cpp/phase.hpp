@@ -54,10 +54,19 @@ struct PhaseResult {
 
 class PhaseEngine {
 public:
-    /* same spectrum: confidence gap narrower than the pi warn threshold */
+    /* Proximity: confidence gap narrower than the pi warn threshold.
+     *
+     * This is a TOLERANCE relation — reflexive and symmetric, but NOT
+     * transitive: 0~1 and 1~81, while 0!~81. It answers "are these two
+     * near each other", which is a fair question, and it must never be
+     * mistaken for the Zeroth Law. For comparison, use equilibrium(). */
     static bool sameSpectrum(const e_particle& a, const e_particle& b);
 
-    /* Pauli: identical confidence in the same spectrum */
+    /* The Zeroth Law: same band, and therefore transitive by
+     * construction. Delegates to the atom so the layers cannot drift. */
+    static bool equilibrium(const e_particle& a, const e_particle& b);
+
+    /* Pauli: identical confidence, necessarily in the same band */
     static bool pauliCollision(const e_particle& a, const e_particle& b);
 
     /* do two threads hold the same thing? corroboration requires it. */

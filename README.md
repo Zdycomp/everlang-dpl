@@ -1,8 +1,8 @@
-# Codric
+# 4Ever
 
 **Codric Enterprise · Ricky (Dreid) · 2026**
 
-One repository, eight layers, one idea:
+**E-verified.** One repository, eight layers, one idea:
 
 > **Depth is earned.** Nothing gets to go deeper, travel further, or
 > become a rule than its evidence has paid for.
@@ -10,11 +10,15 @@ One repository, eight layers, one idea:
 That sentence starts as a rule about recursion and ends as a product
 that fixes Gradle builds. This repo is the whole distance.
 
+*The name carries the scale it measures on: **4** for 4⁴ = 256, the
+states of a byte; **Ever** for the language; and together, for the one
+promise the archive makes — nothing is ever deleted.*
+
 ```bash
 python3 tests/run_all.py
 ```
 
-**32 suites · 32 passed · 0 skipped · 0 failed · 1,292 counted assertions**
+**34 suites · 34 passed · 0 skipped · 0 failed · 1,385 counted assertions**
 — macOS, 2026-09-05. Layers whose toolchain is missing report SKIP;
 they never report PASS.
 
@@ -70,19 +74,76 @@ decision and turned out to be a theorem. See [`docs/FINDINGS.md`](docs/FINDINGS.
 
 ---
 
+## The Zeroth Law
+
+> If two threads are each in equilibrium with a third, they are in
+> equilibrium with each other.
+
+The First Law says what happens when evidence combines. The Zeroth says
+confidence is a **comparable quantity at all** — and it is numbered
+first because everything above it had quietly assumed it. Thermodynamics
+did the same thing for the same reason: without transitive equilibrium,
+two thermometers can each agree with a third and disagree with each
+other, and temperature is not a property of anything.
+
+4Ever had that hole. Six layers compared confidence to confidence, and
+the only predicate for it was:
+
+```cpp
+std::abs(a.confidence - b.confidence) < E_PI_WIDTH_WARN   // < 81
+```
+
+Proximity. Reflexive, symmetric, and **not transitive**: `0~1` and
+`1~81`, while `0!~81`. Measured over the whole scale, **969,840 of
+4,922,897 candidate triples break the chain — 19.7%**. A predicate that
+cannot be chained cannot license a scale.
+
+So equilibrium is now equality of **band**, and band is a *total
+function* of confidence. That one fact is the whole proof: `a ~ b ⟺
+f(a) = f(b)` is an equivalence relation by construction, not by luck.
+
+| Band          | Range   | Boundary from                         |
+|---------------|---------|---------------------------------------|
+| `Z`           | 0       | its own state, never a low band       |
+| `Vestigial`   | 1–24    | below ⌊256/π²⌋ = 25                   |
+| `Approaching` | 25–80   | below ⌊256/π⌋ = 81                    |
+| `Subfloor`    | 81–127  | below 256/2 = 128                     |
+| `Executable`  | 128–255 | cleared to execute, not verified      |
+| `Certain`     | 256     | 4⁴ exactly                            |
+
+Z and Certain are singletons, and that is the point: **255 and 256 are
+not in equilibrium.** Proximity said they were, with a gap of 1 — which
+is the same laundering `FINDINGS.md` §1 caught when `excel(250,250)`
+returned 256.
+
+**And the law travels exactly as far as an anchor does.** An unanchored
+thread pays 1 confidence per language crossing. On a band floor, that
+one point demotes it — two threads comparable at home are not comparable
+abroad. Anchored threads cross without loss and hold their band.
+
+> Depth is earned. So is comparability.
+
+Stated in C, C++, Python, SQL and Java; all four testable
+implementations checked against each other and **agreeing on all 257
+values**. Only the archive can *refuse* — an anchored crossing that
+changed band is rejected at the storage boundary. See
+[`docs/ZEROTH.md`](docs/ZEROTH.md).
+
+---
+
 ## The eight layers
 
 Each language does the thing it is actually best at.
 
 |   | Layer                  | Language | Role                                                     | Verified            |
 |---|------------------------|----------|----------------------------------------------------------|---------------------|
-| 0 | `0-atom-c`             | C        | The particle. C owns memory, so C owns the atom.          | 88 · 98 · 70        |
-| 1 | `1-phase-cpp`          | C++      | The phase engine. What happens when two particles meet.   | 50                  |
+| 0 | `0-atom-c`             | C        | The particle. C owns memory, so C owns the atom.          | 107 · 98 · 70       |
+| 1 | `1-phase-cpp`          | C++      | The phase engine. What happens when two particles meet.   | 61                  |
 | 2 | `2-interpreter-python` | Python   | The language. Lexer, parser, semantics, evaluator, REPL.  | 91 · 74 · 83 · 79 … |
 | 2 | `2-inspect-python`     | Python   | The polyglot source inspector. Any language → particles.  | 62                  |
 | 3 | `3-dsl-ruby`           | Ruby     | The DSL. Where Ever becomes a language you write.         | runs clean          |
-| 4 | `4-archive-sql`        | SQL      | The archive. C² is a join, not a loop.                    | 56 + 55             |
-| 5 | `5-runtime-java`       | Java     | The runtime. Guardrails that travel into someone's build. | 78                  |
+| 4 | `4-archive-sql`        | SQL      | The archive. C² is a join, not a loop.                    | 56 · 55 · 37        |
+| 5 | `5-runtime-java`       | Java     | The runtime. Guardrails that travel into someone's build. | 86                  |
 | 6 | `6-interface-html`     | hand HTML| The interface. No framework, no CDN, no build step.       | 39                  |
 | 7 | `7-refix-node`         | Node     | **ReFix.** The idea, pointed at somebody else's Gradle.   | 15                  |
 
@@ -155,7 +216,8 @@ is a convention.
 | [`docs/PIPELINE.md`](docs/PIPELINE.md)         | Lexer → parser → checker → execution. Every stage returns E<T>. |
 | [`docs/ABI.md`](docs/ABI.md)                   | The 440-byte particle, field by field.                        |
 | [`docs/TEACHING.md`](docs/TEACHING.md)         | How the corpus learns.                                        |
-| [`docs/MERGE.md`](docs/MERGE.md)               | **What was merged from where, and the six defects it found.** |
+| [`docs/ZEROTH.md`](docs/ZEROTH.md)             | **The Zeroth Law — why comparison is legitimate at all.**      |
+| [`docs/MERGE.md`](docs/MERGE.md)               | What was merged from where, and the six defects it found.     |
 | [`docs/TEAM.md`](docs/TEAM.md)                 | Running the seven-agent dev team.                             |
 
 ---

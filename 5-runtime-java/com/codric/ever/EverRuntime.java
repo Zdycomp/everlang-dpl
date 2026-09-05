@@ -112,13 +112,67 @@ public final class EverRuntime {
 
     private static final double PHI_X2 = EParticle.PHI * 2.0;  // 3.236…
 
+    /**
+     * Proximity: are these two near each other on the scale?
+     *
+     * <p>A TOLERANCE relation — reflexive and symmetric, but <b>not</b>
+     * transitive: 0~1 and 1~81, while 0!~81. A fair question, and not
+     * the one the Zeroth Law answers. For comparison use
+     * {@link #equilibrium}.
+     */
     public static boolean sameSpectrum(EParticle a, EParticle b) {
         return Math.abs(a.confidence() - b.confidence())
                 < EParticle.PI_WIDTH_WARN;
     }
 
+    /**
+     * The Zeroth Law. If two threads are each in equilibrium with a
+     * third, they are in equilibrium with each other.
+     *
+     * <p>Prior to the First Law: the First says what happens when
+     * evidence combines, the Zeroth says confidence is a comparable
+     * quantity at all. Implemented as equality of band, which is the
+     * kernel of a total function and therefore transitive by
+     * construction rather than by luck.
+     *
+     * <p>Bands and boundaries mirror {@code e_band} in
+     * {@code 0-atom-c/tapestry.c} exactly. The runtime travels into
+     * other people's pipelines, so it must not hold a private opinion
+     * about where the boundaries are.
+     */
+    public enum Band {
+        Z,            // 0        unknown, carrying its reason
+        VESTIGIAL,    // 1..24    below int(256 / pi^2)
+        APPROACHING,  // 25..80   below int(256 / pi)
+        SUBFLOOR,     // 81..127  below 256 / 2
+        EXECUTABLE,   // 128..255 cleared, not verified
+        CERTAIN       // 256      earned
+    }
+
+    /** Total on 0..256. Off-scale reports Z — the safe direction. */
+    public static Band band(int confidence) {
+        if (confidence <= EParticle.ZERO)               return Band.Z;
+        if (confidence >  EParticle.CERTAIN)            return Band.Z;
+        if (confidence >= EParticle.CERTAIN)            return Band.CERTAIN;
+        if (confidence >= EParticle.EXECUTE_FLOOR)      return Band.EXECUTABLE;
+        if (confidence >= EParticle.PI_WIDTH_WARN)      return Band.SUBFLOOR;
+        if (confidence >= EParticle.PI_WIDTH_ENUMERATE) return Band.APPROACHING;
+        return Band.VESTIGIAL;
+    }
+
+    /** The Zeroth Law relation. Z is in equilibrium only with Z. */
+    public static boolean equilibrium(EParticle a, EParticle b) {
+        return band(a.confidence()) == band(b.confidence());
+    }
+
+    /*
+     * Equal confidences fall in the same band trivially, so the second
+     * clause cannot change the answer. It is here to say which relation
+     * a Pauli collision is a collision IN. It used to read sameSpectrum,
+     * which was equally inert and named the wrong relation.
+     */
     public static boolean pauliCollision(EParticle a, EParticle b) {
-        return a.confidence() == b.confidence() && sameSpectrum(a, b);
+        return a.confidence() == b.confidence() && equilibrium(a, b);
     }
 
     private static boolean isExpel(EParticle a, EParticle b) {

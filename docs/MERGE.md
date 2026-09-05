@@ -1,4 +1,4 @@
-# The merge — what came from where, and what it cost
+# 4Ever — the merge: what came from where, and what it cost
 
 **Codric Enterprise · Ricky (Dreid) · 2026**
 

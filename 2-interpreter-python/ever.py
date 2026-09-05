@@ -40,6 +40,74 @@ E_PHI                = 1.6180339887
 E_INTAKE             = 120     # what a literal is worth before evidence
 
 
+# ═════════════════════════════════════════════
+# THE ZEROTH LAW
+#
+# If two threads are each in equilibrium with a third, they are in
+# equilibrium with each other.
+#
+# Prior to the First Law. The First says what happens when evidence
+# combines; the Zeroth says confidence names a comparable quantity at
+# all. Without transitive equilibrium there is no temperature, only
+# readings — and no confidence, only numbers.
+#
+# Equilibrium is equality of BAND. Band is a total function of
+# confidence, so "same band" is the kernel of a function, hence an
+# equivalence relation by construction rather than by luck.
+#
+# Proximity (|a - b| < E_PI_WIDTH_WARN) is reflexive and symmetric but
+# NOT transitive, so it cannot carry the law. See same_spectrum.
+#
+# Boundaries are the constants the scale already had.
+# ═════════════════════════════════════════════
+
+class Band(IntEnum):
+    Z           = 0   # 0        unknown, carrying its reason
+    VESTIGIAL   = 1   # 1..24    below floor(256 / pi^2)
+    APPROACHING = 2   # 25..80   below floor(256 / pi)
+    SUBFLOOR    = 3   # 81..127  below 256 / 2
+    EXECUTABLE  = 4   # 128..255 cleared, not verified
+    CERTAIN     = 5   # 256      earned
+
+
+def e_band(confidence: int) -> Band:
+    """Total on 0..256. Off-scale reports Z — the safe direction."""
+    if confidence <= E_ZERO:               return Band.Z
+    if confidence >  E_CERTAIN:            return Band.Z
+    if confidence >= E_CERTAIN:            return Band.CERTAIN
+    if confidence >= E_EXECUTE_FLOOR:      return Band.EXECUTABLE
+    if confidence >= E_PI_WIDTH_WARN:      return Band.SUBFLOOR
+    if confidence >= E_PI_WIDTH_ENUMERATE: return Band.APPROACHING
+    return Band.VESTIGIAL
+
+
+def e_equilibrium(a: "E", b: "E") -> bool:
+    """The Zeroth Law relation. Z is in equilibrium only with Z."""
+    return e_band(a.confidence) == e_band(b.confidence)
+
+
+def same_spectrum(a: "E", b: "E") -> bool:
+    """Proximity. A TOLERANCE relation — not transitive, not the law.
+
+    0~1 and 1~81, while 0!~81. Kept because "are these near each other"
+    is a fair question; it just is not the question the law answers.
+    """
+    return abs(a.confidence - b.confidence) < E_PI_WIDTH_WARN
+
+
+def e_equilibrium_survives_crossing(p: "E") -> bool:
+    """Does the law survive assimilation into another language?
+
+    An anchored thread crosses without loss, so its band holds. An
+    unanchored one pays 1, which only bites when it stands on the lowest
+    value of its band. Anchoring is what makes the scale portable.
+    """
+    if p.is_z:          return True
+    if p.is_anchored:   return True
+    if p.confidence <= 1: return True   # a_assimilate floors at 1
+    return e_band(p.confidence - 1) == e_band(p.confidence)
+
+
 class State(IntEnum):
     Z = 0; CONFIDENT = 1; CERTAIN = 2; EQUIV = 3; EXPRESS = 4
     EMULATING = 5; EVOLVED = 6; ANCHORED = 7; ABSENT = 8; ERROR = 9
@@ -108,6 +176,11 @@ class E:
         if w > E_PI_WIDTH_WARN:      return "APPROACHING_Z"
         if w > E_PI_WIDTH_ENUMERATE: return "ENUMERATE"
         return "ACCEPTABLE"
+
+    @property
+    def band(self) -> Band:
+        """The Zeroth Law band this thread sits in."""
+        return e_band(self.confidence)
 
     def type_name(self) -> str:
         v = self.value

@@ -245,6 +245,104 @@ int main(void) {
     e_deserialize(buf, &back);
     ok("text payload survives",     !strcmp(back.text, "Codric"));
 
+    /* ── The Zeroth Law ──────────────────────────────────────────
+     * The law is a claim about every pair and every triple on the
+     * scale, so anything less than every pair and every triple is not
+     * a check of it. 257 values: exhaustive is affordable. */
+    printf("\nThe Zeroth Law — equilibrium is an equivalence relation\n");
+
+    {
+        int c, a2, b2, c2;
+        int total = 1, z_alone = 1, certain_alone = 1;
+        int refl = 1, symm = 1, trans = 1;
+
+        for (c = 0; c <= E_CERTAIN; c++) {
+            e_band_id b = e_band((int16_t)c);
+            if (b < E_BAND_Z || b >= E_BAND_COUNT) total = 0;
+            if (c > 0          && b == E_BAND_Z)       z_alone = 0;
+            if (c < E_CERTAIN  && b == E_BAND_CERTAIN) certain_alone = 0;
+        }
+        ok("band is total on 0..256",     total);
+        ok("Z is alone in its band",      z_alone);
+        ok("Certain is alone in its band", certain_alone);
+
+        ok("boundaries are the derived constants",
+           e_band(0)                        == E_BAND_Z           &&
+           e_band(1)                        == E_BAND_VESTIGIAL   &&
+           e_band(E_PI_WIDTH_ENUMERATE - 1) == E_BAND_VESTIGIAL   &&
+           e_band(E_PI_WIDTH_ENUMERATE)     == E_BAND_APPROACHING &&
+           e_band(E_PI_WIDTH_WARN - 1)      == E_BAND_APPROACHING &&
+           e_band(E_PI_WIDTH_WARN)          == E_BAND_SUBFLOOR    &&
+           e_band(E_EXECUTE_FLOOR - 1)      == E_BAND_SUBFLOOR    &&
+           e_band(E_EXECUTE_FLOOR)          == E_BAND_EXECUTABLE  &&
+           e_band(E_CERTAIN - 1)            == E_BAND_EXECUTABLE  &&
+           e_band(E_CERTAIN)                == E_BAND_CERTAIN);
+
+        for (a2 = 0; a2 <= E_CERTAIN; a2++)
+            if (e_band((int16_t)a2) != e_band((int16_t)a2)) refl = 0;
+
+        for (a2 = 0; a2 <= E_CERTAIN; a2++)
+            for (b2 = 0; b2 <= E_CERTAIN; b2++) {
+                int ab = (e_band((int16_t)a2) == e_band((int16_t)b2));
+                int ba = (e_band((int16_t)b2) == e_band((int16_t)a2));
+                if (ab != ba) symm = 0;
+            }
+
+        for (a2 = 0; a2 <= E_CERTAIN; a2++)
+            for (b2 = 0; b2 <= E_CERTAIN; b2++) {
+                if (e_band((int16_t)a2) != e_band((int16_t)b2)) continue;
+                for (c2 = 0; c2 <= E_CERTAIN; c2++) {
+                    if (e_band((int16_t)b2) != e_band((int16_t)c2)) continue;
+                    if (e_band((int16_t)a2) != e_band((int16_t)c2)) trans = 0;
+                }
+            }
+
+        ok("reflexive over all 257 values",   refl);
+        ok("symmetric over all 66,049 pairs", symm);
+        ok("transitive over every triple",    trans);
+    }
+
+    /* Proximity is not the law, and this is the counterexample that
+     * proves it. Kept live so the distinction cannot rot back in. */
+    {
+        int lo = 0, mid = 1, hi = E_PI_WIDTH_WARN;      /* 0, 1, 81 */
+        int ab = (mid - lo) < E_PI_WIDTH_WARN;
+        int bc = (hi - mid) < E_PI_WIDTH_WARN;
+        int ac = (hi - lo)  < E_PI_WIDTH_WARN;
+        ok("proximity holds a~b",             ab);
+        ok("proximity holds b~c",             bc);
+        ok("proximity breaks a~c",            !ac);
+        ok("so proximity cannot carry the law", ab && bc && !ac);
+    }
+
+    printf("\nThe law survives a crossing exactly when the thread is anchored\n");
+    {
+        /* 128 is the lowest member of E_BAND_EXECUTABLE, so it is
+         * precisely the thread that one hop demotes. */
+        e_particle edge = e_int("edge", 1, E_EXECUTE_FLOOR, E_LANG_C);
+        e_particle held = a_anchor(&edge, 9001);
+        e_particle mid  = e_int("mid", 1, 200, E_LANG_C);
+        e_particle crossed_u = a_assimilate(&edge, E_LANG_JAVA);
+        e_particle crossed_a = a_assimilate(&held, E_LANG_JAVA);
+
+        ok("unanchored edge thread would lose its band",
+           !e_equilibrium_survives_crossing(&edge));
+        ok("anchoring it is legal",            !e_is_z(&held));
+        ok("anchored edge thread holds its band",
+           e_equilibrium_survives_crossing(&held));
+        ok("a thread away from the edge holds either way",
+           e_equilibrium_survives_crossing(&mid));
+
+        ok("unanchored crossing really does demote",
+           !e_equilibrium(&edge, &crossed_u));
+        ok("anchored crossing really does hold",
+           e_equilibrium(&held, &crossed_a));
+        ok("the anchored one kept its confidence",
+           crossed_a.confidence == E_EXECUTE_FLOOR);
+        ok("the unanchored one paid exactly 1",
+           crossed_u.confidence == E_EXECUTE_FLOOR - 1);
+    }
+
     printf("\n=== Tapestry atom: %d passed, %d failed ===\n\n", passed, failed);
     return failed == 0 ? 0 : 1;
 }

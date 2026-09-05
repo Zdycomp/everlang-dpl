@@ -211,6 +211,62 @@ typedef enum {
 e_pi_status e_pi_check(const e_particle *p);
 
 /* ═════════════════════════════════════════════
+ * THE ZEROTH LAW
+ *
+ * If two threads are each in equilibrium with a third, they are in
+ * equilibrium with each other.
+ *
+ * The law is prior to the First. The First Law says what happens when
+ * evidence combines. The Zeroth says that confidence names a comparable
+ * quantity at all. Thermodynamics numbered its laws the same way and for
+ * the same reason: without transitive equilibrium there is no such thing
+ * as temperature, only readings.
+ *
+ * So the relation has to be an EQUIVALENCE relation — reflexive,
+ * symmetric AND transitive. Proximity ("within pi-width") is reflexive
+ * and symmetric but not transitive, so it cannot carry the law. See
+ * PhaseEngine::sameSpectrum, which is honest proximity and nothing more.
+ *
+ * Equilibrium is instead equality of BAND. Band is a total function of
+ * confidence, so "same band" is the kernel of a function, and the kernel
+ * of a function is an equivalence relation by construction rather than
+ * by luck.
+ *
+ * The boundaries are the constants the scale already had:
+ *
+ *   0                Z. its own state, never a low band
+ *   1   .. 24        below floor(256 / pi^2) = 25
+ *   25  .. 80        below floor(256 / pi)   = 81
+ *   81  .. 127       below 256 / 2           = 128
+ *   128 .. 255       cleared to execute, not verified
+ *   256              Certain, exactly 4^4
+ * ═════════════════════════════════════════════ */
+
+typedef enum {
+    E_BAND_Z           = 0,  /* 0        unknown, carrying its reason */
+    E_BAND_VESTIGIAL   = 1,  /* 1..24    too thin to enumerate        */
+    E_BAND_APPROACHING = 2,  /* 25..80   approaching Z                */
+    E_BAND_SUBFLOOR    = 3,  /* 81..127  present, may not execute     */
+    E_BAND_EXECUTABLE  = 4,  /* 128..255 cleared, not verified        */
+    E_BAND_CERTAIN     = 5   /* 256      earned                       */
+} e_band_id;
+
+#define E_BAND_COUNT 6
+
+/* Total on 0..256. A confidence outside the scale is a defect, not a
+ * band; it reports E_BAND_Z, which is the safe direction to fail. */
+e_band_id   e_band(int16_t confidence);
+const char *e_band_name(e_band_id b);
+
+/* The Zeroth Law relation. Z is in equilibrium only with Z. */
+int e_equilibrium(const e_particle *a, const e_particle *b);
+
+/* Does the law survive the trip? An anchored particle crosses without
+ * loss, so its band holds. An unanchored one pays 1 per crossing, which
+ * moves it out of its band whenever it sits on a lower boundary. */
+int e_equilibrium_survives_crossing(const e_particle *p);
+
+/* ═════════════════════════════════════════════
  * The six A-operators. Closed over E: every one takes particles and
  * returns particles, so they compose without leaving the system.
  * ═════════════════════════════════════════════ */
