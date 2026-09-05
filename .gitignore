@@ -2,14 +2,31 @@
 *.o
 *.class
 out/
-bin/
+out_verify/
 __pycache__/
+
+# Compiled test executables. run.sh builds these in place, beside their
+# sources, so they need naming rather than a blanket bin/ rule — that
+# rule once swallowed 7-refix-node/bin/refix, which is source.
+0-atom-c/tapestry_test
+0-atom-c/bridge_test
+0-atom-c/evalue_test
+0-atom-c/ir_test
+0-atom-c/scope_test
+0-atom-c/tac_test
+0-atom-c/kitchen_sink
+0-atom-c/form_test
+0-atom-c/native_test
+1-phase-cpp/phase_test
 *.pyc
 *.egg-info/
 .venv/
 
 # Generated databases — every suite rebuilds its own
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Editor and OS
 .DS_Store

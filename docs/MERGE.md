@@ -167,6 +167,42 @@ elsewhere* is the entire subject of the software.
 
 ---
 
+## Restored after the fact
+
+Three gaps in the first pass of this merge, found by auditing the copy
+against its sources rather than by trusting it:
+
+**`7-refix-node/bin/refix` — the ReFix CLI — was never copied.** The
+rsync used `--exclude=bin` to skip compiled output, and it swallowed the
+one `bin/` in the tree that held source. Layer 7's README documented
+`refix scan`, `accept`, `candidates`, `propose` and `rules` while the
+executable providing them was absent. The `.gitignore` carried the same
+blanket `bin/` rule and would have hidden it again; the rule is now
+narrowed, since no compiled `bin/` directory exists in this repo at all.
+
+Restored and exercised end to end: three distinct sources accepted, the
+fixture clears `E_ASCEND_POINTS`, replay agrees 3/3, rule admitted at
+`E_EXECUTE_FLOOR = 128`.
+
+**`Dockerfile`, `docker-compose.yml`, `.dockerignore` were not copied.**
+`docs/VOWELS.md` documents `docker compose run --rm verify` / `evolve` /
+`research` / `up live`; without these files that section described
+nothing. Their paths (`run.sh`, `research.py`, `2-interpreter-python/`,
+`6-interface-html/`) all resolve in this layout. **Not verified here** —
+this host has no `docker`.
+
+**`CLAUDE.md` and `run.sh` were not copied.** `docs/TEAM.md` describes a
+seven-agent team whose rules live in `CLAUDE.md`, so carrying the one
+without the other made the team documentation inert. Both are back, with
+their stale facts corrected: the repo is 8 layers, not 7, and the green
+bar is 34 suites, not 25. `CLAUDE.md` also gains the two Zeroth Law rules
+— never compare confidence with proximity, and keep `e_band` total.
+
+`run.sh` gained something from the merge: it probes for `ruby` and calls
+`3-dsl-ruby/ever.rb`, which did not exist in Tapestry and does now.
+
+---
+
 ## Still missing
 
 Carried forward unresolved, from the sources' own open-questions lists:
