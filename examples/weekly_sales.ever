@@ -1,0 +1,40 @@
+# Weekly sales tally.
+#
+# A for-loop in Ever reports its LAST iteration's value, not a running
+# sum — so summing a list is recursion's job, not the loop's. This
+# program uses each construct for what it actually does: recursion
+# (anchored, so it isn't capped at 3 levels) to add up five days,
+# indexing to read one day directly, and a for-loop for what it's
+# honestly good at — a bounded computation ending in a final result.
+
+let mon = 420
+let tue = 610
+let wed = 380
+let thu = z
+let fri = 705
+
+let days = [mon, tue, wed, thu, fri]
+
+def sum_from(xs, i) = if i >= 5 then 0 else xs[i] + sum_from(xs, i + 1)
+
+ever total     = sum_from(days, 0)
+
+# Comparing anything against z — even asking "is this the unknown" —
+# itself returns z, not a definite true/false. That's a pre-existing
+# characteristic of == in this language, not something new here.
+ever had_gap   = thu == z
+
+ever best      = if mon > tue and mon > wed then mon
+                  else (if tue > wed then tue else wed)
+
+ever third_day = days[2]
+ever missing   = days[9]
+
+ever last_square = for i = 1 to 5 do i * i
+
+show total
+show had_gap
+show best
+show third_day
+show missing
+show last_square

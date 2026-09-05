@@ -1,0 +1,21 @@
+# Build artifacts
+*.o
+*.class
+out/
+bin/
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+# Generated databases — every suite rebuilds its own
+*.db
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/
+.history/
+
+# Node
+node_modules/

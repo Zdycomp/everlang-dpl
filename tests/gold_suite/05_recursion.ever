@@ -1,0 +1,22 @@
+# 05_recursion.ever
+# Recursive functions. Both backends enforce the depth ceiling (pi=3).
+# tri(n) requires n+1 call levels. tri(3) needs depth=4 which exceeds
+# the ceiling: tri(3) = z (anchoring required for n > ceiling - 1).
+# fact(n) for n<=3 all compute within the ceiling.
+
+def fact(n) = if n <= 1 then 1 else n * fact(n - 1)
+def tri(n)  = if n <= 0 then 0 else n + tri(n - 1)
+
+ever f1 = fact(1)
+ever f2 = fact(2)
+ever f3 = fact(3)
+ever t1 = tri(1)
+ever t2 = tri(2)
+ever t3 = tri(3)
+
+show f1
+show f2
+show f3
+show t1
+show t2
+show t3

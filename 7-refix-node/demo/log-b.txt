@@ -1,0 +1,3 @@
+* What went wrong:
+Execution failed for task ':server:compileJava'.
+> Could not resolve com.google.guava:guava:33.0.0-jre-typo.

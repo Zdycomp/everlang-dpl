@@ -1,0 +1,1 @@
+> The project is using an incompatible version (AGP 7.0.4) of the Android Gradle plugin. Latest supported version is AGP 8.5.2.

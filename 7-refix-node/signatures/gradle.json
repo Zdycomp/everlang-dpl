@@ -1,0 +1,95 @@
+{
+  "_note": "Real Gradle failure signatures. Every entry is a shape someone has actually hit, drawn from AGP/Gradle documentation and public issue trackers. Rules generated from the archive may extend this file; nothing else may.",
+  "signatures": [
+    {
+      "id": "gradle.unresolved_dependency",
+      "kind": 1,
+      "match": "Could not (?:resolve|find) ([a-zA-Z0-9._-]+):([a-zA-Z0-9._-]+):([a-zA-Z0-9._+-]+)",
+      "capture": ["group", "name", "version"],
+      "fixture_form": "SEARCH_MAVEN_CENTRAL:{group}:{name}",
+      "fixture_text": "Dependency {group}:{name}:{version} was not resolved. Check the coordinate is spelled correctly, the repository declaring it is in `repositories { }`, and that the version exists on Maven Central or Google's Maven repo.",
+      "family": "dependency"
+    },
+    {
+      "id": "gradle.jdk_mismatch",
+      "kind": 1,
+      "match": "(Unsupported class file major version|invalid target release: (\\d+)|has been compiled by a more recent version of the Java Runtime \\(class file version ([\\d\\.]+)\\), this version of the Java Runtime only recognizes class file versions up to ([\\d\\.]+))",
+      "capture": ["_"],
+      "fixture_form": "SET_JDK_VERSION:from_stderr",
+      "fixture_text": "The Gradle daemon's JDK version does not match what the build declares. Set `org.gradle.java.home` in gradle.properties, or align the toolchain block in build.gradle.kts, to the required JDK.",
+      "family": "toolchain"
+    },
+    {
+      "id": "gradle.agp_too_old",
+      "kind": 1,
+      "match": "The project is using an incompatible version \\(AGP (\\d+(?:\\.\\d+)*)\\) of the Android Gradle plugin\\. Latest supported version is AGP (\\d+(?:\\.\\d+)*)",
+      "capture": ["current", "latest"],
+      "fixture_form": "SET_AGP_VERSION:{latest}",
+      "fixture_text": "Android Gradle Plugin {current} is not compatible with this Gradle/Studio version. Bump the AGP classpath to {latest} in the top-level build.gradle (or plugins block).",
+      "family": "toolchain"
+    },
+    {
+      "id": "gradle.sdk_not_found",
+      "kind": 1,
+      "match": "SDK location not found\\. Define a valid SDK location with an ANDROID_HOME environment variable or by setting the sdk\\.dir path",
+      "capture": [],
+      "fixture_form": "CREATE_LOCAL_PROPERTIES:sdk.dir",
+      "fixture_text": "The Android SDK path is not configured. Create a local.properties file at the project root with `sdk.dir=/absolute/path/to/Android/Sdk`, or export ANDROID_HOME in your shell.",
+      "family": "environment"
+    },
+    {
+      "id": "gradle.duplicate_class",
+      "kind": 1,
+      "match": "Duplicate class ([^\\s]+) found in modules ([^\\s]+) and ([^\\s]+)",
+      "capture": ["cls", "moduleA", "moduleB"],
+      "fixture_form": "EXCLUDE_MODULE_FROM:{moduleA}|{moduleB}",
+      "fixture_text": "Class {cls} is provided by two modules ({moduleA} and {moduleB}). Exclude one in the losing module's dependency block, e.g. `implementation(\"...\") { exclude(group = \"...\", module = \"...\") }`.",
+      "family": "packaging"
+    },
+    {
+      "id": "gradle.r8_missing_class",
+      "kind": 1,
+      "match": "Missing class ([^\\s]+) \\(referenced from: [^\\)]+\\)",
+      "capture": ["cls"],
+      "fixture_form": "ADD_KEEP_RULE:{cls}",
+      "fixture_text": "R8/ProGuard is stripping {cls} that is still referenced at runtime. Add `-keep class {cls} { *; }` to proguard-rules.pro, or add the missing dependency that provides it.",
+      "family": "shrinker"
+    },
+    {
+      "id": "gradle.compilesdk_too_low",
+      "kind": 1,
+      "match": "requires (?:libraries and applications that depend on it )?to compile against version (\\d+) or later of the Android APIs",
+      "capture": ["required"],
+      "fixture_form": "SET_COMPILE_SDK:{required}",
+      "fixture_text": "A dependency requires compileSdk {required} or higher. Set `android { compileSdk = {required} }` in the module's build.gradle(.kts).",
+      "family": "toolchain"
+    },
+    {
+      "id": "gradle.namespace_missing",
+      "kind": 1,
+      "match": "Namespace not specified\\. Specify a namespace in the module's build file",
+      "capture": [],
+      "fixture_form": "SET_NAMESPACE:from_manifest",
+      "fixture_text": "AGP 7.3+ requires an explicit namespace. Add `android { namespace = \"com.your.package\" }` to the module's build.gradle(.kts), matching the application id or manifest package.",
+      "family": "manifest"
+    },
+    {
+      "id": "gradle.wrapper_distribution_missing",
+      "kind": 0,
+      "match": "Could not install Gradle distribution from '([^']+)'",
+      "capture": ["url"],
+      "fixture_form": "REGENERATE_WRAPPER",
+      "fixture_text": "The wrapper cannot download the declared Gradle distribution ({url}). Check network access, or run `gradle wrapper --gradle-version=<installed-version>` from a machine that has Gradle installed to regenerate gradle-wrapper.properties.",
+      "family": "wrapper"
+    },
+    {
+      "id": "gradle.kotlin_stdlib_conflict",
+      "kind": 1,
+      "match": "Runtime JAR files in the classpath should have the same version\\. These files were found in the classpath:[\\s\\S]*?kotlin-stdlib-([\\d\\.]+)\\.jar[\\s\\S]*?kotlin-stdlib-([\\d\\.]+)\\.jar",
+      "capture": ["v1", "v2"],
+      "fixture_form": "PIN_KOTLIN_STDLIB:latest",
+      "fixture_text": "Two kotlin-stdlib versions on the classpath ({v1} and {v2}). Force-resolve to one: `configurations.all { resolutionStrategy.force(\"org.jetbrains.kotlin:kotlin-stdlib:{v_latest}\") }`.",
+      "family": "toolchain"
+    }
+  ]
+}
