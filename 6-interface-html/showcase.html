@@ -832,10 +832,12 @@ last_square = <span class="c-sig">25</span>      <span class="c-dim">[256/256]</
 
     <div class="cols cols-2">
       <div class="card">
-        <p class="card-k">Five verified compile targets</p>
-        <p>Go, Rust, R, Kotlin, JavaScript — each checked against its own real
-        compiler and matched to the reference value-for-value <em>and</em>
-        confidence-for-confidence. Compiled, run, diffed. Not “should work”.</p>
+        <p class="card-k">Five compile targets</p>
+        <p>Go, Rust, R, Kotlin, JavaScript — each matched to the reference
+        value-for-value <em>and</em> confidence-for-confidence. This host has
+        only a JS toolchain, so 12 cases re-verified here and
+        <strong>four targets reported SKIP</strong>. The other four are the
+        project's own prior result, not something this page re-ran.</p>
       </div>
       <div class="card">
         <p class="card-k">Foreign code is capped at 120</p>

@@ -154,6 +154,19 @@ This host has both. They were run.
 
 ---
 
+## Not re-verified on this host
+
+Three toolchains are absent here — `go`, `rustc`, `Rscript`, `kotlinc` — so
+`tests/test_backends.py` re-verified **12 cases against JavaScript and skipped
+four targets**. The Go / Rust / R / Kotlin results stand as the project's prior
+claim, not as something this merge re-ran. `docker` is absent too, so the
+container-only paths in `VOWELS.md` were not exercised.
+
+Recorded because the difference between *verified here* and *verified once,
+elsewhere* is the entire subject of the software.
+
+---
+
 ## Still missing
 
 Carried forward unresolved, from the sources' own open-questions lists:
