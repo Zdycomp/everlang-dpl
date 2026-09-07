@@ -1,0 +1,32 @@
+{
+  "name": "refix-cli",
+  "version": "2.0.0",
+  "description": "Zero-dependency CLI that matches captured build-error logs against known signatures and archives accepted repairs. Part of Ever / Tapestry (Codric Enterprise).",
+  "bin": {
+    "refix": "bin/refix"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "signatures/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "license": "UNLICENSED",
+  "author": "Ricky (Dreid), Codric Enterprise",
+  "keywords": [
+    "build",
+    "gradle",
+    "error",
+    "repair",
+    "cli",
+    "ever",
+    "tapestry",
+    "refix"
+  ],
+  "scripts": {
+    "test": "node tests/test_all.js"
+  }
+}

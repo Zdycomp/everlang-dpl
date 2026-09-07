@@ -36,3 +36,6 @@ __pycache__/
 
 # Node
 node_modules/
+
+# claude temp build artifacts
+.claude-tmp/

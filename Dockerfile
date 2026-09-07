@@ -59,15 +59,10 @@ RUN chmod +x run.sh tests/run_all.py 2>/dev/null || true
 #   - floating-point arithmetic
 #   - string encoding
 
-RUN python3 -c "
-import sys, platform
-print(f'Python  {sys.version}')
-print(f'OS      {platform.system()} {platform.release()}')
-print(f'Arch    {platform.machine()}')
-" && \
-    gcc --version | head -1 && \
-    ruby --version && \
-    node --version
+RUN python3 -c "import sys, platform; print(f'Python  {sys.version}'); print(f'OS      {platform.system()} {platform.release()}'); print(f'Arch    {platform.machine()}')" \
+    && gcc --version | head -1 \
+    && ruby --version \
+    && node --version
 
 # ── build-time verification ──
 # The full test suite must pass before the image is finalised.

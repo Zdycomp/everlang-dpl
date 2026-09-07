@@ -23,10 +23,14 @@ ever = "ever_cli:main"
 py-modules = [
     "ever_cli",
     "runtime",
+    "ever",
     "syntax",
     "ir",
     "scope",
     "evalue",
-    "abi",
+    "forgive",
+    "emit",
+    "ffi",
+    "builtins_ml",
     "profiler",
 ]
