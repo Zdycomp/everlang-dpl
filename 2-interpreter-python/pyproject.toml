@@ -9,11 +9,12 @@ description = "Ever (Tapestry) — a confidence-tracking programming language wh
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "Ricky (Dreid), Codric Enterprise" }]
-license = { text = "Proprietary" }
+license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Interpreters",
     "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
 ]
 
 [project.scripts]

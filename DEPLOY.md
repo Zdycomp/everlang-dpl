@@ -40,11 +40,11 @@ org on npm), then `npm publish --access public`.
 ## 3 · Docker (needs Docker Desktop running; retag `codric` to your Docker Hub user if different)
     cd ~/Downloads/4ever
     docker login
-    docker build -t codric/ever:3.4 -t codric/ever:latest .   # self-verifies at build
-    docker push codric/ever:3.4
+    docker build -t codric/ever:3.8.0 -t codric/ever:latest .   # self-verifies at build
+    docker push codric/ever:3.8.0
     docker push codric/ever:latest
-Run tests:  `docker run --rm codric/ever:3.4`
-Serve web:  `docker run --rm -p 8088:8088 codric/ever:3.4 python3 -m http.server 8088 --directory 6-interface-html`
+Run tests:  `docker run --rm codric/ever:3.8.0`
+Serve web:  `docker run --rm -p 8088:8088 codric/ever:3.8.0 python3 -m http.server 8088 --directory 6-interface-html`
 
 ## 4 · Web playground
 Already live as a shareable page (the "Ever Live" artifact).

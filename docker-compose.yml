@@ -7,7 +7,7 @@ services:
   # Java, which the bare build container could not.
   verify:
     build: .
-    image: codric/ever:2.3
+    image: codric/ever:3.8.0
     command: ./run.sh
     volumes:
       - ./archive:/ever/archive
@@ -15,7 +15,7 @@ services:
   # The self-generating loop.
   evolve:
     build: .
-    image: codric/ever:2.3
+    image: codric/ever:3.8.0
     command: python3 2-interpreter-python/vowels.py
     volumes:
       - ./archive:/ever/archive
@@ -23,13 +23,13 @@ services:
   # The research team: conservation law, ratios, defect profile.
   research:
     build: .
-    image: codric/ever:2.3
+    image: codric/ever:3.8.0
     command: python3 research.py
 
   # Write and run Ever interactively.
   shell:
     build: .
-    image: codric/ever:2.3
+    image: codric/ever:3.8.0
     command: /bin/bash
     stdin_open: true
     tty: true
@@ -39,7 +39,7 @@ services:
   # The live interpreter, in a browser.
   live:
     build: .
-    image: codric/ever:2.3
+    image: codric/ever:3.8.0
     command: python3 -m http.server 8088 --directory 6-interface-html
     ports:
       - "8088:8088"

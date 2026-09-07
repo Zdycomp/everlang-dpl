@@ -1,10 +1,10 @@
 # ─────────────────────────────────────────────
 # Ever / Tapestry — cross-platform test container
 #
-# Build:   docker build -t codric/ever:3.4 .
-# Verify:  docker run --rm codric/ever:3.4 ./run.sh
-# Tests:   docker run --rm codric/ever:3.4 python3 tests/run_all.py
-# Shell:   docker run --rm -it codric/ever:3.4 /bin/bash
+# Build:   docker build -t codric/ever:3.8.0 .
+# Verify:  docker run --rm codric/ever:3.8.0 ./run.sh
+# Tests:   docker run --rm codric/ever:3.8.0 python3 tests/run_all.py
+# Shell:   docker run --rm -it codric/ever:3.8.0 /bin/bash
 #
 # The image verifies itself at build time. If any layer fails, the
 # build fails — an image that ships without its own tests passing
@@ -19,7 +19,7 @@ LABEL org.opencontainers.image.title="Ever / Tapestry"
 LABEL org.opencontainers.image.description="A language where every value carries how much it is trusted"
 LABEL org.opencontainers.image.vendor="Codric Enterprise"
 LABEL org.opencontainers.image.authors="Ricky (Dreid)"
-LABEL org.opencontainers.image.version="3.4"
+LABEL org.opencontainers.image.version="3.8.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
