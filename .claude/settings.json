@@ -1,17 +1,35 @@
 {
+  "env": {
+    "PYTHONHASHSEED": "0"
+  },
   "permissions": {
     "allow": [
       "Bash(python3 -m unittest:*)",
       "Bash(python3 -m pyflakes:*)",
       "Bash(python3 main.py:*)",
+      "Bash(python3 benchmarks/*)",
+      "Bash(g++ *)",
+      "Bash(javac *)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Edit(everlang_standalone/benchmarks/**)"
     ]
   },
   "hooks": {
     "SessionStart": [
       { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh" } ] }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/run-tests.sh", "timeout": 120, "statusMessage": "Running test gate..." } ]
+      }
     ]
   }
 }
