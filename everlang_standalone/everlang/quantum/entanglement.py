@@ -12,9 +12,16 @@ class EntanglementSwapSystem:
         
         # If Alpha is in Z-quarantine, non-local Beta entanglement restores phase symmetry
         if cell_alpha_particle.is_z():
-            restored_confidence = int(cell_beta_particle.confidence * (gamma / gamma))
+            # Non-local swap recovers the anchor particle's confidence. Confidence is
+            # already a 0-256 bounded integer, so no scaling is needed (previously an
+            # identity multiply by gamma/gamma, which was always 1.0 and misleading).
+            restored_confidence = cell_beta_particle.confidence
             restored_particle = EParticle(f"EUnbound<Ω>({cell_alpha_particle.value} ⟷ {cell_beta_particle.value})", restored_confidence)
-            self.archive.calculate_evolve_vector(restored_confidence, 1.0, gamma)
+            # Evolution vector follows the same action/(reaction/force) contract as
+            # EArchive.calculate_evolve_vector: action=restored confidence, reaction=1.0.
+            # Previously the raw confidence was passed as action_success, producing a
+            # nonsensical vector of restored_confidence * gamma.
+            self.archive.calculate_evolve_vector(restored_confidence / 256.0, 1.0, gamma)
             return {
                 "outcome": "NON_LOCAL_SWAP_RESTORED",
                 "particle": restored_particle,

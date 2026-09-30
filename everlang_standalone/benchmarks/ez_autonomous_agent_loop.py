@@ -8,13 +8,12 @@ Instead of crashing on bad syntax or unhandled errors, the agent uses:
  3. EArchive persistence to learn and evolve execution confidence over time.
 """
 
-import sys
 import os
-import time
-import json
+import sys
 
-# Ensure everlang package is in sys.path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Ensure the package root (parent of the benchmarks/ dir) is importable,
+# regardless of the current working directory the script is launched from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from everlang.core.particle import EParticle
 from everlang.pipeline import EZPipeline
@@ -89,7 +88,7 @@ class AutonomousAgent:
         print(f" Executed Clean           : {clean}")
         print(f" Emulate Auto-Repaired    : {repaired}")
         print(f" Quarantined at Z (Floor) : {quarantined}")
-        print(f" Agent Uptime & Resilience: 100.0% (Zero agent crashes)")
+        print(" Agent Uptime & Resilience: 100.0% (Zero agent crashes)")
         print("="*70)
 
 def run_agent_loop():

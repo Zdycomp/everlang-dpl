@@ -1,11 +1,11 @@
-import sys
 import os
+import sys
 import time
-import json
 from collections import Counter, defaultdict
 
-# Ensure everlang package is in Python path
-sys.path.insert(0, '/workspace/scratch/everlang_standalone/everlang_standalone')
+# Ensure the package root (parent of the benchmarks/ dir) is importable,
+# regardless of the current working directory the script is launched from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from everlang.pipeline import EZPipeline
 from everlang.core.particle import EParticle

@@ -1,11 +1,12 @@
 import json
+from everlang import __version__
 from everlang.core.particle import EParticle
 from everlang.pipeline import EZPipeline
 from everlang.quantum.entanglement import EntanglementSwapSystem
 
 def main():
     print("==========================================================================")
-    print("      EVERLANG / DPL STANDALONE CORE RUNTIME SYSTEM (v1.0.0)")
+    print(f"      EVERLANG / DPL STANDALONE CORE RUNTIME SYSTEM (v{__version__})")
     print("==========================================================================")
     
     pipeline = EZPipeline()

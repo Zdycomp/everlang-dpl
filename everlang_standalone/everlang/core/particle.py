@@ -25,8 +25,8 @@ class EquivalenceRange:
         try:
             self.min_val = float(min_val)
             self.max_val = float(max_val)
-            if math.isnan(self.min_val) or math.isinf(self.min_val) or math.isnan(self.max_val) or math.isinf(self.max_val):
-                self.width = 999.0  # Force APPROACHING_Z
+            if not (math.isfinite(self.min_val) and math.isfinite(self.max_val)):
+                self.width = 999.0  # Force APPROACHING_Z on NaN/Inf bounds
             else:
                 self.width = abs(self.max_val - self.min_val)
         except (ValueError, TypeError):

@@ -1,11 +1,13 @@
 import unittest
 import threading
-import math
+import importlib
+
 from everlang.core.particle import EParticle, EquivalenceRange, PhiEqualizer
 from everlang.core.phase_engine import PhaseEngine
 from everlang.core.expect import ExpectGate
 from everlang.core.archive import EArchive
 from everlang.pipeline import EZPipeline
+from everlang.quantum.entanglement import EntanglementSwapSystem
 
 class TestEverlangCore(unittest.TestCase):
     def test_particle_confidence_bounds(self):
@@ -88,6 +90,64 @@ class TestEverlangCore(unittest.TestCase):
         res = pipeline.run("BUILD_101", "val x = 10", "Kotlin", rule)
         self.assertTrue(res["evolved"])
         self.assertGreater(res["final_particle"].confidence, 0)
+
+    def test_pipeline_quarantines_memory_hazard(self):
+        """A BAD_POINTER construct must be quarantined at Z and never evolved."""
+        pipeline = EZPipeline()
+        rule = EParticle("Rule", 220)
+        res = pipeline.run("SNIP_Z", "void* p = BAD_POINTER;", "Clang_C", rule)
+        self.assertEqual(res["examine_status"], "QUARANTINED_Z")
+        self.assertTrue(res["final_particle"].is_z())
+        self.assertFalse(res["evolved"])
+
+    def test_equivalence_range_numerical_guard(self):
+        # NaN / Inf bounds must degrade to APPROACHING_Z rather than propagate.
+        eq_nan = EquivalenceRange(float("nan"), 10.0)
+        self.assertEqual(eq_nan.width, 999.0)
+        self.assertEqual(eq_nan.evaluate_pi_governor(), "APPROACHING_Z")
+
+        eq_inf = EquivalenceRange(0.0, float("inf"))
+        self.assertEqual(eq_inf.evaluate_pi_governor(), "APPROACHING_Z")
+
+        eq_bad = EquivalenceRange("not_a_number", 10.0)
+        self.assertEqual(eq_bad.evaluate_pi_governor(), "APPROACHING_Z")
+
+    def test_phi_equalizer_balance(self):
+        self.assertTrue(PhiEqualizer.is_balanced(5.0, 5.0))
+        self.assertTrue(PhiEqualizer.is_balanced(5.0, 5.4))
+        self.assertFalse(PhiEqualizer.is_balanced(5.0, 9.0))
+        self.assertFalse(PhiEqualizer.is_balanced(float("nan"), 5.0))
+        self.assertFalse(PhiEqualizer.is_balanced("bad", 5.0))
+
+    def test_entanglement_swap_restores_z_particle(self):
+        archive = EArchive()
+        swap = EntanglementSwapSystem(archive)
+        z_particle = EParticle("Alpha_Z", 0)
+        anchor = EParticle("Beta_Anchor", 200)
+        res = swap.execute_entanglement_swap(z_particle, anchor, velocity_c=0.95)
+        self.assertEqual(res["outcome"], "NON_LOCAL_SWAP_RESTORED")
+        # Confidence is recovered exactly from the non-local anchor particle.
+        self.assertEqual(res["particle"].confidence, 200)
+        self.assertGreater(res["gamma_factor"], 3.0)
+
+    def test_benchmarks_are_importable(self):
+        """Regression: benchmark scripts must import regardless of CWD.
+
+        Previously several scripts hard-coded '/workspace/scratch/...' paths,
+        so importing/running them raised ModuleNotFoundError.
+        """
+        benchmark_modules = [
+            "ez_300_code_healing_benchmark",
+            "ez_autonomous_agent_loop",
+            "ez_container_ci_service",
+            "ez_cpu_stress_test",
+            "ez_financial_feed_simulation",
+            "ez_llm_agent_loop",
+            "ez_micro_containers",
+        ]
+        for name in benchmark_modules:
+            with self.subTest(module=name):
+                importlib.import_module(f"benchmarks.{name}")
 
 if __name__ == "__main__":
     unittest.main()

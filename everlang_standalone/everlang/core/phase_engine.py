@@ -1,4 +1,3 @@
-import math
 from .particle import EParticle, PHI
 
 class PhaseEngine:
