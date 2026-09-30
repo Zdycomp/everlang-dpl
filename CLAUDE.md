@@ -16,7 +16,7 @@ Toolchains available in the cloud env: python3.11, gcc/g++, java/javac. Create a
 
 ## Rules (non-negotiable)
 1. **Boundary awareness.** Identify the target phase before writing code. Never bleed Python interpretation rules into C++ or vice versa; phases communicate only through the IR and documented file/CLI contracts.
-2. **Tests gate every change.** Run `cd everlang_standalone && python3 -m unittest discover tests` (21 tests must pass). When `run_all.py` and the golden suites exist, they are the gate for every feature.
+2. **Tests gate every change.** Run `cd everlang_standalone && python3 -m unittest discover tests` (42 tests must pass). When `run_all.py` and the golden suites exist, they are the gate for every feature.
 3. **TAC preservation.** Changes to `ir.py`, `tac.c`, or any optimizer must keep basic blocks well-formed (single entry, terminator-ended, valid jump targets) and evaluation frames consistent.
 4. **No invented features.** Behavior must trace to `SEMANTICS.md` (once present) or existing code/README. Memory-safety (ownership, lifetimes, bounds) must be explicit at compile time.
 5. **Stay minimal and match surrounding style.**
