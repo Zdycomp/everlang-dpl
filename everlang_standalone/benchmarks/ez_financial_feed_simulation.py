@@ -1,9 +1,9 @@
-import sys
 import os
-import json
+import sys
 
-# Ensure everlang modules are importable
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Ensure the package root (parent of the benchmarks/ dir) is importable,
+# regardless of the current working directory the script is launched from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from everlang.core.particle import EParticle
 from everlang.pipeline import EZPipeline
@@ -88,11 +88,11 @@ def run_financial_feed_simulation():
         print(f"  • Final Confidence  : {res['final_particle'].confidence}/256")
         
         if res['final_particle'].confidence == 0:
-            print(f"  └─► QUARANTINED AT Z (Zero-Absolute Floor). Bad tick isolated without system crash.")
+            print("  └─► QUARANTINED AT Z (Zero-Absolute Floor). Bad tick isolated without system crash.")
         elif res['examine_status'] == "EMULATED_REPAIR":
-            print(f"  └─► AUTO-REPAIRED VIA EMULATE. Pattern borrowed from EArchive neighbor.")
+            print("  └─► AUTO-REPAIRED VIA EMULATE. Pattern borrowed from EArchive neighbor.")
         else:
-            print(f"  └─► CLEARED & EXECUTED. High-trust trade match committed.")
+            print("  └─► CLEARED & EXECUTED. High-trust trade match committed.")
 
     summary = {
         "total_ticks_processed": len(market_ticks),

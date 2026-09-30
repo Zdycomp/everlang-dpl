@@ -1,14 +1,15 @@
-import math
 import json
-from typing import Dict, Any, List, Tuple
+import os
+import sys
+from typing import Dict, Any, List
 
-class EParticle:
-    def __init__(self, value: Any, confidence: int):
-        self.value = value
-        self.confidence = max(0, min(256, confidence))
-    
-    def is_z(self) -> bool:
-        return self.confidence == 0
+# Ensure the package root (parent of the benchmarks/ dir) is importable,
+# regardless of the current working directory the script is launched from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Reuse the hardened core particle (NaN/Inf guards + 0-256 clamping) instead of
+# re-defining a divergent copy locally.
+from everlang.core.particle import EParticle
 
 # 1. Micro-Container 1: SyntaxMutator (Syntactic Morphology Generator)
 class SyntaxMutatorContainer:

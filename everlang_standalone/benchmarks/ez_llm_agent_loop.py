@@ -1,7 +1,9 @@
-import sys
 import os
+import sys
 
-sys.path.insert(0, '/workspace/scratch/everlang_standalone')
+# Ensure the package root (parent of the benchmarks/ dir) is importable,
+# regardless of the current working directory the script is launched from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from everlang.pipeline import EZPipeline
 from everlang.core.particle import EParticle
@@ -90,15 +92,15 @@ def run_llm_agent_loop():
         if examine_status == "NORMALIZED":
             telemetry["clean_executions"] += 1
             print(f"  • Pipeline Stage  : NORMALIZED ──► EXCEL Phase (Confidence: {final_conf}/256)")
-            print(f"  └─► STATUS: CLEAN. Generated code verified and executed.")
+            print("  └─► STATUS: CLEAN. Generated code verified and executed.")
         elif examine_status == "EMULATED_REPAIR":
             telemetry["emulate_auto_repairs"] += 1
             print(f"  • Pipeline Stage  : EMULATED_REPAIR ──► Pattern borrowed from EArchive (Confidence: {final_conf}/256)")
-            print(f"  └─► STATUS: AUTO-REPAIRED. LLM syntax/import error healed without crashing.")
+            print("  └─► STATUS: AUTO-REPAIRED. LLM syntax/import error healed without crashing.")
         elif examine_status == "QUARANTINED_Z":
             telemetry["z_quarantines"] += 1
             print(f"  • Pipeline Stage  : QUARANTINED_Z ──► Quarantined at position 0 (Confidence: {final_conf}/256)")
-            print(f"  └─► STATUS: ISOLATED AT Z. Memory unsafe code blocked. Agent loop uninterrupted.")
+            print("  └─► STATUS: ISOLATED AT Z. Memory unsafe code blocked. Agent loop uninterrupted.")
 
     print("\n" + "=" * 80)
     print("                 LLM AUTONOMOUS AGENT TELEMETRY SUMMARY")
@@ -107,7 +109,7 @@ def run_llm_agent_loop():
     print(f" Clean Executions        : {telemetry['clean_executions']}")
     print(f" Emulate Auto-Repairs    : {telemetry['emulate_auto_repairs']}")
     print(f" Quarantined at Z (Floor): {telemetry['z_quarantines']}")
-    print(f" Agent Loop Resilience   : 100.0% (Zero unhandled crashes)")
+    print(" Agent Loop Resilience   : 100.0% (Zero unhandled crashes)")
     print("=" * 80)
 
 if __name__ == "__main__":

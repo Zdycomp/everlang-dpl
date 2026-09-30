@@ -1,10 +1,11 @@
-import sys
 import os
+import sys
 import time
 import multiprocessing
-import threading
 
-sys.path.insert(0, '/workspace/scratch/everlang_standalone/everlang_standalone')
+# Ensure the package root (parent of the benchmarks/ dir) is importable,
+# regardless of the current working directory the script is launched from.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from everlang.core.particle import EParticle
 from everlang.core.phase_engine import PhaseEngine
@@ -48,8 +49,8 @@ def worker_stress_run(worker_id: int, iterations: int):
         elif outcome == "REPEL":
             repel_count += 1
             
-        # 4-Stage Pipeline Run
-        pipe_res = pipeline.run(
+        # 4-Stage Pipeline Run (exercised for throughput; result intentionally unused)
+        pipeline.run(
             snippet_id=f"STRESS_SNIP_{worker_id}_{i}",
             code_snippet=f"val stress_var_{i} = {conf_a} + {conf_b}",
             lang="DPL",
