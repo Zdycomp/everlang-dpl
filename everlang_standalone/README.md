@@ -1,28 +1,35 @@
-# Everlang (DPL / `everlang` v3.0 Standalone Package)
+# Everlang (DPL / `everlang` v5.0.0 Standalone Package)
 
 ## Overview
 **Everlang (Dynamic Phase Language / DPL)** is a quantified confidence, self-healing runtime environment operating on an 8-bit confidence scale (0–256).
 
-### Key Features & Enhancements in v3.0:
+### Key Features in v5.0.0:
 1. **Hardened Core Engine**: Thread-safe atomic logging (`EArchive`), `NaN`/`Inf` numerical type guards (`EParticle`), and calibrated Pauli spectrum collision gates (`PhaseEngine`).
-2. **Quantum Superrelativity & Entanglement**: Wave function collapse ($|\Psi(t)\rangle$) under Lorentz time dilation ($\gamma = 3.20$) and non-local $EUnbound (\Omega)$ state recovery.
-3. **Multi-Threaded & Multi-Core Benchmarks**:
-   - High-CPU multi-core stress benchmark achieving **~200,000 ops/sec** across 1,000,000 operations with 100% thread resilience.
-   - 300-snippet multi-language code healing benchmark evaluating 15 mainstream programming languages (Python, JS, TS, Rust, C, C++, Go, Java, Kotlin, Swift, C#, Ruby, PHP, SQL, Shell).
-4. **Autonomous AI & Financial Suite**: Integrated scripts for LLM prompt auto-repair and real-time financial market data tick $Z$-quarantine.
+2. **Quantum Superrelativity & Entanglement**: Wave function collapse under Lorentz time dilation and non-local `EUnbound` state recovery (`EntanglementSwapSystem`).
+3. **Biocomputing (new in v5)**: `everlang/biocomputing/` maps bytes to DNA and simulates strand displacement gates on the 0–256 confidence scale.
+   - `QuaternaryTranslationLayer` (`quaternary.py`): base-4 encoding `A=00, T=01, C=10, G=11`; `bytes_to_DNA` / `DNA_to_bytes` round-trip bytes (4 bases per byte).
+   - `BioPhaseEngine` (`dna_engine.py`): hybridization affinity score 0–256 (fraction of positions where the input base is the complement of the gate base, scaled by 256; length mismatch or empty gate scores 0). A displacement succeeds only if affinity >= 180 (about 70%) and particle confidence > 128.
+   - `VibeDnaCompiler` (`vibe_compiler.py`): three `VibeChildCell`s (Child_Alpha1, Child_Beta2, Child_Omega3). `execute_vibe_pulse_cycle(cycle)` builds a 4-byte payload per cell, compiles it to DNA, decodes it back for a parity check, runs a displacement against the complementary gate (cycles 2 and 3 inject a mutated/noisy gate for Child_Beta2), then raises cell confidence by 10 on success or lowers it by 30 on failure.
+4. **Multi-Threaded & Multi-Core Benchmarks**: CPU stress, 300-snippet multi-language healing, financial feed, and LLM/agent loop scripts under `benchmarks/`.
 
 ## Directory Structure
 ```
 everlang_standalone/
-├── README.md                          # Full architectural spec & CLI documentation
-├── main.py                            # CLI execution entry point
-├── everlang/                          # Core Framework Engine
+├── README.md                          # Package documentation & CLI commands
+├── main.py                            # CLI demo: pipeline, entanglement swap, vibe DNA compiler
+├── everlang/                          # Core Framework Engine (v5.0.0)
+│   ├── pipeline.py                    # EZPipeline (4-stage pipeline)
 │   ├── core/                          # Particle, PhaseEngine, ExpectGate, EArchive
 │   ├── containers/                    # 4 Micro-Containers (Syntax, Phase, Governor, Corpus)
-│   └── quantum/                       # Superrelativity & Entanglement Swap
-├── tests/                             # Expanded 8-Battery Unit Test Suite
-│   └── test_everlang_core.py          # Includes 100-thread race condition stress tests
-└── benchmarks/                        # Comprehensive Benchmark & Suite Scripts
+│   ├── quantum/                       # Superrelativity & Entanglement Swap
+│   └── biocomputing/                  # DNA / strand-displacement simulation
+│       ├── quaternary.py              # QuaternaryTranslationLayer (A=00,T=01,C=10,G=11)
+│       ├── dna_engine.py              # BioPhaseEngine (affinity 0-256, threshold 180)
+│       └── vibe_compiler.py           # VibeChildCell, VibeDnaCompiler (pulse cycles)
+├── tests/                             # Unit test suite (21 tests)
+│   ├── test_everlang_core.py          # Core tests incl. 100-thread race condition stress test
+│   └── test_everlang_v5.py            # Biocomputing (v5) tests
+└── benchmarks/                        # Benchmark & Suite Scripts
     ├── ez_financial_feed_simulation.py
     ├── ez_autonomous_agent_loop.py
     ├── ez_llm_agent_loop.py
@@ -34,16 +41,19 @@ everlang_standalone/
 
 ## Running Benchmarks & Tests
 
-All commands below are run from the `everlang_standalone/` directory. Scripts are
-now location-independent: they resolve the package root relative to their own
-file, so they also work when launched from any other working directory.
+All commands below are run from the `everlang_standalone/` directory. Benchmark
+scripts resolve the package root relative to their own file, so they also work
+when launched from any other working directory.
 
 ```bash
-# Run standalone CLI
+# Run standalone CLI demo (pipeline, entanglement swap, biocomputing)
 python3 main.py
 
-# Run unit tests (including 100-thread concurrency test)
+# Run unit tests (21 tests, including 100-thread concurrency test)
 python3 -m unittest discover tests
+
+# Lint
+python3 -m pyflakes .
 
 # Run 1,000,000-op High-CPU multi-core benchmark
 python3 benchmarks/ez_cpu_stress_test.py
