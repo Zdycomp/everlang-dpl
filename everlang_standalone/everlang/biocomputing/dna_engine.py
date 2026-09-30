@@ -1,4 +1,4 @@
-from typing import Dict, Any, Union
+from typing import Dict, Any
 from ..core.particle import EParticle
 
 class BioPhaseEngine:

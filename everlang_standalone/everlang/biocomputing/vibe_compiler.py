@@ -1,3 +1,4 @@
+import zlib
 from typing import Tuple, Dict, Any, List
 from .quaternary import QuaternaryTranslationLayer
 from .dna_engine import BioPhaseEngine
@@ -16,12 +17,19 @@ class VibeChildCell:
         self.current_particle: EParticle = EParticle(f"Cell<{name}:{primary_layer}|{resonance_layer}>", initial_confidence)
         self.translator: QuaternaryTranslationLayer = QuaternaryTranslationLayer()
 
+    @staticmethod
+    def _stable_hash(text: str) -> int:
+        """Deterministic replacement for hash(str), which varies with PYTHONHASHSEED."""
+        return zlib.crc32(text.encode("utf-8"))
+
     def generate_vibe_payload(self, cycle: int) -> bytearray:
         """Generates 4-byte vibe payload representing state, cycle, and confidence."""
-        layer_byte = (hash(self.primary_layer) + hash(self.resonance_layer)) % 256
-        res_byte = (hash(self.resonance_layer) * 31) % 256
+        layer_byte = (self._stable_hash(self.primary_layer) + self._stable_hash(self.resonance_layer)) % 256
+        res_byte = (self._stable_hash(self.resonance_layer) * 31) % 256
         cycle_byte = (cycle * 64) % 256
-        conf_byte = self.current_particle.confidence % 256
+        # Confidence is clamped to 0..256 (EParticle); % 256 would wrap 256 to 0,
+        # which is indistinguishable from a Z-quarantine byte, so saturate instead.
+        conf_byte = min(255, self.current_particle.confidence)
         return bytearray([layer_byte, res_byte, cycle_byte, conf_byte])
 
     def compile_to_live_dna(self, cycle: int) -> Tuple[str, bytearray]:
@@ -54,8 +62,9 @@ class VibeDnaCompiler:
                 # Inject mutation for self-healing test
                 target_gate = "".join([comp_map.get(b, 'A') for b in live_dna[:13]]) + "AAG"
             elif cycle == 3 and child.name == "Child_Beta2":
-                # Inject severe noise for Z-lock test
-                target_gate = "".join([comp_map.get(b, 'A') for b in live_dna[:10]]) + "TCA"
+                # Inject severe noise for Z-lock test (same length as live_dna,
+                # so the lock comes from mismatched bases, not a length mismatch)
+                target_gate = "".join([comp_map.get(b, 'A') for b in live_dna[:13]]) + "TCA"
             else:
                 target_gate = "".join([comp_map.get(b, 'A') for b in live_dna])
 
