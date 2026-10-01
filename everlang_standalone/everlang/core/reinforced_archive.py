@@ -1,0 +1,185 @@
+"""
+ReinforcedArchive: an opt-in, drop-in wrapper around EArchive that reinforces
+the self-healing Archive with two backend phases, each used through the
+CLI/file contract it documents (never by re-implementing its logic here):
+
+  - 1-phase-cpp/bin/verify_particle: a native safety-verification gate.
+    Every write is passed through it first; a write it rejects is recorded
+    into the SQL archive's `rejected_writes` table instead of being trusted.
+  - 4-archive-sql/archive_db.py (SqlArchive): durable SQLite persistence,
+    so the Archive's history survives past this process's lifetime (the
+    in-process EArchive loses everything on restart).
+
+Both phases are optional at runtime: if the C++ binary isn't built, or the
+SQL module can't be imported, ReinforcedArchive falls back to exactly
+EArchive's own in-process behavior. Nothing here changes EArchive itself or
+its existing callers/tests.
+"""
+import importlib.util
+import sqlite3
+import subprocess
+import sys
+import threading
+from pathlib import Path
+from typing import Optional, Tuple
+
+from .archive import EArchive
+from .particle import EParticle
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_CPP_BINARY = _REPO_ROOT / "1-phase-cpp" / "bin" / "verify_particle"
+_DEFAULT_SQL_DIR = _REPO_ROOT / "4-archive-sql"
+
+_VERIFIER_TIMEOUT_SECONDS = 2
+
+
+class ReinforcedArchive:
+    """Drop-in reinforcement of EArchive: same public methods/return values,
+    plus optional native safety verification and durable SQL persistence."""
+
+    def __init__(
+        self,
+        cpp_binary_path: Optional[str] = None,
+        sql_module_dir: Optional[str] = None,
+        sql_db_path: Optional[str] = None,
+    ) -> None:
+        self._archive = EArchive()
+        self._log_lock = threading.Lock()
+
+        self._cpp_binary = Path(cpp_binary_path) if cpp_binary_path else _DEFAULT_CPP_BINARY
+        self.cpp_verifier_available = self._cpp_binary.is_file()
+
+        self._sql = None
+        self.sql_available = False
+        sql_dir = Path(sql_module_dir) if sql_module_dir else _DEFAULT_SQL_DIR
+        try:
+            # Import by file path under a dedicated module name, rather than
+            # a bare `import archive_db` after a sys.path.insert: the latter
+            # is silently defeated whenever anything else has already put a
+            # module named "archive_db" into sys.modules (import looks there
+            # first, before consulting sys.path at all).
+            module_file = sql_dir / "archive_db.py"
+            spec = importlib.util.spec_from_file_location("everlang_sql_archive_db", module_file)
+            archive_db = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(archive_db)
+
+            self._sql = archive_db.SqlArchive(db_path=sql_db_path)
+            self.sql_available = True
+        except Exception as exc:  # native/SQL reinforcement is best-effort
+            print(f"ReinforcedArchive: SQL archive unavailable ({exc})", file=sys.stderr)
+            self._sql = None
+            self.sql_available = False
+
+    # -- verification -----------------------------------------------------
+
+    def _verify_with_cpp(self, value, confidence: int) -> Tuple[Optional[bool], str]:
+        """Returns (verdict, reason). verdict is True/False per the
+        verify_particle CLI contract, or None if the verifier is unavailable
+        or errors (never blocks the caller). The reason is returned alongside
+        the verdict rather than stashed on self, so concurrent callers never
+        read back another thread's result (see memory-safety audit finding A)."""
+        if not self.cpp_verifier_available:
+            return None, ""
+        try:
+            result = subprocess.run(
+                [str(self._cpp_binary), str(confidence)],
+                input=str(value),
+                capture_output=True,
+                text=True,
+                timeout=_VERIFIER_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            print(f"ReinforcedArchive: verify_particle failed to run ({exc})", file=sys.stderr)
+            self.cpp_verifier_available = False
+            return None, ""
+        stdout = result.stdout.strip()
+        if stdout == "VALID":
+            return True, ""
+        # Any INVALID:<REASON> (or unexpected output) is treated as rejected.
+        return False, stdout or f"exit={result.returncode}"
+
+    # -- EArchive-compatible API -------------------------------------------
+
+    def _sql_write(self, fn, *args, **kwargs) -> None:
+        """Runs one SqlArchive write, never letting a sqlite3 error escape to
+        the caller (see memory-safety audit finding B): a locked/closed/
+        unreachable database must not crash a self-healing write that already
+        succeeded in-memory, nor leave the caller unaware the SQL leg failed."""
+        try:
+            with self._log_lock:
+                fn(*args, **kwargs)
+        except sqlite3.Error as exc:
+            print(f"ReinforcedArchive: SQL write failed, disabling SQL reinforcement ({exc})", file=sys.stderr)
+            self.sql_available = False
+
+    def log_boundary_marker(self, context: str, particle: EParticle, reason: str) -> None:
+        # Never regress existing in-process behavior.
+        self._archive.log_boundary_marker(context, particle, reason)
+
+        verdict, verifier_reason = self._verify_with_cpp(particle.value, particle.confidence)
+        if not self.sql_available:
+            return
+        if verdict is False:
+            self._sql_write(
+                self._sql.record_rejected_write,
+                table_name="boundary_markers",
+                reason=verifier_reason or "INVALID",
+                payload=f"context={context!r} value={particle.value!r} confidence={particle.confidence}",
+            )
+        else:
+            # verdict True, or None (verifier unavailable) -> persist as-is.
+            self._sql_write(
+                self._sql.record_boundary_marker,
+                context=context,
+                value=particle.value,
+                confidence=particle.confidence,
+                reason=reason,
+            )
+
+    def emulate_repair(self, failing_signature: str, error_distance: int) -> EParticle:
+        # Identical logic/return value as EArchive; this call is the source of truth.
+        particle = self._archive.emulate_repair(failing_signature, error_distance)
+
+        if self.sql_available:
+            self._sql_write(
+                self._sql.record_repair,
+                failing_signature=failing_signature,
+                error_distance=error_distance,
+                repaired_value=particle.value,
+                confidence=particle.confidence,
+                quarantined=particle.is_z(),
+            )
+        return particle
+
+    def calculate_evolve_vector(self, action_success: float, reaction_data: float, force: float) -> float:
+        vector = self._archive.calculate_evolve_vector(action_success, reaction_data, force)
+
+        # EArchive returns 0.0 both for its "no-op" bail-out (reaction_data==0
+        # or force==0) and for a real vector that happens to equal 0.0 exactly
+        # -- these are indistinguishable from the return value alone. We log
+        # every call's result as telemetry regardless; this is a known
+        # limitation, not a correctness issue (the SQL archive is a record of
+        # attempts, not a re-derivation of EArchive's internal state).
+        if self.sql_available:
+            self._sql_write(
+                self._sql.record_evolved_vector,
+                vector=vector,
+                action_success=action_success,
+                reaction_data=reaction_data,
+                force=force,
+            )
+        return vector
+
+    def close(self) -> None:
+        if self._sql is not None:
+            self._sql.close()
+
+    # -- pass-through accessors matching EArchive's public attributes -----
+
+    @property
+    def boundary_markers(self):
+        return self._archive.boundary_markers
+
+    @property
+    def evolved_vectors(self):
+        return self._archive.evolved_vectors
