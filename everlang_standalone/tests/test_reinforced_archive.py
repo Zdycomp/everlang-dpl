@@ -124,6 +124,29 @@ class TestReinforcedArchiveIntegration(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertAlmostEqual(rows[0][1], vector)
 
+    def test_transpile_and_archive_persists_every_language(self):
+        rendered = self.archive.transpile_and_archive("txRate", "0.025", "float", 190)
+        self.assertEqual(len(rendered), 6)  # DPL, KOTLIN, RUST, C_CLANG, GO, GROOVY
+        rows = self._rows("transpilations")
+        self.assertEqual(len(rows), 6)
+        # columns: id, name, val, type_spec, confidence, target_language, rendered_code, created_at
+        persisted_by_lang = {r[5]: r[6] for r in rows}
+        self.assertEqual(persisted_by_lang, rendered)
+        self.assertEqual(self._rows("rejected_writes"), [])
+
+    def test_transpile_and_archive_rejects_oversized_rendering(self):
+        # A huge value makes every rendered snippet exceed verify_particle's
+        # 4096-byte-per-call budget, so every language is rejected, not persisted.
+        huge = "X" * 5000
+        rendered = self.archive.transpile_and_archive("n", huge, "T", 200)
+        self.assertEqual(len(rendered), 6)  # transpiler itself is unaffected
+        self.assertEqual(self._rows("transpilations"), [])
+        rejected = self._rows("rejected_writes")
+        self.assertEqual(len(rejected), 6)
+        for row in rejected:
+            self.assertEqual(row[1], "transpilations")
+            self.assertIn("VALUE_TOO_LONG", row[2])
+
 
 if __name__ == "__main__":
     unittest.main()

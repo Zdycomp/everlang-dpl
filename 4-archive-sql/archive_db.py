@@ -67,5 +67,18 @@ class SqlArchive:
             self._conn.commit()
             return cur.lastrowid
 
+    def record_transpilation(self, name: str, val: str, type_spec: str, confidence: int,
+                              target_language: str, rendered_code: str) -> int:
+        """Inserts a row into transpilations, returns the new row id."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO transpilations (name, val, type_spec, confidence, "
+                "target_language, rendered_code) VALUES (?, ?, ?, ?, ?, ?)",
+                (str(name), str(val), str(type_spec), confidence, str(target_language),
+                 str(rendered_code)),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
     def close(self):
         self._conn.close()

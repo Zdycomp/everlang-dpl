@@ -54,6 +54,21 @@ $ ./bin/verify_particle
 INVALID:USAGE                     # exit 2
 ```
 
+## Operational note: transpiler-phase per-language rendering
+
+The transpiler (`everlang_standalone/everlang/transpiler/`) renders a given
+value into several per-language snippets (DPL, Kotlin, Rust, C, Go, Groovy).
+`everlang/core/reinforced_archive.py` gates each of these rendered snippets
+by calling `verify_particle` **once per language**, passing that single
+rendered string as the stdin `value` (with the original confidence as the
+argv) — it never bundles multiple languages' output into one call. This
+means the 4096-byte budget (checks #4/#5 above) applies **per rendered
+snippet**, not to the combined multi-language output; a caller rendering
+the same value into six languages should expect up to six independent
+`verify_particle` invocations, each bounded individually by 4096 bytes.
+This is a note about how an existing caller uses the contract, not a
+change to the contract itself.
+
 ## Memory safety
 
 - No dynamic allocation beyond a single fixed-size 4097-byte stack buffer

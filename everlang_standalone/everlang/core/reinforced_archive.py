@@ -14,6 +14,13 @@ Both phases are optional at runtime: if the C++ binary isn't built, or the
 SQL module can't be imported, ReinforcedArchive falls back to exactly
 EArchive's own in-process behavior. Nothing here changes EArchive itself or
 its existing callers/tests.
+
+`transpile_and_archive` additionally routes everlang/transpiler's
+SuperTranspiler output through the same two backends: each rendered
+language's code is gated by the C++ verifier and persisted into the SQL
+archive's `transpilations` table, which 5-runtime-java's TranspileAudit
+independently re-renders and cross-checks (the same pattern already used
+for `emulate_repair` vs. RepairAuditor).
 """
 import importlib.util
 import sqlite3
@@ -21,10 +28,11 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from .archive import EArchive
 from .particle import EParticle
+from ..transpiler import SuperTranspiler
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CPP_BINARY = _REPO_ROOT / "1-phase-cpp" / "bin" / "verify_particle"
@@ -45,6 +53,7 @@ class ReinforcedArchive:
     ) -> None:
         self._archive = EArchive()
         self._log_lock = threading.Lock()
+        self._transpiler = SuperTranspiler()
 
         self._cpp_binary = Path(cpp_binary_path) if cpp_binary_path else _DEFAULT_CPP_BINARY
         self.cpp_verifier_available = self._cpp_binary.is_file()
@@ -169,6 +178,40 @@ class ReinforcedArchive:
                 force=force,
             )
         return vector
+
+    def transpile_and_archive(self, name: str, val: str, type_spec: str, conf: int) -> Dict[str, str]:
+        """Renders `val` into every SuperTranspiler-configured language,
+        gates each rendering through the C++ verifier, and persists each
+        one into the SQL archive's `transpilations` table. Always returns
+        the rendered dict (the transpiler itself never depends on either
+        backend being available -- same fallback philosophy as the rest of
+        this class)."""
+        rendered = self._transpiler.transpile(name, val, type_spec, conf)
+
+        if not self.sql_available:
+            return rendered
+
+        for target_language, code in rendered.items():
+            verdict, verifier_reason = self._verify_with_cpp(code, conf)
+            if verdict is False:
+                self._sql_write(
+                    self._sql.record_rejected_write,
+                    table_name="transpilations",
+                    reason=verifier_reason or "INVALID",
+                    payload=f"name={name!r} target_language={target_language!r} code={code!r}",
+                )
+                continue
+            # verdict True, or None (verifier unavailable) -> persist as-is.
+            self._sql_write(
+                self._sql.record_transpilation,
+                name=name,
+                val=val,
+                type_spec=type_spec,
+                confidence=conf,
+                target_language=target_language,
+                rendered_code=code,
+            )
+        return rendered
 
     def close(self) -> None:
         if self._sql is not None:

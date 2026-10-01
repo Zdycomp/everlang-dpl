@@ -33,3 +33,14 @@ CREATE TABLE IF NOT EXISTS rejected_writes (
     payload TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+CREATE TABLE IF NOT EXISTS transpilations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    val TEXT NOT NULL,
+    type_spec TEXT NOT NULL,
+    confidence INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 256),
+    target_language TEXT NOT NULL,
+    rendered_code TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);

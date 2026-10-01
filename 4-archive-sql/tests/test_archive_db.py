@@ -81,6 +81,30 @@ class TestSqlArchiveRecording(unittest.TestCase):
         )
         self.assertEqual(cur.fetchone()[0], "12345")
 
+    def test_record_transpilation(self):
+        row_id = self.archive.record_transpilation(
+            "my_var", "42", "int", 200, "java", "int my_var = 42;"
+        )
+        cur = self.archive._conn.execute(
+            "SELECT name, val, type_spec, confidence, target_language, rendered_code "
+            "FROM transpilations WHERE id=?",
+            (row_id,),
+        )
+        row = cur.fetchone()
+        self.assertEqual(
+            row, ("my_var", "42", "int", 200, "java", "int my_var = 42;")
+        )
+
+    def test_record_transpilation_multiline_rendered_code(self):
+        rendered_code = "public class Foo {\n    int x = 1;\n    void bar() {\n        return;\n    }\n}"
+        row_id = self.archive.record_transpilation(
+            "foo", "1", "object", 150, "java", rendered_code
+        )
+        cur = self.archive._conn.execute(
+            "SELECT rendered_code FROM transpilations WHERE id=?", (row_id,)
+        )
+        self.assertEqual(cur.fetchone()[0], rendered_code)
+
 
 class TestSqlArchiveConstraints(unittest.TestCase):
     def setUp(self):
@@ -98,6 +122,10 @@ class TestSqlArchiveConstraints(unittest.TestCase):
     def test_repair_confidence_out_of_range_raises(self):
         with self.assertRaises(sqlite3.IntegrityError):
             self.archive.record_repair("sig", 2, "val", -1, False)
+
+    def test_transpilation_confidence_out_of_range_raises(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.archive.record_transpilation("name", "val", "type", 300, "java", "code")
 
     def test_quarantined_bool_roundtrips_as_int(self):
         row_id_true = self.archive.record_repair("sig", 2, "val", 190, True)

@@ -60,7 +60,24 @@ CREATE TABLE IF NOT EXISTS rejected_writes (
     payload TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+CREATE TABLE IF NOT EXISTS transpilations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    val TEXT NOT NULL,
+    type_spec TEXT NOT NULL,
+    confidence INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 256),
+    target_language TEXT NOT NULL,
+    rendered_code TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 ```
+
+`transpilations` persists each language the SuperTranspiler
+(`everlang_standalone/everlang/transpiler/`) renders for a given value. It is
+reinforced the same way `boundary_markers`/`repairs` are — every write is
+gated by the C++ verifier first — and independently audited by
+`5-runtime-java`'s `TranspileAudit`.
 
 ## `SqlArchive` public API (`archive_db.py`)
 
@@ -87,6 +104,10 @@ class SqlArchive:
     def record_rejected_write(self, table_name: str, reason: str, payload: str) -> int:
         """Inserts a row into rejected_writes, returns the new row id."""
 
+    def record_transpilation(self, name: str, val: str, type_spec: str, confidence: int,
+                              target_language: str, rendered_code: str) -> int:
+        """Inserts a row into transpilations, returns the new row id."""
+
     def close(self):
         """Closes the underlying sqlite3 connection."""
 ```
@@ -95,7 +116,9 @@ Notes on behavior:
 
 - `value`, `repaired_value`, and `payload` are coerced to `str(...)` before
   insertion, since `EParticle` values and other archive payloads can be
-  arbitrary Python objects, while the DB columns are `TEXT`.
+  arbitrary Python objects, while the DB columns are `TEXT`. Likewise,
+  `record_transpilation`'s `name`, `val`, `type_spec`, `target_language`,
+  and `rendered_code` arguments are all coerced to `str(...)`.
 - Confidence values are **not** pre-validated by `SqlArchive`; the
   `CHECK (confidence BETWEEN 0 AND 256)` constraint in the schema is the
   sole gate, and an out-of-range value raises `sqlite3.IntegrityError`
