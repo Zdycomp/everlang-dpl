@@ -5,7 +5,19 @@ from .core.archive import EArchive
 from .core.expect import ExpectGate
 from .quantum.entanglement import EntanglementSwapSystem
 from .quantum.superrelativity import TrueSuperrelativityEngine
-from .biocomputing import QuaternaryTranslationLayer, BioPhaseEngine, VibeChildCell, VibeDnaCompiler
+from .biocomputing import (
+    QuaternaryTranslationLayer,
+    BioPhaseEngine,
+    VibeChildCell,
+    VibeDnaCompiler,
+    DnaLexer,
+    DnaParser,
+    DnaSequencer,
+    BaseToken,
+    BasePair,
+    Codon,
+    DnaSyntaxError,
+)
 
 __version__ = "5.0.0"
 
@@ -23,5 +35,12 @@ __all__ = [
     "QuaternaryTranslationLayer",
     "BioPhaseEngine",
     "VibeChildCell",
-    "VibeDnaCompiler"
+    "VibeDnaCompiler",
+    "DnaLexer",
+    "DnaParser",
+    "DnaSequencer",
+    "BaseToken",
+    "BasePair",
+    "Codon",
+    "DnaSyntaxError"
 ]

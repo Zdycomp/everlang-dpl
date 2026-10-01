@@ -2,12 +2,10 @@ import unittest
 from everlang.core.particle import EParticle, EquivalenceRange, PhiEqualizer
 from everlang.core.phase_engine import PhaseEngine
 from everlang.core.archive import EArchive
-from everlang.core.expect import ExpectGate
-from everlang.pipeline import EZPipeline
 from everlang.quantum.entanglement import EntanglementSwapSystem
 from everlang.biocomputing.quaternary import QuaternaryTranslationLayer
 from everlang.biocomputing.dna_engine import BioPhaseEngine
-from everlang.biocomputing.vibe_compiler import VibeDnaCompiler, VibeChildCell
+from everlang.biocomputing.vibe_compiler import VibeDnaCompiler
 
 class TestEverlangCoreSuite(unittest.TestCase):
     def setUp(self):
