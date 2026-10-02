@@ -1,7 +1,9 @@
 package com.everlang.runtime;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Pure (no JDBC, no I/O) re-derivation of the expected rendered code for a
@@ -24,9 +26,10 @@ import java.util.List;
  * {@code targetLanguage} is one of the six above, the matching template is
  * re-rendered from the row's own {@code name}/{@code val}/{@code typeSpec}/
  * {@code confidence} and compared byte-for-byte to {@code renderedCode}; a
- * mismatch is any difference. A row whose {@code targetLanguage} is not one
- * of the six known languages is treated as automatically verified (not
- * mismatched) — no rule is invented for an unknown language.
+ * mismatch is any difference. Custom language templates loaded from the
+ * {@code custom_templates} table are also verified the same way. A row whose
+ * {@code targetLanguage} is neither built-in nor custom is treated as
+ * automatically verified (not mismatched).
  */
 public final class TranspileAuditor {
 
@@ -34,14 +37,17 @@ public final class TranspileAuditor {
     }
 
     public static AuditResult audit(List<TranspileRow> rows) {
+        return audit(rows, Map.of());
+    }
+
+    public static AuditResult audit(List<TranspileRow> rows, Map<String, String> customTemplates) {
         List<Mismatch> mismatches = new ArrayList<>();
         int verified = 0;
 
         for (TranspileRow row : rows) {
-            String expected = render(row);
+            String expected = render(row, customTemplates);
 
             if (expected == null) {
-                // Unknown target language: no rule invented, treat as verified.
                 verified++;
                 continue;
             }
@@ -64,15 +70,15 @@ public final class TranspileAuditor {
 
     /**
      * Renders the expected code for {@code row} per its {@code targetLanguage},
-     * or {@code null} if the language is not one of the six known templates.
+     * or {@code null} if the language is neither a built-in nor a custom template.
      */
-    private static String render(TranspileRow row) {
+    private static String render(TranspileRow row, Map<String, String> customTemplates) {
         String name = row.name();
         String val = row.val();
         String typeSpec = row.typeSpec();
         int conf = row.confidence();
 
-        return switch (row.targetLanguage()) {
+        String builtin = switch (row.targetLanguage()) {
             case "DPL" -> "particle " + name + " : E<" + typeSpec + "> = \"" + val + "\" @ confidence(" + conf + ")";
             case "KOTLIN" -> "val " + name + ": " + typeSpec + "? = \"" + val + "\"";
             case "RUST" -> "let " + name + ": Option<" + typeSpec + "> = Some(\"" + val + "\".to_string());";
@@ -81,6 +87,26 @@ public final class TranspileAuditor {
             case "GROOVY" -> "def " + name + " = \"" + val + "\" as " + typeSpec + " // confidence(" + conf + ")";
             default -> null;
         };
+        if (builtin != null) {
+            return builtin;
+        }
+        String template = customTemplates.get(row.targetLanguage());
+        if (template == null) {
+            return null;
+        }
+        return renderTemplate(template, name, val, typeSpec, conf);
+    }
+
+    /**
+     * Renders a custom template using the same placeholder convention as
+     * Python's str.format: {name}, {val}, {type_spec}, {conf}.
+     */
+    static String renderTemplate(String template, String name, String val, String typeSpec, int conf) {
+        return template
+                .replace("{name}", name)
+                .replace("{val}", val)
+                .replace("{type_spec}", typeSpec)
+                .replace("{conf}", String.valueOf(conf));
     }
 
     public record AuditResult(

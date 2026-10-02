@@ -32,7 +32,7 @@ from typing import Dict, Optional, Tuple
 
 from .archive import EArchive
 from .particle import EParticle
-from ..transpiler import SuperTranspiler
+from ..transpiler import SuperTranspiler, validate_template
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CPP_BINARY = _REPO_ROOT / "1-phase-cpp" / "bin" / "verify_particle"
@@ -74,6 +74,7 @@ class ReinforcedArchive:
 
             self._sql = archive_db.SqlArchive(db_path=sql_db_path)
             self.sql_available = True
+            self._load_custom_templates()
         except Exception as exc:  # native/SQL reinforcement is best-effort
             print(f"ReinforcedArchive: SQL archive unavailable ({exc})", file=sys.stderr)
             self._sql = None
@@ -212,6 +213,48 @@ class ReinforcedArchive:
                 rendered_code=code,
             )
         return rendered
+
+    # -- custom language management ----------------------------------------
+
+    def _load_custom_templates(self) -> None:
+        """Load custom templates from SQL on init and register them with the transpiler."""
+        if not self.sql_available:
+            return
+        try:
+            templates = self._sql.load_custom_templates()
+            for language, template in templates.items():
+                try:
+                    validate_template(template)
+                    self._transpiler.register_language(language, template)
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+
+    def register_language(self, language: str, template: str) -> None:
+        """Register a custom language target, persisting it in SQL if available."""
+        validate_template(template)
+        self._transpiler.register_language(language, template)
+        if self.sql_available:
+            self._sql_write(
+                self._sql.save_custom_template,
+                language=language.upper(),
+                template=template,
+            )
+
+    def unregister_language(self, language: str) -> bool:
+        """Remove a custom language. Returns True if removed."""
+        removed = self._transpiler.unregister_language(language)
+        if removed and self.sql_available:
+            self._sql_write(
+                self._sql.delete_custom_template,
+                language=language.upper(),
+            )
+        return removed
+
+    @property
+    def custom_languages(self) -> Dict[str, str]:
+        return self._transpiler.custom_languages
 
     def close(self) -> None:
         if self._sql is not None:

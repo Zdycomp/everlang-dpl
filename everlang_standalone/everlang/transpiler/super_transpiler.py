@@ -32,11 +32,52 @@ LANGUAGE_TEMPLATES: Dict[str, str] = {
 }
 
 
+_REQUIRED_PLACEHOLDERS = frozenset(("{name}", "{val}"))
+
+
+def validate_template(template: str) -> None:
+    """Raises ValueError if template is missing required placeholders."""
+    missing = [p for p in _REQUIRED_PLACEHOLDERS if p not in template]
+    if missing:
+        raise ValueError(f"Template missing required placeholders: {', '.join(sorted(missing))}")
+    try:
+        template.format(name="__test", val="__test", type_spec="__test", conf=0)
+    except (KeyError, IndexError) as exc:
+        raise ValueError(f"Template has invalid format placeholders: {exc}") from exc
+
+
 class SuperTranspiler:
     """Generates and offsets syntactic representations across language paradigms."""
 
     def __init__(self, templates: Dict[str, str] = None) -> None:
         self.templates = dict(templates) if templates is not None else dict(LANGUAGE_TEMPLATES)
+        self._custom_languages: Dict[str, str] = {}
+
+    def register_language(self, language: str, template: str) -> None:
+        """Register a custom language target. The template must contain at
+        least {name} and {val}; {type_spec} and {conf} are optional."""
+        validate_template(template)
+        lang_upper = language.upper()
+        self._custom_languages[lang_upper] = template
+        self.templates[lang_upper] = template
+
+    def unregister_language(self, language: str) -> bool:
+        """Remove a custom language. Returns True if removed, False if not
+        found or if the language is a built-in (built-ins cannot be removed)."""
+        lang_upper = language.upper()
+        if lang_upper not in self._custom_languages:
+            return False
+        del self._custom_languages[lang_upper]
+        del self.templates[lang_upper]
+        return True
+
+    @property
+    def custom_languages(self) -> Dict[str, str]:
+        return dict(self._custom_languages)
+
+    @property
+    def builtin_languages(self) -> Dict[str, str]:
+        return dict(LANGUAGE_TEMPLATES)
 
     def transpile(self, name: str, val: str, type_spec: str, conf: int) -> Dict[str, str]:
         """Renders `val` (typed as `type_spec`, carrying confidence `conf`)

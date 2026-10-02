@@ -84,6 +84,12 @@ CREATE TABLE IF NOT EXISTS sequence_matches (
     FOREIGN KEY(query_id) REFERENCES sequence_queries(id)
 );
 
+CREATE TABLE IF NOT EXISTS custom_templates (
+    language TEXT PRIMARY KEY,
+    template TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_kmer_indices_shard ON kmer_indices(shard_id, shard_count);
 CREATE INDEX IF NOT EXISTS idx_sequence_queries_index ON sequence_queries(index_id);
 CREATE INDEX IF NOT EXISTS idx_sequence_matches_query ON sequence_matches(query_id);

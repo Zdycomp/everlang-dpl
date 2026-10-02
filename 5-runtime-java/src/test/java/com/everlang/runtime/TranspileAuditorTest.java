@@ -3,6 +3,7 @@ package com.everlang.runtime;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -115,5 +116,61 @@ class TranspileAuditorTest {
         assertEquals(0, result.verifiedCount());
         assertEquals(0, result.mismatchedCount());
         assertTrue(result.mismatches().isEmpty());
+    }
+
+    @Test
+    void customTemplateRowIsVerified() {
+        Map<String, String> custom = Map.of("SWIFT", "let {name}: {type_spec} = \"{val}\"");
+        TranspileRow row = new TranspileRow(10L, "x", "hello", "String", 200, "SWIFT",
+                "let x: String = \"hello\"");
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
+
+        assertEquals(1, result.verifiedCount());
+        assertEquals(0, result.mismatchedCount());
+    }
+
+    @Test
+    void corruptedCustomTemplateRowIsMismatch() {
+        Map<String, String> custom = Map.of("SWIFT", "let {name}: {type_spec} = \"{val}\"");
+        TranspileRow row = new TranspileRow(11L, "x", "hello", "String", 200, "SWIFT",
+                "let x: String = \"WRONG\"");
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
+
+        assertEquals(0, result.verifiedCount());
+        assertEquals(1, result.mismatchedCount());
+    }
+
+    @Test
+    void customTemplateWithConfPlaceholder() {
+        Map<String, String> custom = Map.of("PYTHON", "{name} = \"{val}\"  # confidence={conf}");
+        TranspileRow row = new TranspileRow(12L, "x", "hello", "String", 200, "PYTHON",
+                "x = \"hello\"  # confidence=200");
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
+
+        assertEquals(1, result.verifiedCount());
+        assertEquals(0, result.mismatchedCount());
+    }
+
+    @Test
+    void builtinTakesPrecedenceOverCustom() {
+        Map<String, String> custom = Map.of("DPL", "wrong template {name} {val}");
+        TranspileRow row = new TranspileRow(13L, "x", "hello", "String", 200, "DPL",
+                "particle x : E<String> = \"hello\" @ confidence(200)");
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
+
+        assertEquals(1, result.verifiedCount());
+        assertEquals(0, result.mismatchedCount());
+    }
+
+    @Test
+    void renderTemplateProducesCorrectOutput() {
+        String result = TranspileAuditor.renderTemplate(
+                "let {name}: {type_spec} = \"{val}\" // conf={conf}",
+                "x", "hello", "String", 200);
+        assertEquals("let x: String = \"hello\" // conf=200", result);
     }
 }

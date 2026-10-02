@@ -6,7 +6,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Read-only CLI entry point. Cross-checks persisted transpilation records in
@@ -36,15 +38,18 @@ public final class TranspileAudit {
         String dbPath = args[0];
         List<TranspileRow> rows;
 
+        Map<String, String> customTemplates;
+
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
             rows = loadTranspilations(conn);
+            customTemplates = loadCustomTemplates(conn);
         } catch (SQLException e) {
             System.err.println("ERROR: " + e.getMessage());
             System.exit(2);
             return;
         }
 
-        TranspileAuditor.AuditResult result = TranspileAuditor.audit(rows);
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(rows, customTemplates);
 
         System.out.println("TOTAL=" + result.total()
                 + " VERIFIED=" + result.verifiedCount()
@@ -59,6 +64,24 @@ public final class TranspileAudit {
         }
 
         System.exit(result.mismatchedCount() == 0 ? 0 : 1);
+    }
+
+    /**
+     * Reads all custom language templates from the {@code custom_templates}
+     * table. Returns an empty map if the table does not exist (pre-upgrade DBs).
+     */
+    static Map<String, String> loadCustomTemplates(Connection conn) {
+        Map<String, String> templates = new HashMap<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT language, template FROM custom_templates");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                templates.put(rs.getString("language"), rs.getString("template"));
+            }
+        } catch (SQLException e) {
+            // Table may not exist in older DBs — that's fine, no custom templates.
+        }
+        return templates;
     }
 
     /**

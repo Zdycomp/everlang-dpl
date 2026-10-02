@@ -80,6 +80,32 @@ class SqlArchive:
             self._conn.commit()
             return cur.lastrowid
 
+    def save_custom_template(self, language: str, template: str) -> None:
+        """Upsert a custom language template."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO custom_templates (language, template) VALUES (?, ?) "
+                "ON CONFLICT(language) DO UPDATE SET template=excluded.template",
+                (str(language), str(template)),
+            )
+            self._conn.commit()
+
+    def delete_custom_template(self, language: str) -> bool:
+        """Remove a custom template. Returns True if a row was deleted."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM custom_templates WHERE language=?",
+                (str(language),),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def load_custom_templates(self):
+        """Returns all custom templates as a dict {language: template}."""
+        with self._lock:
+            cur = self._conn.execute("SELECT language, template FROM custom_templates")
+            return {row[0]: row[1] for row in cur.fetchall()}
+
     def close(self):
         self._conn.close()
 

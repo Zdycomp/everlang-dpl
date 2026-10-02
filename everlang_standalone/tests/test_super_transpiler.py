@@ -1,6 +1,6 @@
 import unittest
 
-from everlang.transpiler import SuperTranspiler, LANGUAGE_TEMPLATES
+from everlang.transpiler import SuperTranspiler, LANGUAGE_TEMPLATES, validate_template
 
 
 class TestSuperTranspiler(unittest.TestCase):
@@ -61,6 +61,100 @@ class TestSuperTranspiler(unittest.TestCase):
         # literal braces is inserted verbatim, not re-interpreted.
         out = self.t.transpile("x", "{not a field}", "T", 100)
         self.assertIn("{not a field}", out["GO"])
+
+
+class TestRegisterLanguage(unittest.TestCase):
+    def setUp(self):
+        self.t = SuperTranspiler()
+
+    def test_register_adds_language_to_transpile_output(self):
+        self.t.register_language("SWIFT", 'let {name}: {type_spec} = "{val}"')
+        out = self.t.transpile("x", "hello", "String", 200)
+        self.assertIn("SWIFT", out)
+        self.assertEqual(out["SWIFT"], 'let x: String = "hello"')
+
+    def test_register_preserves_builtin_languages(self):
+        self.t.register_language("TYPESCRIPT", 'const {name}: {type_spec} = "{val}";')
+        out = self.t.transpile("x", "v", "T", 100)
+        self.assertEqual(len(out), 7)
+        self.assertIn("DPL", out)
+        self.assertIn("TYPESCRIPT", out)
+
+    def test_register_uppercases_language_name(self):
+        self.t.register_language("swift", 'let {name} = "{val}"')
+        self.assertIn("SWIFT", self.t.templates)
+
+    def test_register_with_conf_placeholder(self):
+        self.t.register_language("PYTHON", '{name} = "{val}"  # confidence={conf}')
+        out = self.t.transpile("x", "v", "T", 200)
+        self.assertEqual(out["PYTHON"], 'x = "v"  # confidence=200')
+
+    def test_register_missing_name_raises(self):
+        with self.assertRaises(ValueError):
+            self.t.register_language("BAD", 'just a string with {val}')
+
+    def test_register_missing_val_raises(self):
+        with self.assertRaises(ValueError):
+            self.t.register_language("BAD", 'let {name} = something')
+
+    def test_register_invalid_placeholder_raises(self):
+        with self.assertRaises(ValueError):
+            self.t.register_language("BAD", '{name} = {val} {unknown_field}')
+
+    def test_unregister_removes_custom_language(self):
+        self.t.register_language("SWIFT", 'let {name} = "{val}"')
+        self.assertTrue(self.t.unregister_language("SWIFT"))
+        out = self.t.transpile("x", "v", "T", 100)
+        self.assertNotIn("SWIFT", out)
+
+    def test_unregister_builtin_returns_false(self):
+        self.assertFalse(self.t.unregister_language("DPL"))
+        self.assertIn("DPL", self.t.templates)
+
+    def test_unregister_nonexistent_returns_false(self):
+        self.assertFalse(self.t.unregister_language("NONEXISTENT"))
+
+    def test_custom_languages_property(self):
+        self.assertEqual(self.t.custom_languages, {})
+        self.t.register_language("SWIFT", 'let {name} = "{val}"')
+        self.assertEqual(set(self.t.custom_languages.keys()), {"SWIFT"})
+
+    def test_builtin_languages_property(self):
+        builtins = self.t.builtin_languages
+        self.assertEqual(set(builtins.keys()), {"DPL", "KOTLIN", "RUST", "C_CLANG", "GO", "GROOVY"})
+
+    def test_register_overwrite_custom_language(self):
+        self.t.register_language("SWIFT", 'let {name} = "{val}"')
+        self.t.register_language("SWIFT", 'var {name}: {type_spec} = "{val}"')
+        out = self.t.transpile("x", "hello", "String", 100)
+        self.assertEqual(out["SWIFT"], 'var x: String = "hello"')
+
+    def test_multiple_custom_languages(self):
+        self.t.register_language("SWIFT", 'let {name} = "{val}"')
+        self.t.register_language("TYPESCRIPT", 'const {name}: {type_spec} = "{val}";')
+        self.t.register_language("PYTHON", '{name} = "{val}"')
+        out = self.t.transpile("x", "v", "str", 100)
+        self.assertEqual(len(out), 9)
+
+
+class TestValidateTemplate(unittest.TestCase):
+    def test_valid_minimal_template(self):
+        validate_template('{name} = "{val}"')
+
+    def test_valid_full_template(self):
+        validate_template('{name}: {type_spec} = "{val}" // {conf}')
+
+    def test_missing_name_raises(self):
+        with self.assertRaises(ValueError):
+            validate_template('x = "{val}"')
+
+    def test_missing_val_raises(self):
+        with self.assertRaises(ValueError):
+            validate_template('{name} = something')
+
+    def test_unknown_placeholder_raises(self):
+        with self.assertRaises(ValueError):
+            validate_template('{name} = {val} {bogus}')
 
 
 if __name__ == "__main__":

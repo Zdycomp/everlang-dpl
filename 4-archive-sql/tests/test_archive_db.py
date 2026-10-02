@@ -146,6 +146,46 @@ class TestSqlArchiveConstraints(unittest.TestCase):
         self.assertIsInstance(value_false, int)
 
 
+class TestSqlArchiveCustomTemplates(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmpdir, "test_tapestry.db")
+        self.archive = SqlArchive(self.db_path)
+
+    def tearDown(self):
+        self.archive.close()
+
+    def test_save_and_load_custom_template(self):
+        self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
+        templates = self.archive.load_custom_templates()
+        self.assertEqual(templates, {"SWIFT": 'let {name} = "{val}"'})
+
+    def test_upsert_overwrites_existing(self):
+        self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
+        self.archive.save_custom_template("SWIFT", 'var {name} = "{val}"')
+        templates = self.archive.load_custom_templates()
+        self.assertEqual(templates["SWIFT"], 'var {name} = "{val}"')
+
+    def test_delete_custom_template(self):
+        self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
+        self.assertTrue(self.archive.delete_custom_template("SWIFT"))
+        self.assertEqual(self.archive.load_custom_templates(), {})
+
+    def test_delete_nonexistent_returns_false(self):
+        self.assertFalse(self.archive.delete_custom_template("NONEXISTENT"))
+
+    def test_load_empty_returns_empty_dict(self):
+        self.assertEqual(self.archive.load_custom_templates(), {})
+
+    def test_multiple_templates(self):
+        self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
+        self.archive.save_custom_template("TYPESCRIPT", 'const {name} = "{val}";')
+        templates = self.archive.load_custom_templates()
+        self.assertEqual(len(templates), 2)
+        self.assertIn("SWIFT", templates)
+        self.assertIn("TYPESCRIPT", templates)
+
+
 class TestSqlArchiveThreadSafety(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
