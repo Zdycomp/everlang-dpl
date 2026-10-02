@@ -5,35 +5,49 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "everlang"
 version = "0.1.0"
-description = "Multi-phase language ecosystem with confidence-based particles, DNA analysis, and code generation"
-readme = "README.md"
+description = "Reusable toolkit: DNA analysis, multi-language code generation, and probabilistic state machines"
+readme = "README_PyPI.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
     {name = "Zdycomp", email = "reimaginerz@gmail.com"}
 ]
+maintainers = [
+    {name = "Zdycomp", email = "reimaginerz@gmail.com"}
+]
 keywords = [
+    "dna-analysis",
     "dna-sequencing",
-    "code-transpilation",
+    "code-generation",
+    "transpiler",
+    "multi-language",
     "confidence-particles",
-    "probabilistic-state-machine",
+    "probabilistic",
+    "state-machine",
     "biocomputing",
     "genomics",
+    "bioinformatics",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Compilers",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
 ]
 
 [project.urls]
