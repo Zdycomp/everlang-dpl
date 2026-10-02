@@ -26,9 +26,18 @@ def generate_test_sequences(base_sequence: str, count: int = 100, mutation_rate:
     """Generate test queries with optional mutations."""
     bases = "ATCG"
     sequences = []
+    seq_len = len(base_sequence)
 
     for i in range(count):
-        seq = list(base_sequence[random.randint(0, len(base_sequence) - 100) : random.randint(200, 300)])
+        # Extract random subsequence with length 50-100
+        if seq_len <= 50:
+            start = 0
+            end = min(50, seq_len)
+        else:
+            start = random.randint(0, max(0, seq_len - 100))
+            end = min(seq_len, start + random.randint(50, 100))
+
+        seq = list(base_sequence[start:end])
 
         # Apply random mutations
         for j in range(len(seq)):
