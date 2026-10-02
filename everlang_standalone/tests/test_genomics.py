@@ -171,6 +171,83 @@ class TestReferenceGenomeLoader(unittest.TestCase):
         self.assertIsInstance(index, KmerIndex)
         self.assertGreater(index.total_kmers, 0)
 
+    def test_fastq_loading(self):
+        """Test loading sequences from FASTQ format."""
+        import tempfile
+
+        # Create a temporary FASTQ file
+        fastq_data = """@read1 description
+ATCGATCGATCG
++read1
+IIIIIIIIIIII
+@read2 description
+GCTAGCTAGCTA
++read2
+IIIIIIIIIIII
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fastq', delete=False) as f:
+            f.write(fastq_data)
+            fastq_path = f.name
+
+        try:
+            loader = ReferenceGenomeLoader()
+            loader.load_fastq(fastq_path)
+
+            stats = loader.stats()
+            self.assertEqual(len(stats['chromosomes_loaded']), 2)
+            self.assertIn('read1', stats['chromosomes_loaded'])
+            self.assertIn('read2', stats['chromosomes_loaded'])
+        finally:
+            import os
+            os.unlink(fastq_path)
+
+    def test_fastq_with_max_bp(self):
+        """Test FASTQ loading with base pair limit."""
+        import tempfile
+
+        # Create a temporary FASTQ file
+        fastq_data = """@read1
+ATCGATCGATCGATCGATCG
++read1
+IIIIIIIIIIIIIIIIIIII
+@read2
+GCTAGCTAGCTAGCTAGCTA
++read2
+IIIIIIIIIIIIIIIIIIII
+"""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fastq', delete=False) as f:
+            f.write(fastq_data)
+            fastq_path = f.name
+
+        try:
+            loader = ReferenceGenomeLoader()
+            loader.load_fastq(fastq_path, max_bp=25)  # Load only ~25 bp
+
+            stats = loader.stats()
+            total_bp = stats['total_genome_length']
+            self.assertLessEqual(total_bp, 25 + 20)  # Allow for one full read beyond limit
+        finally:
+            import os
+            os.unlink(fastq_path)
+
+    def test_fastq_invalid_format(self):
+        """Test FASTQ loading with invalid format."""
+        import tempfile
+
+        # Create an invalid FASTQ file (invalid + line without +)
+        invalid_data = "@read1\nATCGATCG\ninvalid\nIIIIIIII\n"
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.fastq', delete=False) as f:
+            f.write(invalid_data)
+            fastq_path = f.name
+
+        try:
+            loader = ReferenceGenomeLoader()
+            with self.assertRaises(ValueError):
+                loader.load_fastq(fastq_path)
+        finally:
+            import os
+            os.unlink(fastq_path)
+
 
 if __name__ == "__main__":
     unittest.main()

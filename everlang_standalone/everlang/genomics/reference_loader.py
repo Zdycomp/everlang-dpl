@@ -69,6 +69,56 @@ class ReferenceGenomeLoader:
                 self.chromosomes[current_chr] = len(seq)
                 total_bp += len(seq)
 
+    def load_fastq(self, fastq_path: str, max_bp: Optional[int] = None) -> None:
+        """
+        Load sequences from FASTQ file (standard sequencing format).
+
+        FASTQ format (4 lines per read):
+          Line 1: @read_id [description]
+          Line 2: DNA sequence
+          Line 3: + [optional repeat of read_id]
+          Line 4: Quality scores (Phred+33)
+
+        Args:
+            fastq_path: Path to FASTQ file
+            max_bp: Optional limit on total base pairs to load (for testing)
+        """
+        if not os.path.exists(fastq_path):
+            raise FileNotFoundError(f"FASTQ file not found: {fastq_path}")
+
+        read_count = 0
+        total_bp = 0
+
+        with open(fastq_path, 'r') as f:
+            lines = []
+            for line in f:
+                lines.append(line.rstrip('\n'))
+
+                # FASTQ records are 4 lines
+                if len(lines) == 4:
+                    # Check limit before processing
+                    if max_bp and total_bp >= max_bp:
+                        break
+
+                    header = lines[0]
+                    sequence = lines[1]
+                    plus = lines[2]
+
+                    # Validate format
+                    if not header.startswith('@') or not plus.startswith('+'):
+                        raise ValueError(f"Invalid FASTQ format at record {read_count + 1}")
+
+                    # Extract read ID (remove @ and any description after space)
+                    read_id = header[1:].split()[0]
+
+                    # Index the sequence
+                    self.index.add_sequence(sequence, start_pos=0)
+                    self.chromosomes[read_id] = len(sequence)
+                    total_bp += len(sequence)
+                    read_count += 1
+
+                    lines = []
+
     def load_synthetic_grch38(self, size_bp: int = 1_000_000) -> None:
         """
         Load synthetic GRCh38 data for testing (generates random valid DNA).
@@ -179,3 +229,15 @@ class GRCh38Loader(ReferenceGenomeLoader):
 
         for chr_name in chromosomes:
             self.load_grch38_chromosome(chr_name)
+
+    def load_grch38_fastq(self, fastq_path: str) -> None:
+        """
+        Load GRCh38 sequences from FASTQ file (sequencing data format).
+
+        For real GRCh38 FASTQ data from sequencing experiments.
+        For synthetic testing: use load_synthetic_grch38().
+
+        Args:
+            fastq_path: Path to FASTQ file with GRCh38 sequences
+        """
+        self.load_fastq(fastq_path)
