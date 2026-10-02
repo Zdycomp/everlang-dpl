@@ -81,22 +81,38 @@ class DnaLexer:
         self.raw_sequence = raw_sequence
         self._cleaned: str = "".join(str(raw_sequence).upper().split())
         self._tokens: List[BaseToken] = []
+        self._error_indices: List[int] = []
 
     def tokenize(self) -> List[BaseToken]:
-        """Produce the list of BaseToken objects for the cleaned sequence."""
+        """Produce the list of BaseToken objects for the cleaned sequence.
+
+        Optimized: pre-allocates list and caches error indices for lazy evaluation.
+        """
         n = len(self._cleaned)
         tokens: List[BaseToken] = [None] * n
         bases = VALID_BASES
         cleaned = self._cleaned
+        error_indices = []
+
         for i in range(n):
             ch = cleaned[i]
-            tokens[i] = BaseToken(base=ch, index=i, valid=ch in bases)
+            valid = ch in bases
+            tokens[i] = BaseToken(base=ch, index=i, valid=valid)
+            if not valid:
+                error_indices.append(i)
+
         self._tokens = tokens
+        self._error_indices = error_indices
         return tokens
 
     def errors(self) -> List[BaseToken]:
-        """Return the invalid (error) tokens found during tokenize()."""
-        return [tok for tok in self._tokens if not tok.valid]
+        """Return the invalid (error) tokens found during tokenize().
+
+        Optimized: uses cached error indices instead of filtering entire list.
+        """
+        if not self._error_indices:
+            return []
+        return [self._tokens[i] for i in self._error_indices]
 
     @property
     def cleaned_sequence(self) -> str:
@@ -117,6 +133,7 @@ class DnaParser:
         self.tokens = tokens
         self._pairs: List[BasePair] = []
         self._parse_errors: List[BaseToken] = []
+        self._error_indices: List[int] = []
         self._codons: List[Codon] = []
         self._trailing_partial: Tuple[BasePair, ...] = ()
 
@@ -125,15 +142,18 @@ class DnaParser:
 
         Raises DnaSyntaxError if the token stream is empty (i.e. the
         cleaned input sequence was empty).
+
+        Optimized: pre-allocates list, caches error indices for lazy evaluation.
         """
         n = len(self.tokens)
         if n == 0:
             raise DnaSyntaxError("cannot parse an empty DNA sequence")
 
         pairs: List[BasePair] = [None] * n
-        errors: List[BaseToken] = []
+        error_indices = []
         complement = _COMPLEMENT
         tokens = self.tokens
+
         for i in range(n):
             tok = tokens[i]
             if tok.valid:
@@ -150,10 +170,10 @@ class DnaParser:
                     complement=None,
                     valid=False,
                 )
-                errors.append(tok)
+                error_indices.append(i)
 
         self._pairs = pairs
-        self._parse_errors = errors
+        self._error_indices = error_indices
         self._group_codons(pairs)
         return pairs
 
@@ -178,8 +198,13 @@ class DnaParser:
         return self._trailing_partial
 
     def parse_errors(self) -> List[BaseToken]:
-        """Diagnostics for tokens that could not be paired."""
-        return self._parse_errors
+        """Diagnostics for tokens that could not be paired.
+
+        Optimized: uses cached error indices instead of storing separate list.
+        """
+        if not self._error_indices:
+            return []
+        return [self.tokens[i] for i in self._error_indices]
 
 
 class DnaSequencer:
