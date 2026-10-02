@@ -82,3 +82,55 @@ class SqlArchive:
 
     def close(self):
         self._conn.close()
+
+
+def record_kmer_index(db_conn, index_id, kmer_size, unique_kmers, total_kmers, 
+                      genome_length, shard_id=0, shard_count=1, verified_cpp=False):
+    """Record k-mer index metadata in SQL audit log."""
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute("""
+            INSERT INTO kmer_indices 
+            (index_id, kmer_size, unique_kmers, total_kmers, genome_length, 
+             shard_id, shard_count, verified_by_cpp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (index_id, kmer_size, unique_kmers, total_kmers, genome_length,
+              shard_id, shard_count, 1 if verified_cpp else 0))
+        db_conn.commit()
+        return cursor.lastrowid
+    except Exception as e:
+        return None
+
+
+def record_sequence_query(db_conn, index_id, query_sequence, top_k, min_coverage, 
+                         match_count, elapsed_ms):
+    """Record sequence query execution."""
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute("""
+            INSERT INTO sequence_queries 
+            (index_id, query_sequence, query_length, top_k, min_coverage, 
+             match_count, total_time_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (index_id, query_sequence, len(query_sequence), top_k, min_coverage,
+              match_count, elapsed_ms))
+        db_conn.commit()
+        return cursor.lastrowid
+    except Exception as e:
+        return None
+
+
+def record_sequence_match(db_conn, query_id, reference_position, kmer_matches, 
+                         coverage, confidence, match_strength):
+    """Record individual sequence match result."""
+    try:
+        cursor = db_conn.cursor()
+        cursor.execute("""
+            INSERT INTO sequence_matches 
+            (query_id, reference_position, kmer_matches, coverage, confidence, match_strength)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (query_id, reference_position, kmer_matches, coverage, confidence, match_strength))
+        db_conn.commit()
+        return cursor.lastrowid
+    except Exception as e:
+        return None
