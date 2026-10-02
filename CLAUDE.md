@@ -8,10 +8,10 @@ The thesis is a multi-phase, cross-platform language ecosystem — Python fronte
 
 | Phase | Dir | Reality |
 |---|---|---|
-| Python runtime | `everlang_standalone/` | A working "DPL / Everlang" package: a 4-stage confidence pipeline, a quantum/entanglement module, a biocomputing (DNA) module including a real lexer/parser pair, a 6-language template generator (`transpiler/`), and ~93 tests. This is the actual substance of the repo. |
+| Python runtime | `everlang_standalone/` | A working "DPL / Everlang" package: a 4-stage confidence pipeline, a quantum/entanglement module, a biocomputing (DNA) module including a real lexer/parser pair, a 6-language template generator (`transpiler/`) that also accepts user-registered languages, and its unittest suite. This is the actual substance of the repo. |
 | C++ analysis | `1-phase-cpp/` | One native CLI, `verify_particle` — a safety-verification gate, not a general analysis phase. Gates every `ReinforcedArchive` write, including each per-language transpiler rendering (one call per language, not a bundled multi-language blob). |
 | Java runtime | `5-runtime-java/` | Two read-only JDBC auditors — `SelfHealingAudit` (repairs) and `TranspileAudit` (transpiler output) — not a general IR execution runtime. |
-| SQL archive | `4-archive-sql/` | A real SQLite persistence layer (`SqlArchive` + `schema.sql`, now including `transpilations`) reinforcing the in-process `EArchive`. |
+| SQL archive | `4-archive-sql/` | A real SQLite persistence layer (`SqlArchive` + `schema.sql`, including `transpilations` and `custom_templates`) reinforcing the in-process `EArchive`. |
 | `2-interpreter-python/`, `SEMANTICS.md`, `tests/golden/`, `tests/gold_suite/` | — | Do not exist. Do not invent behavior for them. |
 
 Don't assume the target architecture's generality from the thesis sentence — verify against the table above and the phase's own README before writing code that depends on a phase doing more than it currently does.
@@ -28,12 +28,9 @@ python3 run_all.py --skip-native  # Python + SQL only, skips g++/mvn
 ```bash
 cd everlang_standalone
 python3 main.py                          # CLI demo: pipeline, entanglement swap, DNA compiler
-python3 -m unittest discover tests       # full suite (~93 tests)
+python3 -m unittest discover tests       # full suite
 python3 -m unittest tests.test_dna_sequencer -v   # a single test module
 python3 -m pyflakes .                    # lint
-python3 benchmarks/ez_10000_vocabulary_grammar_benchmark.py   # 10k-word volume bench: sequencer + generator + pipeline
-python3 benchmarks/ez_cpu_stress_test.py          # 1M-op multi-core stress benchmark
-python3 benchmarks/ez_300_code_healing_benchmark.py
 ```
 
 **C++** (`1-phase-cpp/`):
@@ -63,21 +60,17 @@ A `.claude/hooks/run-tests.sh` PostToolUse hook already re-runs the Python suite
 ### The confidence model (read this before touching `core/`)
 Everything in `everlang_standalone` runs on one idea: an `EParticle` carries a `value` and a `confidence` integer **clamped to [0, 256]** (`core/particle.py`). `confidence == 0` means "Z-quarantined" (`is_z()`), the system's universal failure/dead state. `PHI` (golden ratio) and the constant `81` (a Pauli-spectrum-gap threshold) recur throughout as magic-but-intentional constants — don't "simplify" them away.
 
-- **`core/phase_engine.py`** (`PhaseEngine.collide`): the core state-transition logic between two particles. In order: `Z_CONTAGION` (either is Z) → `EXCEL` (confidence gap < 81, constructive fusion) → `EXPEL` (ratio > 2·φ and the stronger one is ≥81, weaker one discarded) → `REPEL` (fallthrough).
 - **`core/archive.py`** (`EArchive`): in-process, thread-locked, three responsibilities — `log_boundary_marker` (append-only event log), `emulate_repair` (the self-healing formula: `error_distance` 1–3 → `confidence = 250 - error_distance*30`; else quarantined; **this exact formula is independently re-derived by the Java auditor**, so changing it here without updating `5-runtime-java` breaks that phase's contract), `calculate_evolve_vector` (action/reaction/force physics metaphor, no-ops to 0.0 if reaction or force is 0 — indistinguishable from a genuine zero vector, a known ambiguity).
-- **`core/expect.py`** (`ExpectGate`): a contract-style assertion gate (`notZ`, `minConfidence`, `piAcceptable`) with fallback handling.
-- **`pipeline.py`** (`EZPipeline`): wires four `containers/` stages — `SyntaxMutatorContainer` → `PhaseSemanticEngineContainer` → `ContractGovernorContainer` → `EvolveArchiveCorpusContainer` — into one `EXAMINE → EVALUATE → EXECUTE → ARCHIVE` pass over a code snippet + language tag.
-- **`quantum/`**: `TrueSuperrelativityEngine` (Lorentz factor, time dilation, wave-function collapse) and `EntanglementSwapSystem`, which uses it to restore a Z-quarantined particle's confidence from a non-quarantined "anchor" particle, logging the recovery through `EArchive.calculate_evolve_vector`.
-- **`biocomputing/`**: an independent sub-world using the same confidence scale for DNA. `quaternary.py` (byte↔DNA base-4 codec, `A=00,T=01,C=10,G=11`), `dna_engine.py` (`BioPhaseEngine`: hybridization affinity 0–256, displacement needs affinity ≥180 *and* confidence >128), `vibe_compiler.py` (`VibeDnaCompiler`: three fixed child cells running numbered "pulse cycles" that encode/decode/mutate DNA and adjust confidence by ±10/−30 per cycle), and **`sequencer.py`** — a genuine lexer/parser pair (`DnaLexer` → `BaseToken`s, `DnaParser` → Watson-Crick `BasePair`s and `Codon` triplets) that deliberately does *not* silently drop invalid characters the way `quaternary.py` does — it's the pattern to follow if you ever build the Python frontend's real lexer/parser.
-- **`transpiler/`** (`SuperTranspiler`): renders one `(name, value, type_spec, confidence)` into `LANGUAGE_TEMPLATES`' six target languages (DPL, Kotlin, Rust, C, Go, Groovy) via plain `str.format` substitution — promoted verbatim (for five of the six) from `benchmarks/ez_micro_containers.py`'s original `SyntaxMutatorContainer.PARADIGMS`. This is a syntax-offset generator, not a real transpiler with a source grammar — there's still no textual Everlang parser to transpile *from*. Don't add a seventh language without also updating `5-runtime-java`'s `TranspileAuditor`, which independently re-renders all six as its cross-check (same duplication-on-purpose pattern as the repair formula below).
+- **`biocomputing/sequencer.py`** is a genuine lexer/parser pair that deliberately does *not* silently drop invalid characters the way `quaternary.py` does — it's the pattern to follow if you ever build the Python frontend's real lexer/parser.
+- **`transpiler/`** (`SuperTranspiler`): plain `str.format` substitution into per-language templates — a syntax-offset generator, not a real transpiler with a source grammar; there's still no textual Everlang parser to transpile *from*. Adding a *built-in* language to `LANGUAGE_TEMPLATES` requires the same change in `5-runtime-java`'s `TranspileAuditor`, which hardcodes the six built-ins as its independent cross-check (same duplication-on-purpose pattern as the repair formula). User languages go through `register_language` instead: they persist in the SQL `custom_templates` table, which the auditor reads back.
 
 ### Cross-phase reinforcement of the self-healing Archive
 `EArchive` has no persistence and no external verification. Three things reinforce it without replacing it, each through a narrow, documented contract — never by reimplementing another phase's logic:
 1. **`1-phase-cpp/bin/verify_particle`**: a pre-write safety gate. Contract: `verify_particle <confidence>` with the value on stdin; prints `VALID` or `INVALID:<REASON>` (see `1-phase-cpp/README.md` for the exact table). Checks confidence bounds and value length (≤4096 bytes) — things `EParticle` itself doesn't all check (value length isn't an `EParticle` concern at all). Each per-language transpiler rendering gets its own call — the 4096-byte budget is per snippet, never a bundled multi-language blob.
-2. **`4-archive-sql/archive_db.py`** (`SqlArchive`): durable SQLite persistence (`tapestry.db`, gitignored, never commit it) for boundary markers, repairs, evolved vectors, transpilations, and anything the C++ gate rejects (`rejected_writes`). Schema in `schema.sql`, CHECK-constrained on confidence range.
-3. **`5-runtime-java`**: two independent, **read-only** JDBC auditors, never writing. `SelfHealingAudit` re-derives expected `emulate_repair` outcomes from the formula above and flags drift in `repairs`. `TranspileAudit` re-renders `SuperTranspiler`'s six templates from each `transpilations` row's stored inputs and flags any mismatch against the stored `rendered_code`. Run via `java -cp target/self-healing-runtime.jar com.everlang.runtime.<ClassName> <db>` — only `SelfHealingAudit` is the jar's default entry point.
+2. **`4-archive-sql/archive_db.py`** (`SqlArchive`): durable SQLite persistence (`tapestry.db`, gitignored, never commit it) for boundary markers, repairs, evolved vectors, transpilations, custom transpiler templates, and anything the C++ gate rejects (`rejected_writes`). Schema in `schema.sql`, CHECK-constrained on confidence range.
+3. **`5-runtime-java`**: two independent, **read-only** JDBC auditors, never writing. `SelfHealingAudit` re-derives expected `emulate_repair` outcomes from the formula above and flags drift in `repairs`. `TranspileAudit` re-renders `SuperTranspiler`'s six built-in templates (plus any in `custom_templates`) from each `transpilations` row's stored inputs and flags any mismatch against the stored `rendered_code`. Run via `java -cp target/self-healing-runtime.jar com.everlang.runtime.<ClassName> <db>` — only `SelfHealingAudit` is the jar's default entry point.
 
-**`everlang_standalone/everlang/core/reinforced_archive.py`** (`ReinforcedArchive`) is the bridge: same public API as `EArchive` (`log_boundary_marker`, `emulate_repair`, `calculate_evolve_vector`) plus `transpile_and_archive(name, val, type_spec, conf)`, which runs `SuperTranspiler` and reinforces each of its six renderings the same way. Every write still goes to the in-process archive (or the transpiler, which is always purely in-process) unconditionally — zero behavior change for existing callers — and is *additionally* run through the C++ gate and persisted via SQL when both are available. Locates the C++ binary and the SQL module by path relative to the repo root; imports `archive_db.py` by file path under a dedicated module name (not a bare `import archive_db` after a `sys.path` insert — that's silently defeated if anything else already registered a module of that name in `sys.modules`). Both backends are optional: missing or failing, `ReinforcedArchive` degrades to plain in-process behavior rather than raising. Every SQL write is wrapped so a `sqlite3` error disables SQL reinforcement for that instance rather than propagating.
+**`everlang_standalone/everlang/core/reinforced_archive.py`** (`ReinforcedArchive`) is the bridge: same public API as `EArchive` (`log_boundary_marker`, `emulate_repair`, `calculate_evolve_vector`) plus `transpile_and_archive(name, val, type_spec, conf)`, which runs `SuperTranspiler` and reinforces each of its renderings (built-in and custom) the same way, plus `register_language`/`unregister_language`, which persist custom templates to SQL and reload them on init. Every write still goes to the in-process archive (or the transpiler, which is always purely in-process) unconditionally — zero behavior change for existing callers — and is *additionally* run through the C++ gate and persisted via SQL when both are available. Locates the C++ binary and the SQL module by path relative to the repo root; imports `archive_db.py` by file path under a dedicated module name (not a bare `import archive_db` after a `sys.path` insert — that's silently defeated if anything else already registered a module of that name in `sys.modules`). Both backends are optional: missing or failing, `ReinforcedArchive` degrades to plain in-process behavior rather than raising. Every SQL write is wrapped so a `sqlite3` error disables SQL reinforcement for that instance rather than propagating.
 
 ## Rules
 
@@ -89,15 +82,4 @@ Everything in `everlang_standalone` runs on one idea: an `EParticle` carries a `
 
 ## Multi-agent team (`.claude/agents/`)
 
-| Agent | Owns |
-|---|---|
-| `architect` | Cross-phase changes, contract design between phases |
-| `python-frontend` | `everlang_standalone/` (lexer/parser work, e.g. `biocomputing/sequencer.py`, belongs here too) |
-| `ir-tac-engineer` | `ir.py`, `tac.c`, `form*.c` — none of this exists yet |
-| `cpp-analysis` | `1-phase-cpp/` |
-| `java-runtime` | `5-runtime-java/` |
-| `archive-sql` | `4-archive-sql/` |
-| `test-engineer` | Test suites, `run_all.py` |
-| `memory-safety-auditor` | ASan/UBSan on C++, concurrency/exception review on Python (this is how the three real bugs in `reinforced_archive.py`'s first draft were found and fixed — a race on rejection-reason attribution, uncaught `sqlite3` exceptions mid-write, and the `sys.modules` import-caching issue) |
-
-Delegate to the agent that owns the phase; start with `architect` for anything crossing phase boundaries.
+Delegate to the agent that owns the phase; start with `architect` for anything crossing phase boundaries. `ir-tac-engineer` owns `ir.py`/`tac.c`/`form*.c`, none of which exist yet.
