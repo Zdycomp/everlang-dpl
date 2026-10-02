@@ -1,0 +1,105 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "everlang"
+version = "0.1.0"
+description = "Multi-phase language ecosystem with confidence-based particles, DNA analysis, and code generation"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Zdycomp", email = "reimaginerz@gmail.com"}
+]
+keywords = [
+    "dna-sequencing",
+    "code-transpilation",
+    "confidence-particles",
+    "probabilistic-state-machine",
+    "biocomputing",
+    "genomics",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/Zdycomp/everlang-dpl"
+Repository = "https://github.com/Zdycomp/everlang-dpl.git"
+Documentation = "https://github.com/Zdycomp/everlang-dpl/tree/main/everlang_standalone"
+Issues = "https://github.com/Zdycomp/everlang-dpl/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "isort>=5.0",
+    "mypy>=1.0",
+]
+benchmarks = [
+    "matplotlib>=3.5",
+    "pandas>=1.5",
+]
+dna = [
+    # DNA module has no additional dependencies
+]
+transpiler = [
+    # SuperTranspiler has no additional dependencies
+]
+particles = [
+    # EParticle + PhaseEngine have no additional dependencies
+]
+
+[tool.setuptools]
+packages = ["everlang_standalone"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+everlang_standalone = ["py.typed", "**/*.py"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["everlang_standalone/tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
