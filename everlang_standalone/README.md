@@ -13,7 +13,8 @@
 4. **DNA Lexer/Parser (v5.1)**: `everlang/biocomputing/sequencer.py` — `DnaLexer` tokenizes a raw sequence (invalid bases keep their index instead of being dropped), `DnaParser` "spins out pairings" (Watson-Crick `BasePair`s, grouped into `Codon` triplets), `DnaSequencer.run()` ties both together.
 5. **SuperTranspiler generator (v5.1)**: `everlang/transpiler/super_transpiler.py` renders one `(name, value, type)` into six target languages (DPL, Kotlin, Rust, C, Go, Groovy) from a template table — promoted from `benchmarks/ez_micro_containers.py`'s original 5-language version.
 6. **Reinforced Archive (v5.1)**: `everlang/core/reinforced_archive.py`'s `ReinforcedArchive` wraps `EArchive` with two optional backend phases — `1-phase-cpp`'s `verify_particle` (native safety gate) and `4-archive-sql`'s `SqlArchive` (durable persistence) — reinforcing every boundary-marker write, repair, evolved vector, and transpiler rendering. See the repo-root `CLAUDE.md` for the full cross-phase contract.
-7. **Multi-Threaded & Multi-Core Benchmarks**: CPU stress, 300-snippet multi-language healing, 10,000-word lexer/parser/generator volume benchmark, financial feed, and LLM/agent loop scripts under `benchmarks/`.
+7. **DPL frontend**: `everlang/frontend/` reads DPL source text — `Supercodalexer` → `QuantificationUltraParser` → `MegaExecuter` — and runs it through `EParticle`/`PhaseEngine`, rendering every declaration to all transpiler languages. Grammar, outputs, and measured speed vs a textbook baseline are in `everlang/frontend/README.md`.
+8. **Multi-Threaded & Multi-Core Benchmarks**: CPU stress, 300-snippet multi-language healing, 10,000-word lexer/parser/generator volume benchmark, financial feed, and LLM/agent loop scripts under `benchmarks/`.
 
 ## Directory Structure
 ```
@@ -30,8 +31,9 @@ everlang_standalone/
 │   │   ├── dna_engine.py              # BioPhaseEngine (affinity 0-256, threshold 180)
 │   │   ├── vibe_compiler.py           # VibeChildCell, VibeDnaCompiler (pulse cycles)
 │   │   └── sequencer.py               # DnaLexer, DnaParser, DnaSequencer
-│   └── transpiler/                    # SuperTranspiler: 6-language syntax generator
-│       └── super_transpiler.py
+│   ├── transpiler/                    # SuperTranspiler: 6-language syntax generator
+│   │   └── super_transpiler.py
+│   └── frontend/                      # DPL lexer → parser → executor (+ textbook baseline, bench)
 ├── tests/                              # Unit test suite (~93 tests)
 │   ├── test_everlang_core.py           # Core tests incl. 100-thread race condition stress test
 │   ├── test_everlang_v5.py             # Biocomputing (v5) tests
