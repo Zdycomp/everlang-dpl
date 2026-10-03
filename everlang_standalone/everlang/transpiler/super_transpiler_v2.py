@@ -11,7 +11,7 @@ Enhancements over v1:
 7. Pre-flight checks (validate before rendering)
 8. Extended syntax distance (per-language weighting)
 """
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, List
 import re
 
 # Language-specific escape sequences for string literals

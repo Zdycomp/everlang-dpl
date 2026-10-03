@@ -203,7 +203,7 @@ class TestTranspilerV2SyntaxDistance(unittest.TestCase):
             'val y = "test"'  # Different var name, same length
         )
         # Comment difference should be weighted more than structural
-        self.assertGreater(dist1, 0)
+        self.assertGreater(dist1, dist2)
 
 
 class TestTranspilerV2Stats(unittest.TestCase):

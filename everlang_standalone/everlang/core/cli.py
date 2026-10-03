@@ -40,12 +40,12 @@ def test_collision(conf1: int, conf2: int) -> None:
         engine = PhaseEngine()
         result = engine.collide(p1, p2)
 
-        print(f"\nParticle Collision Test")
-        print(f"=" * 60)
+        print("\nParticle Collision Test")
+        print("=" * 60)
         print(f"P1: confidence={conf1}")
         print(f"P2: confidence={conf2}")
         print()
-        print(f"Result:")
+        print("Result:")
         print(f"  Name:       {result.name}")
         print(f"  Confidence: {result.confidence}")
         print(f"  Transition: {result.transition_rule if hasattr(result, 'transition_rule') else 'N/A'}")
@@ -68,8 +68,8 @@ def test_repair(error_distance: int) -> None:
         # Simulate repair
         repaired = archive.emulate_repair(particle, error_distance)
 
-        print(f"\nSelf-Healing Repair Test")
-        print(f"=" * 60)
+        print("\nSelf-Healing Repair Test")
+        print("=" * 60)
         print(f"Original:      confidence={particle.confidence}")
         print(f"Error distance: {error_distance}")
         print(f"Repaired:      confidence={repaired.confidence}")

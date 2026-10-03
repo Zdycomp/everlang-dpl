@@ -6,10 +6,9 @@ Uses k-mer matching to find candidate positions, then scores matches based on:
 - Match density (matches per reference region)
 - EParticle confidence (0-256 scale based on match quality)
 """
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from dataclasses import dataclass
 from .kmer_index import KmerIndex
-from ..core.particle import EParticle
 
 
 @dataclass

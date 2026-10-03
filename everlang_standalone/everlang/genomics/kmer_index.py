@@ -8,8 +8,7 @@ distributed genome indexing.
 K = 11 is optimal for human genome: ~16M unique 11-mers per billion bp,
 collision-free hashing, fast lookup.
 """
-from typing import Dict, List, Set, Tuple, Optional
-import struct
+from typing import Dict, List
 
 KMER_SIZE = 11  # Optimal for human genome
 BASE_BITS = 2   # A=00, T=01, C=10, G=11 (quaternary encoding)

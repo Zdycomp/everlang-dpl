@@ -7,7 +7,6 @@ This achieves 3-5x throughput improvement by:
 3. Vectorizing GC counting
 4. Minimizing memory allocations
 """
-from typing import Dict, List, Optional, Tuple
 
 VALID_BASES = frozenset("ATCG")
 _COMPLEMENT = {"A": "T", "T": "A", "C": "G", "G": "C"}
