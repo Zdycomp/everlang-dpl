@@ -14,16 +14,11 @@ Each tool is production-ready, fully tested, and optimized for performance.
 
 ## Installation
 
-Install individual tools or the complete suite:
+One distribution installs all three command-line tools (`everlang-dna`,
+`everlang-transpile`, `everlang-particles`):
 
 ```bash
-# Install all three tools
 pip install everlang
-
-# Or install individually
-pip install everlang-dna
-pip install everlang-transpiler
-pip install everlang-particles
 ```
 
 ## Quick Start

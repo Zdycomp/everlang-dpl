@@ -43,7 +43,7 @@ make asan     # bin/verify_particle_asan, -fsanitize=address,undefined
 
 **SQL** (`4-archive-sql/`):
 ```bash
-cd /home/user/everlang-dpl && python3 -m unittest discover -s 4-archive-sql/tests -t .
+python3 -m unittest discover -s 4-archive-sql/tests -t .   # from the repo root
 ```
 
 **Java** (`5-runtime-java/`):

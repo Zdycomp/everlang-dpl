@@ -5,7 +5,7 @@ A production-ready probabilistic state machine based on the EParticle confidence
 ## Installation
 
 ```bash
-pip install everlang-particles
+pip install everlang   # provides the everlang-particles command
 ```
 
 ## Quick Start
@@ -109,18 +109,18 @@ from everlang_standalone.everlang.core.archive import EArchive
 p1 = EParticle("data1", 220)
 p2 = EParticle("data2", 190)
 
-# Collide them
-engine = PhaseEngine()
-result = engine.collide(p1, p2)
-print(f"Collision result: confidence={result.confidence}, value={result.value}")
+# Collide them: collide() returns a dict with outcome, reason and the resulting particle
+result = PhaseEngine.collide(p1, p2)
+fused = result["particle"]
+print(f"{result['outcome']}: confidence={fused.confidence}, value={fused.value}")
 
-# Repair on error
+# Repair on error: takes a failing signature and an error distance (1-3)
 archive = EArchive()
-repaired = archive.emulate_repair(result, error_distance=1)
+repaired = archive.emulate_repair("ParseError_01", error_distance=1)
 print(f"Repaired: confidence={repaired.confidence}")
 
-# Log to archive
-archive.log_boundary_marker("collision_test", p1.value, p1.confidence)
+# Log to archive: (context, particle, reason)
+archive.log_boundary_marker("collision_test", fused, result["reason"])
 ```
 
 ## Command Reference

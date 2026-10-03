@@ -5,7 +5,7 @@ Fast, production-ready DNA sequence analysis with lexer/parser and confidence-ba
 ## Installation
 
 ```bash
-pip install everlang-dna
+pip install everlang   # provides the everlang-dna command
 ```
 
 ## Quick Start

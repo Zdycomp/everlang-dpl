@@ -45,10 +45,12 @@ def test_collision(conf1: int, conf2: int) -> None:
         print(f"P1: confidence={conf1}")
         print(f"P2: confidence={conf2}")
         print()
+        particle = result["particle"]
         print("Result:")
-        print(f"  Name:       {result.name}")
-        print(f"  Confidence: {result.confidence}")
-        print(f"  Transition: {result.transition_rule if hasattr(result, 'transition_rule') else 'N/A'}")
+        print(f"  Outcome:    {result['outcome']}")
+        print(f"  Value:      {particle.value}")
+        print(f"  Confidence: {particle.confidence}")
+        print(f"  Reason:     {result['reason']}")
         print()
     except Exception as e:
         print(f"Error in collision: {e}", file=sys.stderr)
@@ -62,11 +64,11 @@ def test_repair(error_distance: int) -> None:
             print("Error: error_distance must be 0-3", file=sys.stderr)
             sys.exit(1)
 
-        archive = EArchive()
         particle = EParticle("value", 50)
-
-        # Simulate repair
-        repaired = archive.emulate_repair(particle, error_distance)
+        if error_distance == 0:
+            repaired = particle
+        else:
+            repaired = EArchive().emulate_repair("cli_repair", error_distance)
 
         print("\nSelf-Healing Repair Test")
         print("=" * 60)

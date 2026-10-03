@@ -56,6 +56,11 @@ Repository = "https://github.com/Zdycomp/everlang-dpl.git"
 Documentation = "https://github.com/Zdycomp/everlang-dpl/tree/main/everlang_standalone"
 Issues = "https://github.com/Zdycomp/everlang-dpl/issues"
 
+[project.scripts]
+everlang-dna = "everlang_standalone.everlang.biocomputing.cli:main_dna"
+everlang-transpile = "everlang_standalone.everlang.transpiler.cli:main_transpile"
+everlang-particles = "everlang_standalone.everlang.core.cli:main_particles"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",

@@ -8,14 +8,10 @@ from .containers.corpus import EvolveArchiveCorpusContainer
 class EZPipeline:
     """The 4-Stage Pipeline: EXAMINE -> EVALUATE -> EXECUTE -> ARCHIVE
 
-    Performance characteristics:
-    - Baseline (CPython): ~18-22k sequences/sec through sequencer
-    - PyPy: ~90-180k sequences/sec (5-10x faster, drop-in replacement)
-    - Ultra-fast mode (UltraFastDnaSequencer): ~36k sequences/sec with tuple API
-
-    The SyntaxMutatorContainer uses the optimized DnaSequencer internally,
-    which features pre-allocated lists, single-pass GC counting, and lazy
-    error collection for maximum throughput.
+    EXAMINE is SyntaxMutatorContainer, which classifies a code snippet by its
+    markers (ERROR/INVALID -> repair, BAD_POINTER/CRASH -> quarantine,
+    otherwise normalized) and attaches the language's syntax offset. It does
+    not run DnaSequencer.
     """
     def __init__(self):
         self.archive = EArchive()

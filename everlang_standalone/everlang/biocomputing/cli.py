@@ -10,59 +10,64 @@ Usage:
 import sys
 import argparse
 from typing import Optional
-from .sequencer import DnaLexer, DnaParser
+from .sequencer import DnaLexer, DnaParser, DnaSyntaxError
 
 
-def analyze_sequence(sequence: str) -> None:
-    """Analyze a DNA sequence."""
+def analyze_sequence(sequence: str) -> int:
+    """Analyze a DNA sequence. Returns the process exit status."""
+    lexer = DnaLexer(sequence)
+    tokens = lexer.tokenize()
+    parser = DnaParser(tokens)
     try:
-        lexer = DnaLexer(sequence)
-        tokens = lexer.tokenize()
-
-        parser = DnaParser(tokens)
-        codons = parser.parse()
-
-        print("\nDNA Sequence Analysis")
-        print("=" * 60)
-        print(f"Input:            {sequence}")
-        print(f"Length:           {len(sequence)} bp")
-        print(f"Valid tokens:     {sum(1 for t in tokens if t.type != 'ERROR')}")
-        print(f"Error tokens:     {sum(1 for t in tokens if t.type == 'ERROR')}")
-        print(f"Codons detected:  {len(codons)}")
-
-        if codons:
-            print("\nFirst 5 codons:")
-            for i, codon in enumerate(codons[:5]):
-                print(f"  [{i}] {codon}")
-
-    except Exception as e:
+        pairs = parser.parse()
+    except DnaSyntaxError as e:
         print(f"Error analyzing sequence: {e}", file=sys.stderr)
-        sys.exit(1)
+        return 1
+    codons = parser.codons()
+    valid_count = sum(1 for t in tokens if t.valid)
+
+    print("\nDNA Sequence Analysis")
+    print("=" * 60)
+    print(f"Input:            {sequence}")
+    print(f"Length:           {len(lexer.cleaned_sequence)} bp")
+    print(f"Valid tokens:     {valid_count}")
+    print(f"Error tokens:     {len(tokens) - valid_count}")
+    print(f"Base pairs:       {len(pairs)}")
+    print(f"Codons detected:  {len(codons)}")
+
+    if codons:
+        print("\nFirst 5 codons:")
+        for i, codon in enumerate(codons[:5]):
+            print(f"  [{i}] {''.join(p.base for p in codon.pairs)} @ {codon.start_index}")
+    return 0
 
 
-def validate_sequence(sequence: str) -> None:
-    """Validate a DNA sequence."""
-    valid_bases = set("ATCG")
-    invalid_chars = [c for c in sequence if c not in valid_bases]
+def validate_sequence(sequence: str) -> bool:
+    """Validate a DNA sequence using the same normalization as DnaLexer
+    (uppercase, whitespace ignored). Returns True if it is valid, non-empty DNA."""
+    lexer = DnaLexer(sequence)
+    lexer.tokenize()
+    cleaned = lexer.cleaned_sequence
+    errors = lexer.errors()
+    valid = bool(cleaned) and not errors
 
     print("\nDNA Sequence Validation")
     print("=" * 60)
-    print(f"Sequence:      {sequence}")
-    print(f"Length:        {len(sequence)} bp")
-    validity = "✓" if not invalid_chars else "✗"
-    print(f"Valid:         {validity}")
+    print(f"Sequence:      {cleaned}")
+    print(f"Length:        {len(cleaned)} bp")
+    print(f"Valid:         {'✓' if valid else '✗'}")
 
-    if invalid_chars:
-        unique_invalid = set(invalid_chars)
-        print(f"Invalid chars: {', '.join(sorted(unique_invalid))}")
-        print(f"Positions:     {', '.join(str(i) for i, c in enumerate(sequence) if c in unique_invalid)}")
+    if not cleaned:
+        print("Empty sequence")
+    elif errors:
+        print(f"Invalid chars: {', '.join(sorted({t.base for t in errors}))}")
+        print(f"Positions:     {', '.join(str(t.index) for t in errors)}")
     else:
-        # Count base composition
-        composition = {base: sequence.count(base) for base in "ATCG"}
         print("\nComposition:")
-        for base, count in sorted(composition.items()):
-            pct = (count / len(sequence) * 100) if sequence else 0
-            print(f"  {base}: {count:>5} ({pct:>5.1f}%)")
+        for base in sorted("ATCG"):
+            count = cleaned.count(base)
+            print(f"  {base}: {count:>5} ({count / len(cleaned) * 100:>5.1f}%)")
+    return valid
 
 
 def show_stats() -> None:
@@ -110,9 +115,9 @@ Examples:
     args = parser.parse_args()
 
     if args.command == "analyze":
-        analyze_sequence(args.sequence)
+        return analyze_sequence(args.sequence)
     elif args.command == "validate":
-        validate_sequence(args.sequence)
+        return 0 if validate_sequence(args.sequence) else 1
     elif args.command == "stats":
         show_stats()
     else:

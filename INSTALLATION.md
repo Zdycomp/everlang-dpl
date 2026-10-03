@@ -26,13 +26,8 @@ Once published to PyPI, install with:
 pip install everlang
 ```
 
-Or individual tools:
-
-```bash
-pip install everlang-dna          # DNA analysis: ~39k seqs/sec
-pip install everlang-transpiler   # Code generation: ~919k renders/sec
-pip install everlang-particles    # Probabilistic state machine
-```
+That one distribution provides all three commands: `everlang-dna`,
+`everlang-transpile` and `everlang-particles`.
 
 ## CLI Tools
 
