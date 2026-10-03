@@ -19,8 +19,12 @@ STRING   := '"' { any char except '"', '\', newline  |  '\"'  |  '\\' } '"'
 comment  := '#' to end of line            (ignored)
 ```
 
-Spaces and tabs separate tokens; `\r\n` is read as `\n`. A declaration line is
-byte-identical to `SuperTranspiler`'s `DPL` rendering, so DPL output round-trips.
+Spaces and tabs separate tokens; `\r\n` is read as `\n`. A declaration line has
+the same shape as `SuperTranspiler`'s `DPL` rendering, so DPL output reads back
+in — **except when the value contains `"` or `\`**. The parser decodes `\"` and
+`\\`, but the `DPL` template inserts the value without escaping it. Escaping
+there would change a built-in template, which `5-runtime-java`'s auditor also
+hardcodes, so it isn't done here.
 
 ## Semantics
 

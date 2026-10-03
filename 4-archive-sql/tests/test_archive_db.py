@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import sqlite3
 import sys
@@ -8,6 +9,15 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from archive_db import SqlArchive
+
+
+def _save_many(db_path, worker):
+    """Runs in a separate process: separate connections race for versions."""
+    archive = SqlArchive(db_path)
+    try:
+        return [archive.save_custom_template("TOML", f"w{worker}_{i} {{name}} {{val}}") for i in range(40)]
+    finally:
+        archive.close()
 
 
 class TestSqlArchiveSchema(unittest.TestCase):
@@ -175,17 +185,17 @@ class TestSqlArchiveCustomTemplates(unittest.TestCase):
 
     def test_delete_retires_but_keeps_history(self):
         self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
-        self.assertTrue(self.archive.delete_custom_template("SWIFT"))
+        self.assertTrue(self.archive.retire_custom_template("SWIFT"))
         self.assertEqual(self.archive.load_custom_templates(), {})
         self.assertEqual(self.archive.load_template_history("SWIFT"), [(1, 'let {name} = "{val}"', False)])
 
     def test_reregister_after_delete_continues_numbering(self):
         self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
-        self.archive.delete_custom_template("SWIFT")
+        self.archive.retire_custom_template("SWIFT")
         self.assertEqual(self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"'), 2)
 
     def test_delete_nonexistent_returns_false(self):
-        self.assertFalse(self.archive.delete_custom_template("NONEXISTENT"))
+        self.assertFalse(self.archive.retire_custom_template("NONEXISTENT"))
 
     def test_load_empty_returns_empty_dict(self):
         self.assertEqual(self.archive.load_custom_templates(), {})
@@ -228,6 +238,29 @@ class TestSqlArchiveMigration(unittest.TestCase):
         self.assertIn("template_version", cols)
         self.assertEqual(archive._conn.execute("SELECT COUNT(*) FROM transpilations").fetchone()[0], 1)
         archive.record_transpilation("y", "v", "T", 200, "SWIFT", "let y", template_version=1)
+
+    def test_legacy_custom_templates_become_version_one(self):
+        db_path = os.path.join(tempfile.mkdtemp(), "legacy.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE custom_templates (language TEXT PRIMARY KEY, template TEXT NOT NULL, created_at TEXT)")
+        conn.execute("INSERT INTO custom_templates (language, template) VALUES ('TOML', '{name} = \"{val}\"')")
+        conn.commit()
+        conn.close()
+
+        for _ in range(2):  # reopening must not duplicate the retrofit
+            archive = SqlArchive(db_path)
+            self.assertEqual(archive.load_custom_templates(), {"TOML": (1, '{name} = "{val}"')})
+            self.assertEqual(len(archive.load_template_history("TOML")), 1)
+            archive.close()
+
+    def test_concurrent_processes_get_distinct_versions(self):
+        db_path = os.path.join(tempfile.mkdtemp(), "race.db")
+        SqlArchive(db_path).close()
+        ctx = multiprocessing.get_context("spawn")
+        with ctx.Pool(4) as pool:
+            results = pool.starmap(_save_many, [(db_path, i) for i in range(4)])
+        versions = [v for batch in results for v in batch]
+        self.assertEqual(sorted(versions), list(range(1, 4 * 40 + 1)))
 
     def test_reopening_migrated_db_is_idempotent(self):
         db_path = os.path.join(tempfile.mkdtemp(), "t.db")

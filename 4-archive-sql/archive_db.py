@@ -8,6 +8,7 @@ survive process restarts.
 
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 _SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
@@ -33,6 +34,17 @@ class SqlArchive:
             self._conn.execute(
                 "ALTER TABLE transpilations ADD COLUMN template_version INTEGER "
                 "CHECK (template_version IS NULL OR template_version >= 1)"
+            )
+        # The pre-versioning custom_templates table (one row per language) becomes
+        # version 1 of each language not already versioned; the old table is left as-is.
+        legacy = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='custom_templates'"
+        ).fetchone()
+        if legacy:
+            self._conn.execute(
+                "INSERT INTO custom_template_versions (language, version, template, active) "
+                "SELECT language, 1, template, 1 FROM custom_templates "
+                "WHERE language NOT IN (SELECT language FROM custom_template_versions)"
             )
 
     def record_boundary_marker(self, context: str, value, confidence: int, reason: str) -> int:
@@ -97,41 +109,52 @@ class SqlArchive:
         version number. Re-saving the current active template is a no-op that
         returns the existing version; prior versions are kept, never overwritten."""
         language, template = str(language), str(template)
-        with self._lock:
-            with self._conn:
-                active = self._conn.execute(
-                    "SELECT version, template FROM custom_template_versions "
-                    "WHERE language=? AND active=1",
-                    (language,),
-                ).fetchone()
-                if active is not None and active[1] == template:
-                    return active[0]
-                next_version = self._conn.execute(
-                    "SELECT COALESCE(MAX(version), 0) + 1 FROM custom_template_versions "
-                    "WHERE language=?",
-                    (language,),
-                ).fetchone()[0]
-                self._conn.execute(
-                    "UPDATE custom_template_versions SET active=0 WHERE language=? AND active=1",
-                    (language,),
-                )
-                self._conn.execute(
-                    "INSERT INTO custom_template_versions (language, version, template, active) "
-                    "VALUES (?, ?, ?, 1)",
-                    (language, next_version, template),
-                )
-                return next_version
+        with self._lock, self._write_transaction():
+            active = self._conn.execute(
+                "SELECT version, template FROM custom_template_versions "
+                "WHERE language=? AND active=1",
+                (language,),
+            ).fetchone()
+            if active is not None and active[1] == template:
+                return active[0]
+            next_version = self._conn.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM custom_template_versions "
+                "WHERE language=?",
+                (language,),
+            ).fetchone()[0]
+            self._conn.execute(
+                "UPDATE custom_template_versions SET active=0 WHERE language=? AND active=1",
+                (language,),
+            )
+            self._conn.execute(
+                "INSERT INTO custom_template_versions (language, version, template, active) "
+                "VALUES (?, ?, ?, 1)",
+                (language, next_version, template),
+            )
+            return next_version
 
-    def delete_custom_template(self, language: str) -> bool:
+    def retire_custom_template(self, language: str) -> bool:
         """Retires the active version (history is kept so archived rows stay
         auditable). Returns True if an active version was retired."""
-        with self._lock:
-            with self._conn:
-                cur = self._conn.execute(
-                    "UPDATE custom_template_versions SET active=0 WHERE language=? AND active=1",
-                    (str(language),),
-                )
-                return cur.rowcount > 0
+        with self._lock, self._write_transaction():
+            cur = self._conn.execute(
+                "UPDATE custom_template_versions SET active=0 WHERE language=? AND active=1",
+                (str(language),),
+            )
+            return cur.rowcount > 0
+
+    @contextmanager
+    def _write_transaction(self):
+        # BEGIN IMMEDIATE takes SQLite's RESERVED lock before the version is read,
+        # so two processes can't both compute the same next version. (Python's
+        # implicit BEGIN only arrives at the first write, after the read.)
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self._conn.rollback()
+            raise
+        self._conn.commit()
 
     def load_custom_templates(self):
         """Returns active templates as {language: (version, template)}."""
@@ -169,7 +192,7 @@ def record_kmer_index(db_conn, index_id, kmer_size, unique_kmers, total_kmers,
               shard_id, shard_count, 1 if verified_cpp else 0))
         db_conn.commit()
         return cursor.lastrowid
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -187,7 +210,7 @@ def record_sequence_query(db_conn, index_id, query_sequence, top_k, min_coverage
               match_count, elapsed_ms))
         db_conn.commit()
         return cursor.lastrowid
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -203,5 +226,5 @@ def record_sequence_match(db_conn, query_id, reference_position, kmer_matches,
         """, (query_id, reference_position, kmer_matches, coverage, confidence, match_strength))
         db_conn.commit()
         return cursor.lastrowid
-    except Exception as e:
+    except Exception:
         return None

@@ -132,7 +132,7 @@ class SqlArchive:
         """Makes `template` the active version and returns its version number;
         re-saving the active template returns the existing version."""
 
-    def delete_custom_template(self, language: str) -> bool:
+    def retire_custom_template(self, language: str) -> bool:
         """Retires the active version (history kept); True if one was active."""
 
     def load_custom_templates(self) -> dict:

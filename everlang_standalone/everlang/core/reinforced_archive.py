@@ -272,7 +272,7 @@ class ReinforcedArchive:
                 return False
             self._template_versions.pop(lang_upper, None)
             if self.sql_available:
-                self._sql_write(self._sql.delete_custom_template, language=lang_upper)
+                self._sql_write(self._sql.retire_custom_template, language=lang_upper)
             return True
 
     @property
