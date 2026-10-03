@@ -91,6 +91,25 @@ class TranspileAuditorTest {
     }
 
     @Test
+    void dplNewlineAndCarriageReturnAreEscaped() {
+        TranspileRow row = new TranspileRow(23L, "x", "a\nb\rc", "T", 100, "DPL",
+                "particle x : E<T> = \"a\\nb\\rc\" @ confidence(100)");
+
+        assertEquals(1, TranspileAuditor.audit(List.of(row)).verifiedCount());
+    }
+
+    @Test
+    void nullColumnIsMismatchNotCrash() {
+        TranspileRow nullLanguage = new TranspileRow(24L, "x", "v", "T", 100, null, "anything");
+        TranspileRow nullValue = new TranspileRow(25L, "x", null, "T", 100, "DPL", "anything");
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(nullLanguage, nullValue));
+
+        assertEquals(2, result.mismatchedCount());
+        assertEquals("<null column in row 24>", result.mismatches().get(0).expected());
+    }
+
+    @Test
     void unescapedDplRowWrittenBeforeEscapingIsFlagged() {
         TranspileRow row = new TranspileRow(21L, "x", "a\"b", "T", 100, "DPL",
                 "particle x : E<T> = \"a\"b\" @ confidence(100)");

@@ -44,7 +44,7 @@ def bad_string(closed: bool, line: int, col: int) -> Diagnostic:
         return Diagnostic("lex", "error", line, col, "unterminated string",
                           "close the string with '\"' before the end of the line")
     return Diagnostic("lex", "error", line, col, "unknown escape sequence in string",
-                      "only \\\" and \\\\ are allowed inside strings")
+                      "only \\\", \\\\, \\n and \\r are allowed inside strings")
 
 
 def already_bound(name: str, line: int) -> Diagnostic:

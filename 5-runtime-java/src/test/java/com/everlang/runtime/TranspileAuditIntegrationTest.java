@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TranspileAuditIntegrationTest {
@@ -79,6 +80,14 @@ class TranspileAuditIntegrationTest {
 
         assertNull(rows.get(0).templateVersion());
         assertTrue(TranspileAudit.loadCustomTemplates(conn).isEmpty());
+    }
+
+    @Test
+    void unreadableTemplateTableRaisesInsteadOfFalseMismatches() throws SQLException {
+        try (Statement st = conn.createStatement()) {
+            st.execute("CREATE TABLE custom_template_versions (language TEXT)");  // missing version/template
+        }
+        assertThrows(SQLException.class, () -> TranspileAudit.loadCustomTemplates(conn));
     }
 
     @Test

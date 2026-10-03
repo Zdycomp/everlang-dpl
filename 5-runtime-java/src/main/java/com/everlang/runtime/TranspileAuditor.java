@@ -24,7 +24,7 @@ import java.util.Map;
  * For a row whose {@code targetLanguage} is one of the six above, the matching
  * template is re-rendered from the row's own inputs and compared byte-for-byte
  * to {@code renderedCode}; a mismatch is any difference. The DPL value is
- * escaped first ({@code \} → {@code \\}, {@code "} → {@code \"}), as Python's
+ * escaped first (backslash, double quote, newline, carriage return), as Python's
  * {@code VALUE_ESCAPES["DPL"]} does.
  *
  * <p>A row stamped with a {@code templateVersion} is a custom-language row: it
@@ -78,6 +78,10 @@ public final class TranspileAuditor {
         String typeSpec = row.typeSpec();
         int conf = row.confidence();
 
+        if (row.targetLanguage() == null || name == null || val == null || typeSpec == null) {
+            // Corrupted row: report it as a mismatch rather than crash the whole audit.
+            return "<null column in row " + row.id() + ">";
+        }
         String builtin = switch (row.targetLanguage()) {
             case "DPL" -> "particle " + name + " : E<" + typeSpec + "> = \"" + escapeDplValue(val) + "\" @ confidence(" + conf + ")";
             case "KOTLIN" -> "val " + name + ": " + typeSpec + "? = \"" + val + "\"";
@@ -107,10 +111,11 @@ public final class TranspileAuditor {
 
     /**
      * Mirrors {@code super_transpiler.py :: escape_dpl_value}: backslash first,
-     * then double quote, so a DPL rendering reads back through the Python frontend.
+     * then double quote, newline and carriage return, so a DPL rendering reads back through the Python frontend.
      */
     static String escapeDplValue(String val) {
-        return val.replace("\\", "\\\\").replace("\"", "\\\"");
+        return val.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r");
     }
 
     /**

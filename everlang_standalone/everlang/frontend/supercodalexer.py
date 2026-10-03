@@ -20,7 +20,7 @@ _WORD_END = r'(?![A-Za-z0-9_])'
 _NAME = r'[A-Za-z_][A-Za-z0-9_]*'
 # Unrolled-loop forms of "(?:[^"\\\n]|\\["\\])*" and "(?:[^"\\\n]|\\.)*": same
 # language and greedy extent, without an alternation per character.
-_STRING = r'"[^"\\\n]*(?:\\["\\][^"\\\n]*)*"'
+_STRING = r'"[^"\\\n]*(?:\\["\\nr][^"\\\n]*)*"'
 _BADSTR = r'"[^"\\\n]*(?:\\.[^"\\\n]*)*"?'
 _LINE_END = r'[ \t]*(?:#[^\n]*)?(\n|\Z)'
 _DECL_LINE = re.compile(
@@ -72,7 +72,12 @@ _MASTER = re.compile(
     r'|(?P<ERR>[^ \t\n])'  # not `.`: backtracking would hand ERR a trailing space at end of input
     r')'
 )
-_UNESCAPE = re.compile(r'\\(["\\])')
+_UNESCAPE = re.compile(r'\\(["\\nr])')
+_ESCAPED = {'"': '"', "\\": "\\", "n": "\n", "r": "\r"}
+
+
+def _unescape(text: str) -> str:
+    return _UNESCAPE.sub(lambda m: _ESCAPED[m.group(1)], text)
 
 
 class Supercodalexer:
@@ -92,7 +97,7 @@ class Supercodalexer:
                 if name not in KEYWORDS and type_spec not in KEYWORDS:
                     value = raw[1:-1]
                     if "\\" in value:
-                        value = _UNESCAPE.sub(r"\1", value)
+                        value = _unescape(value)
                     colon = 11 + len(name)
                     gt = colon + 4 + len(type_spec)
                     at = gt + 5 + len(raw)
@@ -125,7 +130,7 @@ class Supercodalexer:
                 if name not in KEYWORDS and type_spec not in KEYWORDS:
                     value = value[1:-1]
                     if "\\" in value:
-                        value = _UNESCAPE.sub(r"\1", value)
+                        value = _unescape(value)
                     mark(len(toks))
                     r = m.regs
                     texts = ("particle", name, ":", "E", "<", type_spec, ">", "=",
@@ -188,7 +193,7 @@ class Supercodalexer:
             elif kind == "STRING":
                 text = m.group(kind)[1:-1]
                 if "\\" in text:
-                    text = _UNESCAPE.sub(r"\1", text)
+                    text = _unescape(text)
                 append((STRING, text, line, col))
             elif kind == "INT":
                 append((INT, m.group(kind), line, col))

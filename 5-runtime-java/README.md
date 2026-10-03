@@ -95,9 +95,9 @@ everlang_standalone/everlang/transpiler/super_transpiler.py :: LANGUAGE_TEMPLATE
 Templates (`{name}`/`{val}`/`{type_spec}`/`{conf}` substituted from the row):
 
 - `DPL`: `particle {name} : E<{type_spec}> = "{val}" @ confidence({conf})`, with
-  `\` → `\\` then `"` → `\"` applied to `{val}` first (Python's `escape_dpl_value`).
-  DPL rows archived before this escaping existed, with a `"` or `\` in the
-  value, now report as mismatches.
+  backslash, `"`, newline and carriage return escaped in `{val}` first, backslash
+  first (Python's `escape_dpl_value`). DPL rows archived before this escaping
+  existed, with any of those characters in the value, now report as mismatches.
 - `KOTLIN`: `val {name}: {type_spec}? = "{val}"`
 - `RUST`: `let {name}: Option<{type_spec}> = Some("{val}".to_string());`
 - `C_CLANG`: `const char* {name} = "{val}"; // Unchecked pointer`

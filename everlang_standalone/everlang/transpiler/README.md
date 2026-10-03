@@ -5,7 +5,7 @@ Generate equivalent code in 6 languages from a single DPL particle description. 
 ## Installation
 
 ```bash
-pip install everlang-transpiler
+pip install everlang   # provides the everlang-transpile command
 ```
 
 ## Quick Start
@@ -67,7 +67,7 @@ for lang, code in result.items():
 The transpiler adjusts template variants based on confidence (0-256):
 
 - **0-50 (Low)**: Defensive mode, wrapped in try-catch, quarantined values
-- **51-200 (Medium)**: Standard templates with normal safety
+- **51-199 (Medium)**: Standard templates with normal safety
 - **200-256 (High)**: Optimistic mode, unchecked/trusted rendering
 
 ## Command Reference

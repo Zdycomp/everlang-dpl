@@ -70,9 +70,11 @@ public final class TranspileAudit {
      * Reads every version — active and retired — from
      * {@code custom_template_versions} as language → version → template.
      * Retired versions are required to audit rows archived before a template
-     * was edited. Returns an empty map if the table does not exist (older DBs).
+     * was edited. Returns an empty map if the table does not exist (older DBs);
+     * any other read failure propagates, so {@code main} exits 2 rather than
+     * reporting every versioned row as a false mismatch.
      */
-    static Map<String, Map<Integer, String>> loadCustomTemplates(Connection conn) {
+    static Map<String, Map<Integer, String>> loadCustomTemplates(Connection conn) throws SQLException {
         Map<String, Map<Integer, String>> templates = new HashMap<>();
         if (!hasTable(conn, "custom_template_versions")) {
             return templates;
@@ -84,8 +86,6 @@ public final class TranspileAudit {
                 templates.computeIfAbsent(rs.getString("language"), k -> new HashMap<>())
                         .put(rs.getInt("version"), rs.getString("template"));
             }
-        } catch (SQLException e) {
-            System.err.println("WARN: could not read custom_template_versions: " + e.getMessage());
         }
         return templates;
     }
@@ -125,15 +125,13 @@ public final class TranspileAudit {
         return rows;
     }
 
-    private static boolean hasTable(Connection conn, String table) {
+    private static boolean hasTable(Connection conn, String table) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")) {
             ps.setString(1, table);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
-        } catch (SQLException e) {
-            return false;
         }
     }
 

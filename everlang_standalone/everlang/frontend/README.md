@@ -15,14 +15,14 @@ collision   := "collide" IDENT IDENT [ "->" IDENT ]
 
 IDENT    := [A-Za-z_][A-Za-z0-9_]*        (except the keywords particle, collide, confidence)
 INT      := [0-9]+
-STRING   := '"' { any char except '"', '\', newline  |  '\"'  |  '\\' } '"'
+STRING   := '"' { any char except '"', '\', newline  |  '\"'  |  '\\'  |  '\n'  |  '\r' } '"'
 comment  := '#' to end of line            (ignored)
 ```
 
 Spaces and tabs separate tokens; `\r\n` is read as `\n`. A declaration line has
 the same shape as `SuperTranspiler`'s `DPL` rendering, and `SuperTranspiler`
-escapes `\` and `"` in DPL values (`escape_dpl_value`), so any DPL rendering
-reads back to the same value and renders identically again.
+escapes `\`, `"`, newline and carriage return in DPL values (`escape_dpl_value`),
+so any DPL rendering reads back to the same value and renders identically again.
 
 ## Semantics
 

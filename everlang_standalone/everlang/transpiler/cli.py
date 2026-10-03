@@ -32,7 +32,7 @@ def render_all_languages(name: str, value: str, type_spec: str, conf: int) -> No
     transpiler = SuperTranspilerV2()
     result = transpiler.transpile(name, value, type_spec, conf)
 
-    print(f"Particle: {name} : {type_spec} = \"{value}\" @ confidence({conf})")
+    print(f"Particle: {name} : {type_spec} = {value!r} @ confidence({conf})")
     print("=" * 70)
     print()
 

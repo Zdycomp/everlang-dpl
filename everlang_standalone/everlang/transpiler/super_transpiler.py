@@ -34,10 +34,12 @@ LANGUAGE_TEMPLATES: Dict[str, str] = {
 
 
 def escape_dpl_value(val) -> str:
-    """Escapes `\\` and `"` so a DPL rendering reads back through
+    """Escapes `\\`, `"`, newline and carriage return (backslash first, so
+    the escapes it adds are not doubled) so a DPL rendering reads back through
     everlang.frontend unchanged. 5-runtime-java's TranspileAuditor applies the
     same rule to its own DPL template."""
-    return str(val).replace("\\", "\\\\").replace('"', '\\"')
+    return (str(val).replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\r", "\\r"))
 
 
 # Applied to {val} before substitution, for the named language only.

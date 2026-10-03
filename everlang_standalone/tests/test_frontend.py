@@ -134,7 +134,7 @@ class TestMegaExecuter(unittest.TestCase):
 
     def test_dpl_rendering_with_quotes_and_backslashes_reads_back_identically(self):
         rng = random.Random(99)
-        alphabet = 'ab "\\\\#@()<>:= \t'
+        alphabet = 'ab "\\\\#@()<>:= \t\n\r'
         for _ in range(300):
             value = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 12)))
             dpl = SuperTranspiler().transpile("q", value, "T", 7)["DPL"]
@@ -142,6 +142,20 @@ class TestMegaExecuter(unittest.TestCase):
             self.assertEqual(back.diagnostics, [], repr(value))
             self.assertEqual(back.execution.declarations[0].value, value)
             self.assertEqual(back.execution.declarations[0].renderings["DPL"], dpl)
+
+    def test_newline_and_carriage_return_escapes_decode(self):
+        result = self.run_src('particle q : E<T> = "a\\nb\\rc\\\\n" @ confidence(1)')
+        self.assertEqual(result.diagnostics, [])
+        self.assertEqual(result.execution.declarations[0].value, "a\nb\rc\\n")
+
+    def test_v2_dpl_output_reads_back_at_every_confidence_tier(self):
+        from everlang.transpiler.super_transpiler_v2 import SuperTranspilerV2
+        value = 'say "hi"\\path\nnext'
+        for conf in (10, 120, 230):
+            dpl = SuperTranspilerV2().transpile("q", value, "str", conf)["DPL"]
+            back = self.run_src(dpl)
+            self.assertEqual(back.diagnostics, [], (conf, dpl))
+            self.assertEqual(back.execution.declarations[0].value, value)
 
     def test_custom_language_renderings_included(self):
         transpiler = SuperTranspiler()

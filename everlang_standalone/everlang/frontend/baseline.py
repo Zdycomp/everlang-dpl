@@ -18,6 +18,7 @@ from .results import (
 _IDENT_START = frozenset(string.ascii_letters + "_")
 _IDENT_CHARS = frozenset(string.ascii_letters + string.digits + "_")
 _DIGITS = frozenset(string.digits)
+_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "r": "\r"}
 
 
 class BaselineLexer:
@@ -84,8 +85,8 @@ class BaselineLexer:
                 if j + 1 >= n or src[j + 1] == "\n":
                     break
                 escaped = src[j + 1]
-                if escaped == '"' or escaped == "\\":
-                    chars.append(escaped)
+                if escaped in _ESCAPES:
+                    chars.append(_ESCAPES[escaped])
                 else:
                     bad = True
                 j += 2

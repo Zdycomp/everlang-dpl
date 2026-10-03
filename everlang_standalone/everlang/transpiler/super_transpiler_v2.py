@@ -15,13 +15,15 @@ from typing import Dict, List
 import re
 
 # Language-specific escape sequences for string literals
+# Backslash is listed first: rules apply in order, and escaping it after `"`
+# would double the backslash that `"` -> `\"` just inserted.
 ESCAPE_RULES: Dict[str, Dict[str, str]] = {
-    "DPL": {"\"": "\\\"", "\n": "\\n", "\r": "\\r", "\\": "\\\\"},
-    "KOTLIN": {"\"": "\\\"", "\n": "\\n", "\r": "\\r", "\\": "\\\\"},
-    "RUST": {"\"": "\\\"", "\n": "\\n", "\r": "\\r", "\\": "\\\\"},
-    "C_CLANG": {"\"": "\\\"", "\n": "\\n", "\r": "\\r", "\\": "\\\\"},
-    "GO": {"\"": "\\\"", "\n": "\\n", "\r": "\\r", "\\": "\\\\"},
-    "GROOVY": {"\"": "\\\"", "\n": "\\n", "\r": "\\r", "\\": "\\\\"},
+    "DPL": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
+    "KOTLIN": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
+    "RUST": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
+    "C_CLANG": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
+    "GO": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
+    "GROOVY": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
 }
 
 # Type mapping from abstract spec to language-native types
@@ -67,7 +69,7 @@ class SuperTranspilerV2:
 
     # High-confidence variant (more optimistic/unchecked)
     HIGH_CONF_TEMPLATES: Dict[str, str] = {
-        "DPL": "particle {name} : E<{type_spec}> = \"{val}\" @ confidence({conf}) // TRUSTED",
+        "DPL": "particle {name} : E<{type_spec}> = \"{val}\" @ confidence({conf})  # TRUSTED",
         "KOTLIN": "val {name}: {type_spec} = \"{val}\" // HIGH_CONF",
         "RUST": "let {name}: {type_spec} = \"{val}\".into(); // unsafe_trust: {conf}",
         "C_CLANG": "const {type_spec} {name} = \"{val}\"; // TRUSTED_PTR confidence: {conf}",
@@ -77,7 +79,7 @@ class SuperTranspilerV2:
 
     # Low-confidence variant (defensive/wrapped)
     LOW_CONF_TEMPLATES: Dict[str, str] = {
-        "DPL": "particle {name} : E<{type_spec}> = \"{val}\" @ confidence({conf}) // VERIFY BEFORE USE",
+        "DPL": "particle {name} : E<{type_spec}> = \"{val}\" @ confidence({conf})  # VERIFY BEFORE USE",
         "KOTLIN": "val {name}: {type_spec}? = try {{ \"{val}\" }} catch {{ null }} // LOW_CONF",
         "RUST": "let {name}: Result<{type_spec}, String> = Err(\"{val}\".into()); // quarantined: {conf}",
         "C_CLANG": "const char* {name} = \"{val}\"; // UNSAFE: verify before use, confidence: {conf}",
@@ -86,7 +88,7 @@ class SuperTranspilerV2:
     }
 
     def __init__(self, templates: Dict[str, str] = None):
-        self.templates = templates if templates else self.BASE_TEMPLATES.copy()
+        self.templates = dict(templates) if templates is not None else self.BASE_TEMPLATES.copy()
         self.high_conf_templates = self.HIGH_CONF_TEMPLATES.copy()
         self.low_conf_templates = self.LOW_CONF_TEMPLATES.copy()
         self.cache = {}

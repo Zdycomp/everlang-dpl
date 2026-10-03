@@ -231,3 +231,17 @@ class TestTranspilerV2Stats(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTranspilerV2EscapeOrder(unittest.TestCase):
+    def test_quote_escape_is_not_doubled(self):
+        out = SuperTranspilerV2().transpile("x", 'a"b', "str", 120)
+        for lang, code in out.items():
+            self.assertIn('a\\"b', code, lang)
+            self.assertNotIn('a\\\\"b', code, lang)
+
+    def test_empty_templates_mapping_is_respected_and_copied(self):
+        templates = {}
+        t = SuperTranspilerV2(templates=templates)
+        templates["GO"] = "x"
+        self.assertEqual(t.templates, {})
