@@ -14,13 +14,16 @@ Expected file format:
 Codric Enterprise · Ricky (Dreid) · 2026
 """
 
+import json
 import os, sys, re, difflib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / '2-interpreter-python'))
 
 from syntax import parse, Semantic, lex
-from syntax import (Num, Str, Bool, Var, BinOp, If, Call, FnDef)
+from syntax import (Num, Str, Bool, Var, BinOp, If, Call, FnDef,
+                    ListLit, RecordLit, UnaryOp, Index, Field,
+                    ForRange, ForIn, While, Extern)
 from ir import parse_to_ir
 from abstract import Lambda
 from ever import e_val
@@ -31,30 +34,74 @@ PROG  = HERE / 'golden' / 'programs'
 passed = failed = skipped = 0
 
 
-def node_sig(n) -> str:
-    """One-line structural signature for an AST node."""
-    if n is None:
-        return "None"
-    t = type(n).__name__
-    if isinstance(n, Num):
-        return f"Num({n.value})"
-    if isinstance(n, Str):
-        return f"Str({n.value})"
-    if isinstance(n, Bool):
-        return f"Bool({n.value})"
-    if isinstance(n, Var):
-        return f"Var({n.name})"
-    if isinstance(n, BinOp):
-        return f"BinOp({n.op},{node_sig(n.left)},{node_sig(n.right)})"
-    if isinstance(n, If):
-        return f"If(...)"
-    if isinstance(n, Call):
-        args = ",".join(node_sig(a) for a in n.args)
-        return f"Call({n.name},[{args}])"
-    if isinstance(n, FnDef):
-        params = ",".join(n.params)
-        return f"FnDef({n.name},[{params}],{node_sig(n.body)})"
-    return t
+def node_sig(node) -> str:
+    """Return a canonical, lossless JSON representation of an AST node."""
+    def encode(current):
+        if current is None:
+            return None
+        if isinstance(current, Num):
+            return {
+                "type": "Num",
+                "value": current.value,
+                "literal": current.raw or str(current.value),
+                "numeric_kind": "real" if current.is_float_literal() else "int",
+            }
+        if isinstance(current, Str):
+            return {"type": "Str", "value": current.value}
+        if isinstance(current, Bool):
+            return {"type": "Bool", "value": current.value}
+        if isinstance(current, Var):
+            return {"type": "Var", "name": current.name}
+        if isinstance(current, BinOp):
+            return {
+                "type": "BinOp", "operator": current.op,
+                "left": encode(current.left), "right": encode(current.right),
+            }
+        if isinstance(current, If):
+            return {
+                "type": "If", "condition": encode(current.cond),
+                "then_branch": encode(current.then),
+                "else_branch": encode(current.els),
+            }
+        if isinstance(current, Call):
+            return {"type": "Call", "name": current.name,
+                    "arguments": [encode(arg) for arg in current.args]}
+        if isinstance(current, FnDef):
+            return {"type": "FnDef", "name": current.name,
+                    "parameters": current.params, "body": encode(current.body)}
+        if isinstance(current, ListLit):
+            return {"type": "ListLit", "items": [encode(item) for item in current.items]}
+        if isinstance(current, RecordLit):
+            return {"type": "RecordLit", "fields": [
+                {"name": key, "value": encode(value)}
+                for key, value in zip(current.keys, current.values)
+            ]}
+        if isinstance(current, UnaryOp):
+            return {"type": "UnaryOp", "operator": current.op,
+                    "operand": encode(current.operand)}
+        if isinstance(current, Index):
+            return {"type": "Index", "target": encode(current.target),
+                    "key": encode(current.key)}
+        if isinstance(current, Field):
+            return {"type": "Field", "target": encode(current.target),
+                    "name": current.name}
+        if isinstance(current, ForRange):
+            return {"type": "ForRange", "variable": current.var,
+                    "start": encode(current.start), "end": encode(current.end),
+                    "step": encode(current.step), "body": encode(current.body)}
+        if isinstance(current, ForIn):
+            return {"type": "ForIn", "variable": current.var,
+                    "sequence": encode(current.seq), "body": encode(current.body)}
+        if isinstance(current, While):
+            return {"type": "While", "condition": encode(current.cond),
+                    "body": encode(current.body)}
+        if isinstance(current, Extern):
+            return {"type": "Extern", "name": current.name,
+                    "parameters": current.params, "library": current.libpath}
+        return {"type": type(current).__name__}
+
+    return json.dumps(encode(node), ensure_ascii=False, separators=(",", ":"),
+                      sort_keys=True)
 
 
 def eval_expr(src: str):

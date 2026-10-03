@@ -1,3 +1,3 @@
-AST:FnDef(fact,[n],If(...))
+AST:{"body":{"condition":{"left":{"name":"n","type":"Var"},"operator":"<=","right":{"literal":"1","numeric_kind":"int","type":"Num","value":1},"type":"BinOp"},"else_branch":{"left":{"name":"n","type":"Var"},"operator":"*","right":{"arguments":[{"left":{"name":"n","type":"Var"},"operator":"-","right":{"literal":"1","numeric_kind":"int","type":"Num","value":1},"type":"BinOp"}],"name":"fact","type":"Call"},"type":"BinOp"},"then_branch":{"literal":"1","numeric_kind":"int","type":"Num","value":1},"type":"If"},"name":"fact","parameters":["n"],"type":"FnDef"}
 SEM:recursive=True
 SEM:measure=n

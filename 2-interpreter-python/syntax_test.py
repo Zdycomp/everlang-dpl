@@ -180,5 +180,79 @@ ok("comparisons collapse",
 ok("arithmetic does not collapse",
    skeleton(parse("n + 1")[0]) != skeleton(parse("n * 1")[0]))
 
+print("\n9. PRECEDENCE AND PRECISION (regressions)")
+import runtime as _rt
+
+
+def _shown(src):
+    """name -> rendered line, through the REAL front door."""
+    r = _rt.run_source(src)
+    return {ln.split(" = ", 1)[0].strip(): ln for ln in r.format_lines()}
+
+
+# A postfix chain CONTINUES a value. `-xs[0]` used to parse as
+# `(0 - xs)[0]` — subtract a list, get z, index z — so negating an
+# element silently produced z at 0/256 with no error anywhere.
+_v = _shown("""
+ever xs = [10, 20, 30]
+ever rec = {a: 5, b: 7}
+ever n1 = -xs[0]
+ever n2 = 0 - xs[0]
+ever n3 = -rec.b
+ever n4 = -5
+ever n5 = -5 * 3
+ever n6 = -xs[2] + xs[0]
+show n1
+show n2
+show n3
+show n4
+show n5
+show n6
+""")
+ok("-xs[0] negates the ELEMENT",  "-10" in _v.get("n1", ""))
+ok("-xs[0] is not z",             "z" not in _v.get("n1", ""))
+ok("-xs[0] == 0 - xs[0]",
+   _v.get("n1", "n1").split("=", 1)[1] == _v.get("n2", "n2").split("=", 1)[1])
+ok("-rec.b negates the FIELD",    "-7" in _v.get("n3", ""))
+ok("plain -5 still works",        "-5 " in _v.get("n4", ""))
+ok("-5 * 3 still works",          "-15" in _v.get("n5", ""))
+ok("-xs[2] + xs[0] == -20",       "-20" in _v.get("n6", ""))
+
+# Integer literals were parsed through float(), so anything past 2**53
+# was silently rounded AND reported at 256/256 — a wrong number at full
+# confidence. INT-op-INT was computed in float64 for the same reason.
+_w = _shown("""
+ever a = 9007199254740993
+ever add = 9007199254740993 + 0
+ever sub = 9007199254740993 - 1
+ever mul = 9007199254740993 * 1
+ever neg = -9007199254740993
+ever eq  = 9007199254740993 == 9007199254740992
+ever gt  = 9007199254740993 > 9007199254740992
+ever half = 1.5
+ever quot = 10 / 4
+ever plain = 3 + 4
+show a
+show add
+show sub
+show mul
+show neg
+show eq
+show gt
+show half
+show quot
+show plain
+""")
+ok("big int literal is exact",    "9007199254740993" in _w.get("a", ""))
+ok("big int + 0 is exact",        "9007199254740993" in _w.get("add", ""))
+ok("big int - 1 is exact",        "9007199254740992" in _w.get("sub", ""))
+ok("big int * 1 is exact",        "9007199254740993" in _w.get("mul", ""))
+ok("negated big int is exact",    "-9007199254740993" in _w.get("neg", ""))
+ok("two distinct big ints are NOT equal", "false" in _w.get("eq", ""))
+ok("ordering on big ints holds",  "true" in _w.get("gt", ""))
+ok("floats still float",          "1.5" in _w.get("half", ""))
+ok("division still real",         "2.5" in _w.get("quot", ""))
+ok("ordinary arithmetic intact",  "7" in _w.get("plain", ""))
+
 print(f"\n=== Pipeline: {passed} passed, {failed} failed ===\n")
 raise SystemExit(0 if failed == 0 else 1)

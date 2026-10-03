@@ -22,7 +22,7 @@ const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
 
-const { Archive, makeRepair }   = require('../src/archive');
+const { Archive, makeRepair, fingerprint } = require('../src/archive');
 const { loadSignatures, scan }  = require('../src/match');
 const { E }                     = require('../src/constants');
 
@@ -39,7 +39,8 @@ usage:
   refix candidates
   refix propose
   refix rules
-  refix archive
+  refix finality <program.ever>
+  refix errors
 
 archive: ${HOME}
 signatures: ${SIGS}
@@ -51,7 +52,20 @@ function cmdScan(logPath) {
   const stderr = fs.readFileSync(logPath, 'utf8');
   const sigs   = loadSignatures(SIGS);
   const hits   = scan(stderr, sigs);
-  if (!hits.length) { console.log('no signatures matched.'); return; }
+  const arch   = new Archive(HOME);
+  const runId  = Date.now();
+  const sourceIdent = `scan:${logPath}`;
+  if (!hits.length) {
+    arch.appendError({ runId, lang: 'gradle', sourceIdent,
+      message: stderr.trim(), context: stderr, fingerprint: fingerprint(stderr) });
+    console.log('no signatures matched; error catch archived.');
+    return;
+  }
+  for (const h of hits) {
+    arch.appendError({ runId, lang: 'gradle', sourceIdent,
+      message: h.failure_text, context: stderr,
+      fingerprint: fingerprint(h.failure_text), signatureId: h.signature_id });
+  }
   for (const h of hits) {
     console.log(`match: ${h.signature_id}  kind=${h.kind === 0 ? 'plain' : 'inferred'}`);
     console.log(`  failure : ${h.failure_text.replace(/\n.*$/s, ' …')}`);
@@ -124,6 +138,27 @@ function cmdArchive() {
   for (const r of arch.repairs()) console.log(JSON.stringify(r));
 }
 
+function cmdFinality(filePath) {
+  const source = fs.readFileSync(filePath, 'utf8');
+  console.log(JSON.stringify({
+    source: filePath,
+    signatures: loadSignatures(SIGS).length,
+    archive: HOME,
+    note: 'Node coordinates scan, archive, recurrence, and replay; application remains approval-gated.'
+  }, null, 2));
+}
+
+function cmdErrors() {
+  const arch = new Archive(HOME);
+  const errors = arch.errors();
+  if (!errors.length) { console.log('no error catches yet.'); return; }
+  for (const e of errors) {
+    console.log(`${e.status.padEnd(10)} ${e.source_ident} ${e.fingerprint}`);
+    console.log(`  ${e.message.replace(/\\n.*$/s, ' …')}`);
+  }
+}
+
+
 const [ , , cmd, ...rest ] = process.argv;
 try {
   switch (cmd) {
@@ -133,6 +168,8 @@ try {
     case 'propose':    return cmdPropose();
     case 'rules':      return cmdRules();
     case 'archive':    return cmdArchive();
+    case 'errors':     return cmdErrors();
+    case 'finality':   return rest[0] ? cmdFinality(rest[0])      : usage();
     default:           return usage(cmd ? 2 : 0);
   }
 } catch (e) {

@@ -316,3 +316,13 @@ def parse_forgiving(src: str) -> Tuple[Optional[Node], Optional[ParseErr],
         return node, None, corrections
     except ParseError as exc:
         return None, e_z("parse", str(exc), Defect.UNBOUNDED), corrections
+    except RecursionError:
+        # Same guard as syntax.parse(): the grammar descends
+        # recursively, so input nested past the Python stack limit
+        # raised RecursionError out of the forgiving front door — the
+        # one run_source() actually uses — and crashed the CLI with a
+        # traceback instead of reporting a parse failure.
+        return (None,
+                e_z("parse", "expression nested too deeply to parse",
+                    Defect.UNBOUNDED),
+                corrections)

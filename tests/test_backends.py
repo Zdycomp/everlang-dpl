@@ -81,6 +81,43 @@ def norm(lines):
     return [re.sub(r"\s+", " ", l).strip() for l in lines]
 
 
+# Regression programs for defects that shipped in the emitted runtimes
+# and that the integration corpus never exercised. Kept inline rather
+# than added to tests/integration/, because ev_integrate.py and
+# gold_check.py also read that directory and pair every .ever with a
+# canonical .expected file.
+REGRESSIONS = {
+    # TEXT's only defined operator is '+'. Everything else fell through
+    # to the numeric path, where a text value's number is 0: "ab"+"cd"
+    # came out as 0 (Go) / NaN (JS), and "ab"=="ab" answered true at
+    # 256/256 where Ever answers z.
+    "text_ops": 'ever cat = "ab" + "cd"\n'
+                'ever same = "ab" == "ab"\n'
+                'ever diff = "ab" == "zz"\n'
+                'show cat\nshow same\nshow diff\n',
+
+    # A branch can never be more certain than the condition that chose
+    # it. cond() returned the taken branch untouched, so this reported
+    # 256/256 where Ever reports 0/256.
+    "cond_confidence": 'ever c = if z then 1 else 2\n'
+                       'ever u = z\n'
+                       'ever t = if u then "a" else "b"\n'
+                       'ever n = if true then 1 else 2\n'
+                       'show c\nshow t\nshow n\n',
+
+    # Ever allows re-binding; Go's :=, JS's const and Kotlin's val each
+    # allow it once, so this emitted code that would not compile.
+    "rebinding": 'let x = 1\never x = x + 1\never x = x * 10\nshow x\n',
+
+    # Every backend interpolated the raw text between quotes, and Go
+    # built the literal with repr() then replaced ' with ", so
+    # "it's fine" became "it"s fine".
+    "quoting": 'ever s = "it\'s fine"\n'
+               'ever d = "cost $5"\n'
+               'show s\nshow d\n',
+}
+
+
 def main():
     programs = sorted((ROOT / "tests" / "integration").glob("*.ever"))
     targets = [t for t in BACKENDS if TOOLS[t][1]()]
@@ -128,6 +165,39 @@ def main():
                 nfail += 1
                 continue
             print(f"  . OK   {prog.stem:22} {target}")
+            npass += 1
+
+    for label, src in REGRESSIONS.items():
+        ref = run_source(src)
+        if not ref.ok:
+            print(f"  x FAIL {label:22} Ever itself errors: {ref.errors}")
+            nfail += 1
+            continue
+        expected = norm(ref.format_lines())
+        for target in targets:
+            try:
+                code = emit(src, target)
+            except Exception as e:
+                print(f"  x FAIL {label:22} {target:7} emit: {e}")
+                nfail += 1
+                continue
+            with tempfile.TemporaryDirectory() as tmp:
+                got, err = run_target(target, code, tmp)
+            if err:
+                print(f"  x FAIL {label:22} {target:7} "
+                      f"{err.splitlines()[0][:70]}")
+                nfail += 1
+                continue
+            if norm(got) != expected:
+                print(f"  x FAIL {label:22} {target:7} output differs")
+                for g, e in zip(norm(got), expected):
+                    if g != e:
+                        print(f"        ever: {e}")
+                        print(f"        {target:4}: {g}")
+                        break
+                nfail += 1
+                continue
+            print(f"  . OK   {label:22} {target}")
             npass += 1
 
     print(f"\n{'-'*54}")

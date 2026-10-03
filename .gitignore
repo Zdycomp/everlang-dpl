@@ -39,3 +39,5 @@ node_modules/
 
 # claude temp build artifacts
 .claude-tmp/
+
+.fake

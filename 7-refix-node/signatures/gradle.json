@@ -83,13 +83,51 @@
       "family": "wrapper"
     },
     {
-      "id": "gradle.kotlin_stdlib_conflict",
-      "kind": 1,
-      "match": "Runtime JAR files in the classpath should have the same version\\. These files were found in the classpath:[\\s\\S]*?kotlin-stdlib-([\\d\\.]+)\\.jar[\\s\\S]*?kotlin-stdlib-([\\d\\.]+)\\.jar",
-      "capture": ["v1", "v2"],
-      "fixture_form": "PIN_KOTLIN_STDLIB:latest",
-      "fixture_text": "Two kotlin-stdlib versions on the classpath ({v1} and {v2}). Force-resolve to one: `configurations.all { resolutionStrategy.force(\"org.jetbrains.kotlin:kotlin-stdlib:{v_latest}\") }`.",
-      "family": "toolchain"
+      "id": "gradle.could_not_resolve_all_files",
+      "kind": 0,
+      "match": "Could not resolve all files for configuration '([^']+)'",
+      "capture": ["configuration"],
+      "fixture_form": "INSPECT_CONFIGURATION:{configuration}",
+      "fixture_text": "Configuration {configuration} could not be resolved. Inspect the dependency report and repository declarations for the first nested failure.",
+      "family": "dependency"
+    },
+    {
+      "id": "gradle.permission_denied",
+      "kind": 0,
+      "match": "(?:permission denied|access is denied)",
+      "flags": "img",
+      "capture": [],
+      "fixture_form": "CHECK_FILE_PERMISSIONS",
+      "fixture_text": "The build process lacks permission to read or write a required path. Check ownership, permissions, and sandbox restrictions before retrying.",
+      "family": "environment"
+    },
+    {
+      "id": "gradle.daemon_disappeared",
+      "kind": 0,
+      "match": "The message received from the daemon indicates that the daemon has disappeared",
+      "capture": [],
+      "fixture_form": "INSPECT_DAEMON_LOG",
+      "fixture_text": "The Gradle daemon disappeared. Inspect the daemon log and system memory before retrying; do not automatically delete project state.",
+      "family": "runtime"
+    },
+    {
+      "id": "gradle.out_of_memory",
+      "kind": 0,
+      "match": "(?:java\\.lang\\.OutOfMemoryError|Java heap space|GC overhead limit exceeded)",
+      "flags": "img",
+      "capture": [],
+      "fixture_form": "INCREASE_GRADLE_HEAP",
+      "fixture_text": "The build exhausted the JVM heap. Inspect the failing task and increase org.gradle.jvmargs only after checking for an unbounded workload.",
+      "family": "runtime"
+    },
+    {
+      "id": "gradle.task_failed",
+      "kind": 0,
+      "match": "Execution failed for task '(:[^']+)'",
+      "capture": ["task"],
+      "fixture_form": "INSPECT_TASK:{task}",
+      "fixture_text": "Task {task} failed. Read the nested cause and reproduce this task in isolation before selecting a repair.",
+      "family": "task"
     }
   ]
 }

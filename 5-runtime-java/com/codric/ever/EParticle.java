@@ -153,7 +153,18 @@ public final class EParticle {
                 errorDistance, generation, bornMs, ident, reason);
     }
 
-    /* ── Excel arithmetic, identical to Layer 0 and Layer 1 ── */
+    public EParticle assimilate(Lang to) {
+        if (state == State.Z || state == State.EERROR)
+            return z(ident, "uncleared particle does not translate");
+        return new EParticle(state, to, confidence, lo, hi, errorDistance,
+                generation, System.currentTimeMillis(), ident,
+                "assimilated " + lang + " to " + to);
+    }
+
+    public boolean equilibriumWith(EParticle other) {
+        return EverRuntime.equilibrium(this, other);
+    }
+
 
     public static int excelFormula(int a, int b) {
         long v = (long) a + b - ((long) a * b / CERTAIN);

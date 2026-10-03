@@ -367,7 +367,26 @@ module Ever
       evolved
     end
 
-    # ── pipeline ──
+    # ── interoperability ──
+
+    def assimilate(ident, to:)
+      source = @particles[ident] || Particle.z(ident, 'undeclared')
+      @particles[ident] = Particle.new(
+        ident: source.ident, state: source.state,
+        confidence: source.confidence, lo: source.lo, hi: source.hi,
+        lang: to, reason: "Ruby DSL assimilated #{source.lang} to #{to}"
+      )
+    end
+
+    def serialize(ident)
+      (@particles[ident] || Particle.z(ident, 'undeclared')).serialize
+    end
+
+    def import(line, ident: nil)
+      particle = Particle.deserialize(line)
+      @particles[ident || particle.ident] = particle
+    end
+
 
     def execute
       cleared = @particles.values.select(&:cleared?)

@@ -12,10 +12,12 @@ def total_deposited(yearly, years) =
 let starting_balance = 10000
 let annual_rate       = 0.06
 
-# 2 years: within the depth ceiling (unanchored recursion caps at 3
-# call levels). compound(_,_,3) would need a 4th frame and correctly
-# return z instead of a silently-wrong number — that's the ceiling
-# working as designed, not a bug to work around.
+# `years` strictly decreases in every self-call, so the semantic pass
+# proves termination and ANCHORS compound(): the floor(pi) = 3 ceiling
+# lifts, because the measure is the termination argument and depth no
+# longer has to stand in for one. Recursion with no decreasing measure
+# stays unanchored, stops at 3 call levels, and returns z rather than a
+# silently-wrong number. See docs/SEMANTICS.md §4.4, [ANCHOR-⊥].
 ever after_2_years = compound(starting_balance, annual_rate, 2)
 ever growth        = after_2_years - starting_balance
 ever growth_pct     = (growth / starting_balance) * 100

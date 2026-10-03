@@ -149,7 +149,7 @@ class Node:
 
 @dataclass
 class Num(Node):
-    value: float
+    value: float          # an int for integer literals (exact), float for reals
     raw: str = ""    # the literal text: "1" vs "1.0" — drives INT vs REAL inference
     def shape(self) -> str: return "Num"
     def is_float_literal(self) -> bool:
@@ -717,7 +717,16 @@ class Parser:
     def atom(self) -> Node:
         t = self.peek()
         if t.kind is T.NUM:
-            self.take(); return Num(float(t.text), raw=t.text)
+            self.take()
+            # An integer literal stays a Python int, which is
+            # arbitrary precision. Routing it through float() first
+            # silently rounded anything past 2**53 —
+            # 9007199254740993 came back as ...992 and was reported at
+            # 256/256, a wrong number at full confidence, which is the
+            # one thing this language exists to refuse. Floats still
+            # parse as floats; `raw` continues to drive INT vs REAL.
+            return Num(int(t.text) if "." not in t.text else float(t.text),
+                       raw=t.text)
         if t.kind is T.STR:
             self.take(); return Str(t.text[1:-1])
         if t.kind is T.KW and t.text in ("true", "false"):
@@ -735,7 +744,13 @@ class Parser:
             return node
         if t.kind is T.OP and t.text == "-":
             self.take()
-            return BinOp("-", Num(0), self.atom())
+            # Recurse through postfix(), not atom(): a postfix chain
+            # CONTINUES a value, so the thing being negated is the whole
+            # `xs[0]` / `p.x`, not the bare head. Recursing into atom()
+            # made `-xs[0]` parse as `(0 - xs)[0]` — subtract a list,
+            # get z, then index z — so negating an element silently
+            # returned z at 0/256 with no error anywhere.
+            return BinOp("-", Num(0), self.postfix())
         if t.kind is T.NAME:
             self.take()
             if self.at(T.LPAR):
@@ -764,6 +779,15 @@ def parse(src: str) -> Tuple[Optional[Node], Optional[E]]:
         return node, None
     except ParseError as exc:
         return None, e_z("parse", str(exc), Defect.UNBOUNDED)
+    except RecursionError:
+        # The grammar descends recursively, so deeply nested input runs
+        # the interpreter out of Python stack rather than failing the
+        # parse. parse() promises a (node, error) pair; letting a raw
+        # RecursionError escape crashed the CLI with a traceback for
+        # what is simply a program nested past what this parser can
+        # take. Report it as the parse failure it is.
+        return None, e_z("parse", "expression nested too deeply to parse",
+                         Defect.UNBOUNDED)
 
 
 # ═════════════════════════════════════════════
@@ -927,6 +951,14 @@ class Semantic:
         self.profiler = profiler if _PROFILER_AVAILABLE else None
         self.source   = source
         self.last_observation = None
+        # analyse() is per-EXPRESSION; analyse_program() calls it once
+        # per statement. observe_source_flags() scans whole-program
+        # source text, so running it inside every per-statement
+        # analyse() stamped the program's total let/ever/anchor counts
+        # onto each statement — and runtime.py then sums the statements,
+        # squaring every one of those counts. Suppressed in program
+        # mode; runtime applies the source flags once to the fold.
+        self._program_mode = False
 
     def analyse_program(self, prog: "Program",
                         preexisting: Optional[Set[str]] = None) -> "ProgramAnalysis":
@@ -952,6 +984,14 @@ class Semantic:
         analyses: List[Analysis] = []
         shown: Set[str] = set()
 
+        self._program_mode = True
+        try:
+            return self._analyse_program_body(prog, bound, errors,
+                                              analyses, shown)
+        finally:
+            self._program_mode = False
+
+    def _analyse_program_body(self, prog, bound, errors, analyses, shown):
         for stmt in prog.statements:
             cls = type(stmt).__name__
 
@@ -991,6 +1031,21 @@ class Semantic:
                 bound: Optional[Set[str]] = None) -> Analysis:
         a = Analysis()
         bound = set(bound or ())
+
+        # A Program is a SEQUENCE of statements, and analyse() only
+        # knows how to walk one expression. Handed a Program it used to
+        # fall straight through and report NO ERRORS — a silently clean
+        # verdict on a program it had never looked at. tests/golden.py
+        # and tests/test_parser.py both call it this way, so arity
+        # mismatches and unbound names went unseen there; the arity
+        # assertion in test_parser.py had even been pinned open with
+        # `or True` to keep it quiet. Delegate instead, and keep the
+        # Analysis return type callers expect.
+        if isinstance(node, Program):
+            pa = self.analyse_program(node, preexisting=bound)
+            a.errors = list(pa.errors)
+            a.observation = self.last_observation
+            return a
 
         if isinstance(node, FnDef):
             self.fns[node.name] = len(node.params)
@@ -1062,7 +1117,7 @@ class Semantic:
             return
         try:
             obs = classify(node)
-            if self.source:
+            if self.source and not self._program_mode:
                 observe_source_flags(obs, self.source)
             obs.errors = len(a.errors)
             a.observation = obs
@@ -1402,6 +1457,37 @@ def eval_ast(node: Node, env: Dict[str, E],
         return v if v is not None else \
             e_z(node.name, f"{node.name} was never bound", Defect.UNBOUND)
 
+    if isinstance(node, ZLit):
+        return e_z("lit", "declared unknown")
+
+    # `and`/`or` SHORT-CIRCUIT, and must never reach the generic
+    # operator table below — that table evaluates BOTH operands first,
+    # so it cannot short-circuit, and it had no case for "and"/"or" at
+    # all: every and/or expression fell through to "unknown operator"
+    # and came back z. This is the landmine CLAUDE.md names, in the
+    # Python evaluator rather than a backend; tests/golden.py evaluates
+    # through this exact function. Semantics copied from scope.py's
+    # NK.AND / NK.OR: a short-circuited right side was never consulted,
+    # so the result is the LEFT operand itself, confidence and all.
+    if isinstance(node, BinOp) and node.op in ("and", "or"):
+        l = eval_ast(node.left, env, fns, depth, limit)
+        if l.is_z:
+            return l
+        if not isinstance(l.value, bool):
+            return e_z("op", f"'{node.op}' needs a bool on the left",
+                       Defect.MISBOUND)
+        if node.op == "and" and not l.value:
+            return l
+        if node.op == "or" and l.value:
+            return l
+        r = eval_ast(node.right, env, fns, depth, limit)
+        if r.is_z:
+            return r
+        if not isinstance(r.value, bool):
+            return e_z("op", f"'{node.op}' needs a bool on the right",
+                       Defect.MISBOUND)
+        return r
+
     if isinstance(node, BinOp):
         a = eval_ast(node.left, env, fns, depth, limit)
         if a.is_z:
@@ -1467,7 +1553,11 @@ def eval_ast(node: Node, env: Dict[str, E],
         if fn is None:
             return e_z(node.name, f"{node.name} was never defined",
                        Defect.UNBOUND)
-        if depth > limit:
+        # `>` allowed limit+1 call levels: with the ceiling at
+        # floor(pi) = 3, fact(4) computed 24 here while the flat-ceiling
+        # path it stands in for returns z. The gate is `>=`, matching
+        # `depth >= E_DEPTH_CEILING` in the OP_CALL handler.
+        if depth >= limit:
             return e_z(node.name, f"depth ceiling {limit} exceeded",
                        Defect.UNBOUNDED)
         args = [eval_ast(a, env, fns, depth, limit) for a in node.args]

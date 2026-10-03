@@ -184,6 +184,28 @@ assert struct.calcsize(PACK_FMT) == E_PARTICLE_SIZE, (
 # Encode / decode between E (Python) and the flat buffer
 # ─────────────────────────────────────────────
 
+def _fit_utf8(s: str, field_size: int) -> bytes:
+    """Truncate to fit a fixed C char[field_size], on a CHARACTER
+    boundary, leaving room for the NUL terminator.
+
+    Slicing the encoded bytes at a fixed count splits multi-byte
+    characters in half. decode() reads the field back with
+    errors="replace", so the severed tail came home as U+FFFD — the
+    text silently changed, and encode(decode(x)) != encode(x). That is
+    "extent not delimited" again: the limit is in bytes, the unit is a
+    character, and nothing was reconciling the two.
+
+    Re-decoding with errors="ignore" drops only an incomplete trailing
+    sequence, because everything before it is valid UTF-8 by
+    construction. The buffer stays exactly field_size bytes, so the C
+    layout is untouched; C just sees a slightly shorter string.
+    """
+    if not s:
+        return b""
+    b = s.encode("utf-8")[:field_size - 1]
+    return b.decode("utf-8", errors="ignore").encode("utf-8")
+
+
 def encode(p) -> bytes:
     """Python E → 440-byte flat buffer.
 
@@ -210,7 +232,17 @@ def encode(p) -> bytes:
     if isinstance(v, bool):
         type_i = 4; val_i = int(v)
     elif isinstance(v, int):
-        type_i = 1; val_i = v & 0xFFFFFFFFFFFFFFFF
+        # PACK_FMT stores value_int as 'q' — SIGNED int64. Masking to
+        # the unsigned range and stopping there made struct.pack reject
+        # every negative integer outright (-1 became 2**64-1), and
+        # silently wrapped anything >= 2**64 to a plausible wrong
+        # number. Fold back to two's complement so the mask truncates
+        # like C does and the signed range survives intact. decode()
+        # already does the symmetric conversion on the way back.
+        type_i = 1
+        val_i = v & 0xFFFFFFFFFFFFFFFF
+        if val_i >= (1 << 63):
+            val_i -= (1 << 64)
     elif isinstance(v, float):
         type_i = 2
         import struct as st
@@ -218,10 +250,9 @@ def encode(p) -> bytes:
     elif isinstance(v, str):
         type_i = 3; val_i = 0
 
-    text_b  = (v.encode("utf-8")[:E_TEXT_MAX-1] if isinstance(v, str)
-               else b"")
-    ident_b = p.ident.encode("utf-8")[:E_IDENT_MAX-1]
-    reason_b = p.reason.encode("utf-8")[:E_REASON_MAX-1]
+    text_b   = _fit_utf8(v, E_TEXT_MAX) if isinstance(v, str) else b""
+    ident_b  = _fit_utf8(p.ident,  E_IDENT_MAX)
+    reason_b = _fit_utf8(p.reason, E_REASON_MAX)
 
     return struct.pack(
         PACK_FMT,
@@ -287,6 +318,11 @@ def decode(buf: bytes):
         ascend_points = asc_pts,
         error_distance = err_dist,
         reason     = reason_b.rstrip(b"\x00").decode("utf-8", errors="replace"),
+        # born_ms was unpacked above and then never passed here, so E's
+        # default_factory re-stamped every decoded particle with the
+        # decode time. The birth time is provenance; losing it at the
+        # serialization boundary also made encode(decode(x)) != encode(x).
+        born_ms    = born_ms,
     )
     return p
 

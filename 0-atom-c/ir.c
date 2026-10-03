@@ -387,13 +387,39 @@ int32_t ev_ir_serialise(const EvNode *n, uint8_t *buf, int32_t cap) {
     return p;
 }
 
-#define RD8(b,p)   ((b)[(p)++])
-#define RD16(b,p)  ({ uint16_t _v=(uint16_t)((b)[(p)]|((b)[(p)+1]<<8)); (p)+=2; _v; })
-#define RD32(b,p)  ({ uint32_t _v=0; for(int _i=0;_i<4;_i++) _v|=((uint32_t)(b)[(p)+_i]<<(_i*8)); (p)+=4; (int32_t)_v; })
-#define RD64(b,p)  ({ uint64_t _v=0; for(int _i=0;_i<8;_i++) _v|=((uint64_t)(b)[(p)+_i]<<(_i*8)); (p)+=8; (int64_t)_v; })
+static uint8_t rd8(const uint8_t *buf, int32_t *p) {
+    uint8_t value = buf[*p];
+    *p += 1;
+    return value;
+}
+
+static uint16_t rd16(const uint8_t *buf, int32_t *p) {
+    uint16_t value = (uint16_t)(buf[*p] | ((uint16_t)buf[*p + 1] << 8));
+    *p += 2;
+    return value;
+}
+
+static uint32_t rd32(const uint8_t *buf, int32_t *p) {
+    uint32_t value = 0;
+    int i;
+    for (i = 0; i < 4; i++)
+        value |= (uint32_t)buf[*p + i] << (i * 8);
+    *p += 4;
+    return value;
+}
+
+static uint64_t rd64(const uint8_t *buf, int32_t *p) {
+    uint64_t value = 0;
+    int i;
+    for (i = 0; i < 8; i++)
+        value |= (uint64_t)buf[*p + i] << (i * 8);
+    *p += 8;
+    return value;
+}
+
 
 static const char *rd_str(const uint8_t *buf, int32_t *p, EvArena *a) {
-    uint16_t n = RD16(buf, *p);
+    uint16_t n = rd16(buf, p);
     char *s = (char*)ev_arena_alloc(a, (size_t)n+1);
     if (!s) return "";
     memcpy(s, buf + *p, n); s[n] = '\0'; *p += n;
@@ -404,16 +430,16 @@ EvNode *ev_ir_deserialise(const uint8_t *buf, int32_t len,
                            int32_t *consumed, EvArena *a) {
     if (!buf || len < 5 || !a) return NULL;
     int32_t p = 0;
-    EvNodeKind kind = (EvNodeKind)RD8(buf, p);
-    int32_t    line = RD32(buf, p);
+    EvNodeKind kind = (EvNodeKind)rd8(buf, &p);
+    int32_t    line = (int32_t)rd32(buf, &p);
     EvNode *n = ev_node_new(a, kind, line);
     if (!n) return NULL;
 
     switch (kind) {
-        case EV_NODE_BOOL: n->lit.as_bool = RD8(buf, p); break;
-        case EV_NODE_INT:  n->lit.as_int  = RD64(buf, p); break;
+        case EV_NODE_BOOL: n->lit.as_bool = rd8(buf, &p); break;
+        case EV_NODE_INT:  n->lit.as_int  = (int64_t)rd64(buf, &p); break;
         case EV_NODE_REAL: {
-            int64_t bits = RD64(buf, p);
+            int64_t bits = (int64_t)rd64(buf, &p);
             memcpy(&n->lit.as_real, &bits, 8); break;
         }
         case EV_NODE_TEXT:
@@ -427,7 +453,7 @@ EvNode *ev_ir_deserialise(const uint8_t *buf, int32_t len,
             break;
         case EV_NODE_DEF: {
             n->str         = rd_str(buf, &p, a);
-            n->param_count = RD32(buf, p);
+            n->param_count = (int32_t)rd32(buf, &p);
             if (n->param_count > 0) {
                 n->params = (const char**)ev_arena_alloc(
                     a, n->param_count * sizeof(char*));
@@ -439,7 +465,7 @@ EvNode *ev_ir_deserialise(const uint8_t *buf, int32_t len,
         default: break;
     }
 
-    int32_t nc = RD32(buf, p);
+    int32_t nc = (int32_t)rd32(buf, &p);
     for (int32_t i = 0; i < nc; i++) {
         int32_t sub = 0;
         EvNode *child = ev_ir_deserialise(buf+p, len-p, &sub, a);

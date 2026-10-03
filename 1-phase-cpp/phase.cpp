@@ -13,7 +13,19 @@
 namespace ever {
 
 static const double PHI    = 1.6180339887;
-static const double PHI_X2 = PHI * 2.0;   /* 3.236… */
+static const double PHI_X2 = PHI * 2.0;
+static bool validParticle(const e_particle& p) {
+    if (p.type < E_TYPE_VOID || p.type > E_TYPE_FOREIGN) return false;
+    if (p.state < E_STATE_Z || p.state > E_STATE_ERROR) return false;
+    if (p.defect < E_DEFECT_NONE || p.defect > E_DEFECT_ORPHANED) return false;
+    if (p.confidence < E_ZERO || p.confidence > E_CERTAIN) return false;
+    if (p.lo < E_ZERO || p.lo > E_CERTAIN ||
+        p.hi < E_ZERO || p.hi > E_CERTAIN || p.lo > p.hi) return false;
+    if (p.state == E_STATE_Z && p.confidence != E_ZERO) return false;
+    if (p.state == E_STATE_CERTAIN && p.confidence != E_CERTAIN) return false;
+    return true;
+}
+
 
 const char* outcomeName(Outcome o) {
     switch (o) {
@@ -116,7 +128,48 @@ PhaseResult PhaseEngine::combine(const e_particle& a, const e_particle& b) {
     r.a = a; r.b = b;
     r.lowEdge = r.highEdge = 0;
 
-    /* 1. Z-contagion */
+    /* Every particle member starts as Z.
+     *
+     * PhaseResult holds three e_particle outputs and each branch fills
+     * only the one it produces, so `survivor`, `expelled` and
+     * `combined` were left default-initialised — indeterminate bytes —
+     * on every other path. weave() happens to read each only on the
+     * branch that sets it, but PhaseResult is public: a caller that
+     * reads r.combined after a Repel got garbage (state 32766,
+     * confidence 32759 when measured), which is undefined behaviour,
+     * not merely an odd number. Z is the honest default: this path
+     * produced no such particle. */
+    r.outcome  = Outcome::Blocked;
+    r.survivor = e_z("unset", "no survivor on this path");
+    r.expelled = e_z("unset", "nothing expelled on this path");
+    r.combined = e_z("unset", "no combination on this path");
+
+    /* Reject malformed public particles before any comparison or arithmetic. */
+    if (!validParticle(a) || !validParticle(b)) {
+        r.outcome = Outcome::Blocked;
+        r.survivor = e_z_defect("blocked", "invalid particle at phase boundary",
+                                E_DEFECT_MISBOUND);
+        r.note = "Blocked: invalid particle at phase boundary";
+        return r;
+    }
+
+    /* An error is not evidence. Two failed threads that happen to
+     * carry the same value used to reach the corroboration branch
+     * below and "rise" together — combine(e_error, e_error) returned
+     * Outcome::Excel with state E_STATE_CONFIDENT at confidence 0, and
+     * a note reading "Excel: corroborated, 0 and 0 rise to 0". That
+     * laundered two failures into a confident thread. Nothing
+     * processes through a failure, exactly as nothing processes
+     * through Z. */
+    if (a.state == E_STATE_ERROR || b.state == E_STATE_ERROR) {
+        r.outcome  = Outcome::Blocked;
+        r.survivor = e_z_defect("blocked", "archived error in phase interaction",
+                                a.state == E_STATE_ERROR ? (e_defect)a.defect
+                                                         : (e_defect)b.defect);
+        r.note     = "Blocked: an archived error is not evidence";
+        return r;
+    }
+
     if (e_is_z(&a) || e_is_z(&b)) {
         r.outcome  = Outcome::Blocked;
         r.survivor = e_z_defect("blocked", "Z present in phase interaction",

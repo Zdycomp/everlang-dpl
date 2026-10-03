@@ -131,7 +131,7 @@ changed band is rejected at the storage boundary. See
 
 ---
 
-## The eight layers
+## The nine layers
 
 Each language does the thing it is actually best at.
 
@@ -145,7 +145,8 @@ Each language does the thing it is actually best at.
 | 4 | `4-archive-sql`        | SQL      | The archive. C² is a join, not a loop.                    | 56 · 55 · 37        |
 | 5 | `5-runtime-java`       | Java     | The runtime. Guardrails that travel into someone's build. | 86                  |
 | 6 | `6-interface-html`     | hand HTML| The interface. No framework, no CDN, no build step.       | 39                  |
-| 7 | `7-refix-node`         | Node     | **ReFix.** The idea, pointed at somebody else's Gradle.   | 15                  |
+| 7 | `7-refix-node`         | Node     | **ReFix.** The idea, pointed at somebody else's Gradle.   | 17                  |
+| 8 | `8-finality`           | Python + Go/Rust | Finality drive. Reference agreement for release targets. | 7 + toolchain status |
 
 Cross-layer agreement: **11/11**. Python and the browser produce
 identical particles for identical input — because an instrument you

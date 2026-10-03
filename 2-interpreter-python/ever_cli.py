@@ -21,6 +21,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 from runtime import run_source
+from collider import collide
 from profiler import Profiler
 
 PROFILE_PATH = Path.home() / ".ever" / "profile.json"
@@ -181,7 +182,28 @@ def cmd_repl(args: argparse.Namespace) -> int:
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
+def cmd_collider(args: argparse.Namespace) -> int:
+    path = Path(args.file)
+    if not path.exists():
+        print(f"error: no such file: {path}", file=sys.stderr)
+        return 1
+    report = collide(path.read_text(), args.rounds, args.workers)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(f"Collider: {report['lanes']} lanes x {report['rounds']} rounds")
+        print(f"Agreement: {report['agreement']}")
+        print(f"Executions: {report['executions']}")
+        print(f"Output lines: {report['output_lines']}")
+        print(f"Rate: {report['executions_per_second']:.2f} executions/s, "
+              f"{report['output_lines_per_second']:.2f} output lines/s")
+        for item in report["results"]:
+            for line in item["outputs"]:
+                print(f"[{item['lane']}] {line}")
+    return 0 if report["agreement"] else 1
+
+
+def build_parser():
     p = argparse.ArgumentParser(
         prog="ever", description="Ever / Tapestry — a confidence-tracking "
                                  "programming language.")
@@ -208,6 +230,13 @@ def build_parser() -> argparse.ArgumentParser:
                     choices=["go", "rust", "r", "kotlin", "js"])
     pb.add_argument("--output", "-o")
     pb.set_defaults(func=cmd_build)
+
+    pcoll = sub.add_parser("collider", help="run four lexer/parser/executor lanes")
+    pcoll.add_argument("file")
+    pcoll.add_argument("--rounds", type=int, default=1)
+    pcoll.add_argument("--workers", type=int, default=4)
+    pcoll.add_argument("--json", action="store_true")
+    pcoll.set_defaults(func=cmd_collider)
 
     pp = sub.add_parser("profile", help="show your proficiency profile")
     pp.set_defaults(func=cmd_profile)

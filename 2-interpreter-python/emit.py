@@ -58,11 +58,48 @@ class Emitter:
     def preamble(self, fns: List[FnDef]) -> str: raise NotImplementedError
     def postamble(self) -> str: raise NotImplementedError
     def fn(self, f: FnDef) -> str: raise NotImplementedError
+    _declared: set = None
+
+    def _first_binding(self, name: str) -> bool:
+        """True the first time this emit() run binds `name`."""
+        if self._declared is None:
+            self._declared = set()
+        if name in self._declared:
+            return False
+        self._declared.add(name)
+        return True
+
     def let(self, name: str, expr: str, tracked: bool) -> str: raise NotImplementedError
     def show(self, name: str) -> str: raise NotImplementedError
 
     def num(self, v) -> str: raise NotImplementedError
     def text(self, v: str) -> str: raise NotImplementedError
+
+    @staticmethod
+    def _cstr(v: str, dollar: bool = False) -> str:
+        """A double-quoted string literal valid in Go, Rust, JS, Kotlin
+        and R.
+
+        Every backend used to interpolate the raw text straight between
+        quotes — `f'txt("{v}")'` — so a quote, a backslash or a newline
+        in an Ever string emitted code that would not compile. Go was
+        worse: it built the literal with `repr()` and then replaced
+        every apostrophe with a double quote, so "it's fine" came out
+        as "it"s fine".
+
+        `dollar=True` also escapes '$', which Kotlin reads as the start
+        of a template expression.
+        """
+        out = []
+        for ch in v:
+            if   ch == "\\": out.append("\\\\")
+            elif ch == '"':    out.append('\\"')
+            elif ch == "\n":  out.append("\\n")
+            elif ch == "\r":  out.append("\\r")
+            elif ch == "\t":  out.append("\\t")
+            elif dollar and ch == "$": out.append("\\$")
+            else: out.append(ch)
+        return '"' + "".join(out) + '"'
     def boolean(self, v: bool) -> str: raise NotImplementedError
     def zval(self) -> str: raise NotImplementedError
     def var(self, n: str) -> str: raise NotImplementedError
@@ -152,6 +189,14 @@ class Emitter:
                 f"declarations — FFI runs through Python's ctypes and "
                 f"has no equivalent wired into this target")
 
+        # Ever lets a name be re-bound; Go's `:=`, JS's `const` and
+        # Kotlin's `val` each allow it exactly once. Emitting a fresh
+        # declaration every time produced code that would not compile
+        # ("no new variables on left side of :=",
+        # "Identifier 'x' has already been declared"). Backends consult
+        # this set to declare once and assign thereafter.
+        self._declared = set()
+
         fns  = [s for s in prog.statements if isinstance(s, FnDef)]
         body: List[str] = []
         for s in prog.statements:
@@ -215,6 +260,16 @@ func op(o string, a, b Val) Val {
 	if a.Kind == "z" || b.Kind == "z" { return z() }
 	c := a.Conf
 	if b.Conf < c { c = b.Conf }
+	// TEXT has exactly one defined operator in the reference: `+`,
+	// which concatenates. Everything else used to fall through to the
+	// numeric path, where a txt Val's N is 0 — so "ab" + "cd" came out
+	// as the number 0, and "ab" == "ab" answered true at full
+	// confidence where Ever answers z. Certainty invented out of a
+	// type the operator was never defined for.
+	bothTxt := a.Kind == "txt" && b.Kind == "txt"
+	anyTxt := a.Kind == "txt" || b.Kind == "txt"
+	if o == "+" && bothTxt { return Val{Kind: "txt", S: a.S + b.S, Conf: c} }
+	if anyTxt { return z() }
 	switch o {
 	case "+": return Val{Kind: "num", N: a.N + b.N, Conf: c}
 	case "-": return Val{Kind: "num", N: a.N - b.N, Conf: c}
@@ -226,17 +281,22 @@ func op(o string, a, b Val) Val {
 	case ">":  return Val{Kind: "bool", B: a.N > b.N, Conf: c}
 	case "<=": return Val{Kind: "bool", B: a.N <= b.N, Conf: c}
 	case ">=": return Val{Kind: "bool", B: a.N >= b.N, Conf: c}
-	case "==":
-		if a.Kind == "txt" { return Val{Kind: "bool", B: a.S == b.S, Conf: c} }
-		return Val{Kind: "bool", B: a.N == b.N, Conf: c}
-	case "!=":
-		if a.Kind == "txt" { return Val{Kind: "bool", B: a.S != b.S, Conf: c} }
-		return Val{Kind: "bool", B: a.N != b.N, Conf: c}
+	case "==": return Val{Kind: "bool", B: a.N == b.N, Conf: c}
+	case "!=": return Val{Kind: "bool", B: a.N != b.N, Conf: c}
 	}
 	return z()
 }
 
 func truthy(v Val) bool { return v.Kind == "bool" && v.B }
+
+// A branch result can never be more certain than the condition that chose it. cond() returned the taken branch untouched, so `if z then 1 else 2` came back 2 at 256/256 where the reference says 2 at 0/256 — confidence manufactured out of an unknown.
+func condv(c Val, v Val) Val {
+	if v.Kind == "z" { return v }
+	cc := c.Conf
+	if v.Conf < cc { cc = v.Conf }
+	v.Conf = cc
+	return v
+}
 
 func vexp(a Val) Val {
 	if a.Kind == "z" { return z() }
@@ -320,17 +380,20 @@ func show(name string, v Val) {
         return f"func {f.name}({ps}) Val {{\n\treturn {self.expr(f.body)}\n}}\n"
 
     def let(self, name, expr, tracked):
-        return f"\t{name} := {expr}\n\t_ = {name}"
+        if self._first_binding(name):
+            return f"\t{name} := {expr}\n\t_ = {name}"
+        return f"\t{name} = {expr}\n\t_ = {name}"
 
     def show(self, name): return f'\tshow("{name}", {name})'
     def num(self, v):     return f"num({float(v)})"
-    def text(self, v):    return f'txt({v!r})'.replace("'", '"')
+    def text(self, v):    return f"txt({self._cstr(v)})"
     def boolean(self, v): return f"bl({'true' if v else 'false'})"
     def zval(self):       return "z()"
     def var(self, n):     return n
     def binop(self, o, l, r): return f'op("{o}", {l}, {r})'
     def cond(self, c, t, e):
-        return f"func() Val {{ if truthy({c}) {{ return {t} }}; return {e} }}()"
+        return (f"func() Val {{ cv := {c}; if truthy(cv) "
+                f"{{ return condv(cv, {t}) }}; return condv(cv, {e}) }}()")
     def unaryop(self, op, operand):
         return f"vnot({operand})"
     def logic(self, op, left, right):
@@ -449,6 +512,16 @@ fn rec(k: Vec<String>, v: Vec<Val>) -> Val {
 fn op(o: &str, a: Val, b: Val) -> Val {
     if matches!(a, Val::Z) || matches!(b, Val::Z) { return Val::Z; }
     let c = conf(&a).min(conf(&b));
+    // TEXT's only defined operator is `+` (concatenation); every other
+    // one used to read numof() == 0.0 and answer with false certainty.
+    let both_txt = matches!(a, Val::Txt(..)) && matches!(b, Val::Txt(..));
+    let any_txt = matches!(a, Val::Txt(..)) || matches!(b, Val::Txt(..));
+    if o == "+" && both_txt {
+        if let (Val::Txt(p, _), Val::Txt(q, _)) = (&a, &b) {
+            return Val::Txt(format!("{}{}", p, q), c);
+        }
+    }
+    if any_txt { return Val::Z; }
     let (x, y) = (numof(&a), numof(&b));
     match o {
         "+" => Val::Num(x + y, c),
@@ -459,19 +532,25 @@ fn op(o: &str, a: Val, b: Val) -> Val {
         ">"  => Val::Bool(x >  y, c),
         "<=" => Val::Bool(x <= y, c),
         ">=" => Val::Bool(x >= y, c),
-        "==" => match (&a, &b) {
-            (Val::Txt(p, _), Val::Txt(q, _)) => Val::Bool(p == q, c),
-            _ => Val::Bool(x == y, c),
-        },
-        "!=" => match (&a, &b) {
-            (Val::Txt(p, _), Val::Txt(q, _)) => Val::Bool(p != q, c),
-            _ => Val::Bool(x != y, c),
-        },
+        "==" => Val::Bool(x == y, c),
+        "!=" => Val::Bool(x != y, c),
         _ => Val::Z,
     }
 }
 
 fn truthy(v: &Val) -> bool { matches!(v, Val::Bool(true, _)) }
+
+// A branch result can never be more certain than the condition that chose it. cond() returned the taken branch untouched, so `if z then 1 else 2` came back 2 at 256/256 where the reference says 2 at 0/256 — confidence manufactured out of an unknown.
+fn condv(cc: i32, v: Val) -> Val {
+    match v {
+        Val::Num(n, c)     => Val::Num(n, c.min(cc)),
+        Val::Txt(s, c)     => Val::Txt(s, c.min(cc)),
+        Val::Bool(b, c)    => Val::Bool(b, c.min(cc)),
+        Val::List(l, c)    => Val::List(l, c.min(cc)),
+        Val::Rec(k, w, c)  => Val::Rec(k, w, c.min(cc)),
+        Val::Z             => Val::Z,
+    }
+}
 
 fn vexp(a: Val) -> Val {
     if matches!(a, Val::Z) { return Val::Z; }
@@ -572,13 +651,14 @@ fn show(name: &str, v: &Val) {
 
     def show(self, name): return f'    show("{name}", &{name});'
     def num(self, v):     return f"Val::Num({float(v)}, 256)"
-    def text(self, v):    return f'Val::Txt("{v}".to_string(), 256)'
+    def text(self, v):    return f"Val::Txt({self._cstr(v)}.to_string(), 256)"
     def boolean(self, v): return f"Val::Bool({'true' if v else 'false'}, 256)"
     def zval(self):       return "Val::Z"
     def var(self, n):     return f"{n}.clone()"
     def binop(self, o, l, r): return f'op("{o}", {l}, {r})'
     def cond(self, c, t, e):
-        return f"if truthy(&({c})) {{ {t} }} else {{ {e} }}"
+        return (f"{{ let cv = {c}; let cc = conf(&cv); "
+                f"if truthy(&cv) {{ condv(cc, {t}) }} else {{ condv(cc, {e}) }} }}")
     def unaryop(self, op, operand):
         return f"vnot({operand})"
     def logic(self, op, left, right):
@@ -692,6 +772,11 @@ recv <- function(keys, ...) {
 op <- function(o, a, b) {
   if (a$kind == "z" || b$kind == "z") return(zz())
   cf <- min(a$conf, b$conf)
+  # TEXT's only defined operator is `+`; every other one read a$n,
+  # which is 0 for a txt, and answered with invented certainty.
+  if (o == "+" && a$kind == "txt" && b$kind == "txt")
+    return(mkval("txt", s=paste0(a$s, b$s), conf=cf))
+  if (a$kind == "txt" || b$kind == "txt") return(zz())
   x <- a$n; y <- b$n
   if (o == "+") return(mkval("num", n=x+y, conf=cf))
   if (o == "-") return(mkval("num", n=x-y, conf=cf))
@@ -701,14 +786,19 @@ op <- function(o, a, b) {
   if (o == ">")  return(mkval("bool", b=(x >  y), conf=cf))
   if (o == "<=") return(mkval("bool", b=(x <= y), conf=cf))
   if (o == ">=") return(mkval("bool", b=(x >= y), conf=cf))
-  if (o == "==") { if (a$kind=="txt") return(mkval("bool", b=(a$s==b$s), conf=cf));
-                   return(mkval("bool", b=(x==y), conf=cf)) }
-  if (o == "!=") { if (a$kind=="txt") return(mkval("bool", b=(a$s!=b$s), conf=cf));
-                   return(mkval("bool", b=(x!=y), conf=cf)) }
+  if (o == "==") return(mkval("bool", b=(x==y), conf=cf))
+  if (o == "!=") return(mkval("bool", b=(x!=y), conf=cf))
   zz()
 }
 
 truthy <- function(v) v$kind == "bool" && v$b
+
+# A branch result can never be more certain than the condition that chose it.
+condv <- function(cv, v) {
+  if (v$kind == "z") return(v)
+  v$conf <- min(cv$conf, v$conf)
+  v
+}
 
 vexp <- function(a) {
   if (a$kind == "z") return(zz())
@@ -785,12 +875,14 @@ show_val <- function(name, v) {
     def let(self, name, expr, tracked): return f"{name} <- {expr}"
     def show(self, name):  return f'show_val("{name}", {name})'
     def num(self, v):      return f"num({float(v)})"
-    def text(self, v):     return f'txt("{v}")'
+    def text(self, v):     return f"txt({self._cstr(v)})"
     def boolean(self, v):  return f"bl({'TRUE' if v else 'FALSE'})"
     def zval(self):        return "zz()"
     def var(self, n):      return n
     def binop(self, o, l, r): return f'op("{o}", {l}, {r})'
-    def cond(self, c, t, e):  return f"(if (truthy({c})) {t} else {e})"
+    def cond(self, c, t, e):
+        return (f"(function() {{ cv <- {c}; "
+                f"if (truthy(cv)) condv(cv, {t}) else condv(cv, {e}) }})()")
     def unaryop(self, op, operand):
         return f"vnot({operand})"
     def logic(self, op, left, right):
@@ -902,6 +994,10 @@ fun numOf(v: Val): Double = when (v) {
 fun op(o: String, a: Val, b: Val): Val {
     if (a is Val.Z || b is Val.Z) return Val.Z
     val c = minOf(a.conf, b.conf)
+    // TEXT's only defined operator is `+`; the rest read numOf() == 0.0
+    // and answered with certainty Ever never granted.
+    if (o == "+" && a is Val.Txt && b is Val.Txt) return Val.Txt(a.s + b.s, c)
+    if (a is Val.Txt || b is Val.Txt) return Val.Z
     val x = numOf(a); val y = numOf(b)
     return when (o) {
         "+" -> Val.Num(x + y, c)
@@ -912,15 +1008,23 @@ fun op(o: String, a: Val, b: Val): Val {
         ">"  -> Val.Bool(x >  y, c)
         "<=" -> Val.Bool(x <= y, c)
         ">=" -> Val.Bool(x >= y, c)
-        "==" -> if (a is Val.Txt && b is Val.Txt) Val.Bool(a.s == b.s, c)
-                else Val.Bool(x == y, c)
-        "!=" -> if (a is Val.Txt && b is Val.Txt) Val.Bool(a.s != b.s, c)
-                else Val.Bool(x != y, c)
+        "==" -> Val.Bool(x == y, c)
+        "!=" -> Val.Bool(x != y, c)
         else -> Val.Z
     }
 }
 
 fun truthy(v: Val): Boolean = v is Val.Bool && v.b
+
+// A branch result can never be more certain than the condition that chose it.
+fun condv(cc: Int, v: Val): Val = when (v) {
+    is Val.Num  -> Val.Num(v.n, minOf(v.conf, cc))
+    is Val.Txt  -> Val.Txt(v.s, minOf(v.conf, cc))
+    is Val.Bool -> Val.Bool(v.b, minOf(v.conf, cc))
+    is Val.Lst  -> Val.Lst(v.items, minOf(v.conf, cc))
+    is Val.Rec  -> Val.Rec(v.keys, v.vals, minOf(v.conf, cc))
+    is Val.Z    -> Val.Z
+}
 
 fun vexp(a: Val): Val {
     if (a is Val.Z) return Val.Z
@@ -994,15 +1098,20 @@ fun show(name: String, v: Val) {
         ps = ", ".join(f"{p}: Val" for p in f.params)
         return f"fun {f.name}({ps}): Val =\n    {self.expr(f.body)}\n"
 
-    def let(self, name, expr, tracked): return f"    val {name} = {expr}"
+    def let(self, name, expr, tracked):
+        if self._first_binding(name):
+            return f"    var {name} = {expr}"
+        return f"    {name} = {expr}"
     def show(self, name):  return f'    show("{name}", {name})'
     def num(self, v):      return f"num({float(v)})"
-    def text(self, v):     return f'txt("{v}")'
+    def text(self, v):     return f"txt({self._cstr(v, dollar=True)})"
     def boolean(self, v):  return f"bl({'true' if v else 'false'})"
     def zval(self):        return "z()"
     def var(self, n):      return n
     def binop(self, o, l, r): return f'op("{o}", {l}, {r})'
-    def cond(self, c, t, e):  return f"(if (truthy({c})) {t} else {e})"
+    def cond(self, c, t, e):
+        return (f"run {{ val cv = {c}; val cc = cv.conf; "
+                f"if (truthy(cv)) condv(cc, {t}) else condv(cc, {e}) }}")
     def unaryop(self, op, operand):
         return f"vnot({operand})"
     def logic(self, op, left, right):
@@ -1105,9 +1214,17 @@ function rec(keys, vals) {
 
 function op(o, a, b) {
     if (a.kind === "z" || b.kind === "z") return z();
+    // text has no defined operator but '+', and comparing two txt
+    // values answered true/false where the reference answers z
+    if (o !== "+" && (a.kind === "txt" || b.kind === "txt")) return z();
     const c = Math.min(a.conf, b.conf);
     switch (o) {
-        case "+": return {kind: "num", n: a.n + b.n, conf: c};
+        case "+":
+            // TEXT's only defined operator. Falling through to the
+            // numeric path gave "ab" + "cd" === NaN at 256/256.
+            if (a.kind === "txt" && b.kind === "txt")
+                return {kind: "txt", s: a.s + b.s, conf: c};
+            return {kind: "num", n: a.n + b.n, conf: c};
         case "-": return {kind: "num", n: a.n - b.n, conf: c};
         case "*": return {kind: "num", n: a.n * b.n, conf: c};
         case "/":
@@ -1117,17 +1234,19 @@ function op(o, a, b) {
         case ">":  return {kind: "bool", b: a.n >  b.n, conf: c};
         case "<=": return {kind: "bool", b: a.n <= b.n, conf: c};
         case ">=": return {kind: "bool", b: a.n >= b.n, conf: c};
-        case "==":
-            if (a.kind === "txt") return {kind: "bool", b: a.s === b.s, conf: c};
-            return {kind: "bool", b: a.n === b.n, conf: c};
-        case "!=":
-            if (a.kind === "txt") return {kind: "bool", b: a.s !== b.s, conf: c};
-            return {kind: "bool", b: a.n !== b.n, conf: c};
+        case "==": return {kind: "bool", b: a.n === b.n, conf: c};
+        case "!=": return {kind: "bool", b: a.n !== b.n, conf: c};
     }
     return z();
 }
 
 function truthy(v) { return v.kind === "bool" && v.b; }
+
+// A branch result can never be more certain than the condition that chose it. cond() returned the taken branch untouched, so `if z then 1 else 2` came back 2 at 256/256 where the reference says 2 at 0/256 — confidence manufactured out of an unknown.
+function condv(c, v) {
+    if (v.kind === "z") return v;
+    return Object.assign({}, v, {conf: Math.min(c.conf, v.conf)});
+}
 
 function vexp(a) {
     if (a.kind === "z") return z();
@@ -1195,17 +1314,20 @@ function show(name, v) {
         return f"function {f.name}({ps}) {{\n  return {self.expr(f.body)};\n}}\n"
 
     def let(self, name, expr, tracked):
-        return f"const {name} = {expr};"
+        if self._first_binding(name):
+            return f"let {name} = {expr};"
+        return f"{name} = {expr};"
 
     def show(self, name): return f'show("{name}", {name});'
     def num(self, v):     return f"num({float(v)})"
-    def text(self, v):    return f'txt("{v}")'
+    def text(self, v):    return f"txt({self._cstr(v)})"
     def boolean(self, v): return f"bl({'true' if v else 'false'})"
     def zval(self):       return "z()"
     def var(self, n):     return n
     def binop(self, o, l, r): return f'op("{o}", {l}, {r})'
     def cond(self, c, t, e):
-        return f"(truthy({c}) ? {t} : {e})"
+        return (f"(function() {{ const cv = {c}; "
+                f"return truthy(cv) ? condv(cv, {t}) : condv(cv, {e}); }})()")
     def unaryop(self, op, operand):
         return f"vnot({operand})"
     def logic(self, op, left, right):

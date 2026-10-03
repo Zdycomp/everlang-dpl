@@ -149,5 +149,49 @@ ok("tampered buffer shows the drift",
 ok("tampered buffer shifts the value into lo",
    back_bad.lo != 0)
 
+print("\nSigned int64: value_int is packed 'q', so the whole range must fit")
+# Every negative integer used to raise struct.error out of encode():
+# the int branch masked to UNSIGNED 64-bit and handed the result to a
+# SIGNED 'q' field, so -1 arrived as 2**64-1. Nothing in this file had
+# ever encoded a negative number, which is exactly why it shipped.
+for _v in (-1, -2, -42, -1000, -(2 ** 31), -(2 ** 62)):
+    try:
+        ok(f"negative int {_v} round-trips", decode(encode(
+            e_val("neg", _v, 200, Lang.PYTHON))).value == _v)
+    except Exception as _exc:
+        ok(f"negative int {_v} round-trips ({type(_exc).__name__})", False)
+ok("INT64_MIN round-trips",
+   decode(encode(e_val("min", -(2 ** 63), 200, Lang.PYTHON))).value == -(2 ** 63))
+ok("INT64_MAX round-trips",
+   decode(encode(e_val("max", 2 ** 63 - 1, 200, Lang.PYTHON))).value == 2 ** 63 - 1)
+
+print("\nborn_ms survives the boundary")
+# decode() unpacked born_ms and then never passed it to E(), so every
+# decoded particle was re-stamped with the decode time: provenance lost,
+# and encode(decode(x)) != encode(x).
+_prov = e_val("prov", 42, 200, Lang.PYTHON)
+ok("born_ms preserved through the ABI", decode(encode(_prov)).born_ms == _prov.born_ms)
+ok("encode is idempotent across a decode",
+   encode(decode(encode(_prov))) == encode(_prov))
+
+print("\nText fields truncate on a CHARACTER boundary, not a byte boundary")
+# The limits are in bytes; the unit is a character. Slicing encoded
+# UTF-8 at a fixed byte count split the last character in half, and
+# decode()'s errors="replace" brought it home as U+FFFD — silent
+# corruption, and an unstable round trip. "Extent not delimited" again.
+for _label, _particle in (
+        ("text",   e_val("t", "\u00e9" * 120, 200, Lang.PYTHON)),
+        ("ident",  e_val("\u00e9" * 40, 1, 200, Lang.PYTHON)),
+        ("reason", e_z("r", "\u00e9" * 80)),
+        ("emoji",  e_val("t", "\U0001F3AF" * 80, 200, Lang.PYTHON)),
+):
+    _b1 = encode(_particle)
+    _q  = decode(_b1)
+    _seen = (_q.ident or "") + (_q.reason or "") + (
+        _q.value if isinstance(_q.value, str) else "")
+    ok(f"{_label}: buffer stays {E_PARTICLE_SIZE} bytes", len(_b1) == E_PARTICLE_SIZE)
+    ok(f"{_label}: no U+FFFD introduced", "\ufffd" not in _seen)
+    ok(f"{_label}: round trip is stable", encode(_q) == _b1)
+
 print(f"\n=== ABI boundary: {passed} passed, {failed} failed ===\n")
 raise SystemExit(0 if failed == 0 else 1)

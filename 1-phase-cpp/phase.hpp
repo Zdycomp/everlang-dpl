@@ -12,8 +12,15 @@
  * "both of these say 500 and are 80% trusted." Only the second is
  * evidence.
  *
- * Check order, unchanged and not negotiable:
- *   Z-contagion -> type conflict -> Expel -> Repel -> Excel
+ * Check order, as implemented:
+ *   Z-contagion and archived error -> type conflict -> Excel ->
+ *   Expel -> Repel
+ *
+ * Excel is checked BEFORE the conflict paths, and deliberately: two
+ * independent threads agreeing on a value is the strongest thing that
+ * can happen in the weave, so it outranks dominance. This header used
+ * to state the v1 order and call it "not negotiable" while phase.cpp
+ * implemented this one -- a stale comment reading as a rule.
  *
  * Codric Enterprise · Ricky (Dreid) · 2026
  */

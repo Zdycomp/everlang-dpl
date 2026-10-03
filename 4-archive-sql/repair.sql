@@ -149,8 +149,66 @@ CREATE TABLE IF NOT EXISTS repair_rule (
 );
 
 -- ─────────────────────────────────────────────
--- Views
+-- Error catches. A failure is archived before a repair is trusted.
+-- This preserves unmatched errors and gives the self-repair loop a
+-- complete audit trail instead of only recording accepted fixtures.
 -- ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS error_catch (
+    error_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    captured_ms    INTEGER NOT NULL,
+    run_id         INTEGER REFERENCES run (run_id),
+    lang           INTEGER REFERENCES ever_lang (id),
+    source_ident   TEXT NOT NULL,
+    stage          TEXT NOT NULL DEFAULT 'build',
+    message        TEXT NOT NULL,
+    context        TEXT NOT NULL DEFAULT '',
+    fingerprint    TEXT NOT NULL,
+    signature_id   TEXT REFERENCES repair_signature (signature_id),
+    status         TEXT NOT NULL DEFAULT 'unresolved',
+    resolved_by    INTEGER REFERENCES repair_rule (rule_id),
+    resolved_ms    INTEGER,
+    CHECK (length(source_ident) > 0),
+    CHECK (length(message) > 0),
+    CHECK (length(fingerprint) > 0),
+    CHECK (status IN ('unresolved','matched','repaired','rejected')),
+    CHECK ((status = 'repaired' AND resolved_by IS NOT NULL) OR
+           status <> 'repaired')
+);
+
+CREATE INDEX IF NOT EXISTS ix_error_catch_fingerprint
+    ON error_catch (fingerprint);
+CREATE INDEX IF NOT EXISTS ix_error_catch_source
+    ON error_catch (source_ident);
+
+CREATE VIEW IF NOT EXISTS v_error_catch AS
+SELECT e.error_id, e.captured_ms, e.source_ident, e.stage,
+       e.message, e.context, e.fingerprint, e.status,
+       e.signature_id, rr.fixture_form AS resolved_fixture
+FROM error_catch e
+LEFT JOIN repair_rule rr ON rr.rule_id = e.resolved_by;
+
+CREATE VIEW IF NOT EXISTS v_error_recurrence AS
+SELECT fingerprint, stage, COUNT(*) AS seen,
+       COUNT(DISTINCT source_ident) AS distinct_sources,
+       MIN(captured_ms) AS first_ms, MAX(captured_ms) AS last_ms,
+       SUM(CASE WHEN status = 'unresolved' THEN 1 ELSE 0 END) AS unresolved
+FROM error_catch
+GROUP BY fingerprint, stage
+ORDER BY seen DESC;
+
+CREATE TRIGGER IF NOT EXISTS trg_no_delete_error_catch
+BEFORE DELETE ON error_catch FOR EACH ROW
+BEGIN
+SELECT RAISE(ABORT, 'error catches are append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_no_update_error_catch
+BEFORE UPDATE ON error_catch FOR EACH ROW
+BEGIN
+SELECT RAISE(ABORT, 'error catches are append-only; append a resolution');
+END;
+
 
 -- Recurrence. The gate ReFix calls `candidates`. Distinct sources,
 -- not distinct rows — the whole point of the threshold is that the

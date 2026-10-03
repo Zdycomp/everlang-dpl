@@ -227,6 +227,47 @@ int main() {
     ok("six agreeing risks weave to one verdict", e_is_cleared(&verdict));
     ok("verdict can execute",       e_can_execute(&verdict));
 
+    std::printf("\nAn archived error is not evidence\n");
+    /* Two failed threads carrying the same value reached the
+     * corroboration branch and "rose" together: combine() returned
+     * Outcome::Excel with state E_STATE_CONFIDENT, noting
+     * "Excel: corroborated, 0 and 0 rise to 0". */
+    {
+        e_particle err1 = e_error("bad1", "parse failed",
+                                  E_DEFECT_MISBOUND, 0);
+        e_particle err2 = e_error("bad2", "parse failed",
+                                  E_DEFECT_MISBOUND, 0);
+        PhaseResult er = PhaseEngine::combine(err1, err2);
+        ok("two archived errors do not corroborate",
+           er.outcome != Outcome::Excel);
+        ok("two archived errors are blocked",
+           er.outcome == Outcome::Blocked);
+        ok("no confident particle is minted from two errors",
+           er.combined.state != E_STATE_CONFIDENT);
+
+        /* Every particle member must be readable on every path.
+         * They were default-initialised, so reading combined after a
+         * non-Excel outcome was undefined behaviour — measured once as
+         * state 32766, confidence 32759. */
+        e_particle zp = e_z("unknown", "never measured");
+        e_particle np = e_int("n", 5, 200, E_LANG_CPP);
+        PhaseResult zr = PhaseEngine::combine(zp, np);
+        ok("combined is initialised on a blocked path",
+           e_is_z(&zr.combined));
+        ok("combined confidence is not indeterminate",
+           zr.combined.confidence >= 0 &&
+           zr.combined.confidence <= E_CERTAIN);
+        ok("expelled is initialised on a blocked path",
+           e_is_z(&zr.expelled));
+
+        e_particle d1 = e_int("d1", 10, 200, E_LANG_CPP);
+        e_particle d2 = e_int("d2", 20, 200, E_LANG_CPP);
+        PhaseResult dr = PhaseEngine::combine(d1, d2);
+        ok("combined is initialised on a repel path",
+           dr.combined.confidence >= 0 &&
+           dr.combined.confidence <= E_CERTAIN);
+    }
+
     std::printf("\n=== Layer 1: %d passed, %d failed ===\n\n", passed, failed);
     return failed == 0 ? 0 : 1;
 }

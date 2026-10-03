@@ -57,6 +57,9 @@ ok("repair_kind vocabulary",        "repair_kind" in tables)
 ok("candidate view exists",         "v_repair_candidate" in views)
 ok("replay view exists",            "v_repair_replay" in views)
 ok("rule ledger view exists",       "v_repair_rule" in views)
+ok("error catch table exists",     "error_catch" in tables)
+ok("error catch view exists",      "v_error_catch" in views)
+ok("error recurrence view exists", "v_error_recurrence" in views)
 ok("nine repair triggers",
    len([t for t in triggers if "repair" in t or "rule" in t]) == 9)
 
@@ -93,6 +96,17 @@ ok("signature with empty fixture refused", refuses(con,
     "INSERT INTO repair_signature (signature_id,family,kind,lang,match_re,"
     "fixture_form,fixture_text,authored_ms) VALUES "
     "('half','x',0,5,'boom','','',1)"))
+
+# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+print("\nError catches")
+con.execute("INSERT INTO error_catch (captured_ms,source_ident,stage,message,context,fingerprint) VALUES (?,?,?,?,?,?)",
+            (30, 'repo-error', 'compile', 'SDK location not found', 'gradle stderr', 'deadbeef'))
+con.commit()
+ok("error catch is archived", con.execute("SELECT COUNT(*) FROM error_catch").fetchone()[0] == 1)
+ok("error recurrence is queryable", con.execute("SELECT seen FROM v_error_recurrence WHERE fingerprint='deadbeef'").fetchone()[0] == 1)
+ok("error catch delete refused", refuses(con, "DELETE FROM error_catch WHERE error_id=1"))
+ok("error catch update refused", refuses(con, "UPDATE error_catch SET message='changed' WHERE error_id=1"))
 
 # ─────────────────────────────────────────────
 print("\nA repair is a pair")

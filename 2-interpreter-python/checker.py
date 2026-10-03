@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# noinspection SpellCheckingInspection
 """
 translate.py — Ever Language, Layer 2 (Python)
 

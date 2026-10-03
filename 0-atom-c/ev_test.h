@@ -108,15 +108,20 @@ static inline void ev_register(const char *name, const char *file, int line,
  * ASSERT macros — all print EXPECTED vs GOT on failure
  * ───────────────────────────────────────────── */
 
-#define _EV_PASS(fmt, ...) do {                               \
+#define _EV_PASS(...) do {                                  \
     _ev_pass++;                                               \
-    if (_ev_verbose)                                          \
-        printf("    \u2713  " fmt "\n", ##__VA_ARGS__);       \
+    if (_ev_verbose) {                                        \
+        printf("    \u2713  ");                              \
+        printf(__VA_ARGS__);                                  \
+        printf("\\n");                                      \
+    }                                                        \
 } while(0)
 
-#define _EV_FAIL(fmt, ...) do {                               \
+#define _EV_FAIL(...) do {                                  \
     _ev_fail++;                                               \
-    printf("    \u2717  " fmt "\n", ##__VA_ARGS__);           \
+    printf("    \u2717  ");                                  \
+    printf(__VA_ARGS__);                                      \
+    printf("\\n");                                          \
 } while(0)
 
 /* Basic boolean */

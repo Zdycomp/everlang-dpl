@@ -19,7 +19,23 @@ function tmpArchive() {
   return new Archive(dir);
 }
 
-// ─── archive invariants ────────────────────────────────────────────
+t('error catch is append-only', () => {
+  const a = tmpArchive();
+  const record = a.appendError({ runId: 1, lang: 'gradle', sourceIdent: 'repo-a',
+    stage: 'compile', message: 'SDK location not found',
+    context: 'stderr', fingerprint: 'deadbeef' });
+  assert.strictEqual(record.status, 'unresolved');
+  assert.strictEqual(a.errors().length, 1);
+  assert.strictEqual(a.errors()[0].fingerprint, 'deadbeef');
+});
+
+t('matched error catch starts the repair path', () => {
+  const a = tmpArchive();
+  const record = a.appendError({ runId: 1, lang: 'gradle', sourceIdent: 'repo-a',
+    message: 'known failure', fingerprint: 'known', signatureId: 'sig.x' });
+  assert.strictEqual(record.status, 'matched');
+});
+
 
 t('empty failure_text is rejected', () => {
   assert.throws(() => makeRepair({ lang: 'gradle', signatureId: 'x', kind: 0,

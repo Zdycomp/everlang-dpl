@@ -568,28 +568,40 @@ def _binop(k: NK, a: EValue, b: EValue) -> EValue:
         if v.ev_tag == EvType.REAL: return v.ev_real
         return None
 
+    def _exact(v: EValue):
+        """The operand unwidened — an INT stays a Python int.
+
+        _num() widens every INT to float64, so INT-op-INT was computed
+        in floating point and only cast back with int() afterwards.
+        Past 2**53 that loses the low bit: 9007199254740993 + 0 came
+        back as ...992, at 256/256. A wrong number at full confidence
+        is the exact failure this language exists to refuse, so
+        INT-op-INT is now done in Python's arbitrary-precision int and
+        only mixed INT/REAL arithmetic goes through float.
+        """
+        if v.ev_tag == EvType.INT:  return v.ev_int
+        if v.ev_tag == EvType.REAL: return v.ev_real
+        return None
+
     na, nb = _num(a), _num(b)
+    both_int = a.ev_tag == EvType.INT and b.ev_tag == EvType.INT
+    xa, xb = _exact(a), _exact(b)
 
     if k == NK.ADD:
         if na is not None and nb is not None:
-            r = na + nb
-            if a.ev_tag == EvType.INT and b.ev_tag == EvType.INT:
-                return EValue.from_int(int(r))
-            return EValue.from_real(r)
+            if both_int:
+                return EValue.from_int(xa + xb)
+            return EValue.from_real(na + nb)
         if a.ev_tag == EvType.TEXT and b.ev_tag == EvType.TEXT:
             return EValue.from_text((a.ev_text or "") + (b.ev_text or ""))
 
     if k == NK.SUB and na is not None and nb is not None:
-        r = na - nb
-        return (EValue.from_int(int(r))
-                if a.ev_tag == EvType.INT and b.ev_tag == EvType.INT
-                else EValue.from_real(r))
+        return (EValue.from_int(xa - xb) if both_int
+                else EValue.from_real(na - nb))
 
     if k == NK.MUL and na is not None and nb is not None:
-        r = na * nb
-        return (EValue.from_int(int(r))
-                if a.ev_tag == EvType.INT and b.ev_tag == EvType.INT
-                else EValue.from_real(r))
+        return (EValue.from_int(xa * xb) if both_int
+                else EValue.from_real(na * nb))
 
     if k == NK.DIV and na is not None and nb is not None and nb != 0:
         return EValue.from_real(na / nb)
@@ -604,6 +616,10 @@ def _binop(k: NK, a: EValue, b: EValue) -> EValue:
         NK.NEQ: lambda x,y: x != y,
     }
     if k in cmp_map and na is not None and nb is not None:
+        # compare exactly too: two distinct large ints widen to the
+        # same float64 and would compare equal
+        if both_int:
+            return EValue.from_bool(cmp_map[k](xa, xb))
         return EValue.from_bool(cmp_map[k](na, nb))
 
     return EValue.void()

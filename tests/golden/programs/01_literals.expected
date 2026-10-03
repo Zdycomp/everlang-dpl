@@ -1,4 +1,4 @@
-AST:Num(42.0)
-AST:Str(hello)
-AST:Bool(True)
-AST:Bool(False)
+AST:{"literal":"42","numeric_kind":"int","type":"Num","value":42}
+AST:{"type":"Str","value":"hello"}
+AST:{"type":"Bool","value":true}
+AST:{"type":"Bool","value":false}

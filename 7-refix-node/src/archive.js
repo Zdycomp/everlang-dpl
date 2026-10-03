@@ -14,6 +14,7 @@ const { E, KIND_COST, STATUS } = require('./constants');
 
 const REPAIRS_FILE = 'repairs.jsonl';
 const RULES_FILE   = 'rules.jsonl';
+const ERRORS_FILE  = 'errors.jsonl';
 
 // ─────────────────────────────────────────────
 // A repair is a pair. Empty halves are rejected — same rule as the
@@ -55,12 +56,22 @@ function makeRepair({
   };
 }
 
+function fingerprint(text) {
+  let h = 2166136261;
+  for (const ch of text) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
 class Archive {
   constructor(dir) {
     this.dir = dir;
     fs.mkdirSync(dir, { recursive: true });
     this.repairsPath = path.join(dir, REPAIRS_FILE);
     this.rulesPath   = path.join(dir, RULES_FILE);
+    this.errorsPath  = path.join(dir, ERRORS_FILE);
   }
 
   append(record)  { fs.appendFileSync(this.repairsPath, JSON.stringify(record) + '\n'); }
@@ -72,6 +83,22 @@ class Archive {
   }
   repairs() { return this.readAll(this.repairsPath); }
   rules()   { return this.readAll(this.rulesPath);   }
+  errors()  { return this.readAll(this.errorsPath);  }
+
+  appendError({ runId, lang, sourceIdent, stage = 'build', message,
+                context = '', fingerprint, signatureId = null }) {
+    if (!sourceIdent || !message || !fingerprint)
+      throw new Error('archive: error catch requires source, message, and fingerprint');
+    const record = {
+      v: 1, error_id: `${Date.now()}-${process.pid}-${this.errors().length}`,
+      captured_ms: Date.now(), run_id: runId, lang, source_ident: sourceIdent,
+      stage, message, context, fingerprint, signature_id: signatureId,
+      status: signatureId ? 'matched' : 'unresolved', resolved_by: null,
+      resolved_ms: null,
+    };
+    fs.appendFileSync(this.errorsPath, JSON.stringify(record) + '\n');
+    return record;
+  }
 
   // ─────────────────────────────────────────────
   // Recurrence: same shape as the repair_candidate SQL view.
@@ -158,4 +185,4 @@ class Archive {
   }
 }
 
-module.exports = { Archive, makeRepair };
+module.exports = { Archive, makeRepair, fingerprint };

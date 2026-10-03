@@ -354,7 +354,15 @@ public final class EverRuntime {
         return evolved;
     }
 
-    public List<EParticle> archive() { return new ArrayList<>(archive); }
+    public EverRuntime assimilate(String ident, EParticle.Lang to) {
+        particles.put(ident, get(ident).assimilate(to));
+        return this;
+    }
+
+    public List<EParticle> particles() {
+        return new ArrayList<>(particles.values());
+    }
+
 
     public Result execute() {
         List<EParticle> cleared = new ArrayList<>();

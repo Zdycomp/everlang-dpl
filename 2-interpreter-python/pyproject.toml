@@ -34,4 +34,7 @@ py-modules = [
     "ffi",
     "builtins_ml",
     "profiler",
+    "collider",
+    "architecture",
+    "rag_index",
 ]

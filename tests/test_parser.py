@@ -267,7 +267,15 @@ def sem_errs(src):
 
 ok("unbound name",     len(sem_errs("def f(n) = missing")) > 0)
 ok("div by literal 0", len(sem_errs("def f(n) = n / 0")) > 0)
-ok("arity 1 given 2",  len(sem_errs("def k(n) = f(n, n)") ) > 0 or True)
+# Was pinned open with `or True`, which made it pass no matter what.
+# Two things were wrong underneath it: `f` is undefined here, so there
+# is no arity to mismatch, and sem_errs() called Semantic.analyse() on
+# a whole Program, which used to fall through and report clean. Define
+# f first, so the arity check has something to check.
+ok("arity 1 given 2",
+   len(sem_errs("def f(n) = n\ndef k(n) = f(n, n)")) > 0)
+ok("arity satisfied is clean",
+   sem_errs("def f(n) = n\ndef k(n) = f(n)") == [])
 ok("branch type clash",
    len(sem_errs('def g(n) = if n then "y" else 3')) > 0)
 ok("clean has no sem errors",

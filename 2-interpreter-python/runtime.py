@@ -443,7 +443,7 @@ def run_source(source: str, profiler: Optional["Profiler"] = None,
         # beginner program and a five-line advanced one are compared
         # as programs, not diluted per line.
         try:
-            from profiler import Observation
+            from profiler import Observation, observe_source_flags
             combined = Observation()
             for a in pa.statements:
                 if a.observation:
@@ -451,6 +451,12 @@ def run_source(source: str, profiler: Optional["Profiler"] = None,
                         combined.note(key, n)
                     combined.max_depth = max(combined.max_depth,
                                              a.observation.max_depth)
+            # Statement-syntax constructs (let/ever/anchor/z) are read
+            # off the whole program's text, so they are counted ONCE
+            # here rather than inside each statement's analyse() — where
+            # every statement picked up the program's totals and this
+            # fold then squared them.
+            observe_source_flags(combined, source)
             p = profiler.observe(combined)
             result.proficiency = p.rounded
             result.scaffold    = p.scaffold

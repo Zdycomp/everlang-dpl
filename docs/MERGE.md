@@ -127,11 +127,7 @@ Nine triggers, each matching a throw in `7-refix-node/src/archive.js`:
 assert a *refusal*. If an invariant holds in only one of the two
 implementations it is not an invariant, it is a convention.
 
-**`tests/run_all.py`** now runs all eight layers. The four suites that
-need a toolchain the host may not have (`ruby`, `javac`, `node`) test
-for it first and report **SKIP**. They never report PASS on a missing
-toolchain, which was the failure mode Ever v1's README went out of its
-way to avoid.
+**`tests/run_all.py`** now runs the complete nine-layer verification suite. Toolchain-dependent checks report **SKIP** only when the toolchain is genuinely unavailable; they never report PASS on a missing toolchain.
 
 ---
 
