@@ -119,4 +119,29 @@ class TranspileAuditIntegrationTest {
         assertEquals(1, result.mismatchedCount());
         assertEquals(3L, result.mismatches().get(0).id());
     }
+
+    @Test
+    void typedRowsAreLoadedWithTheirKindAndReRendered() throws SQLException {
+        try (Statement st = conn.createStatement()) {
+            st.execute("DELETE FROM transpilations");
+            st.execute("ALTER TABLE transpilations ADD COLUMN template_version INTEGER");
+            st.execute("ALTER TABLE transpilations ADD COLUMN value_kind TEXT");
+            st.execute("""
+                    INSERT INTO transpilations (id, name, val, type_spec, confidence, target_language, rendered_code, value_kind)
+                    VALUES (1, 'cpu', '85.5', 'Float', 200, 'RUST', 'let cpu: Option<f64> = Some(85.5);', 'Float'),
+                           (2, 'p', '["tcp", "udp"]', 'List', 200, 'GO', 'var p []string = []string{"tcp", "udp"}', 'List<Str>'),
+                           (3, 'on', 'true', 'Bool', 200, 'KOTLIN', 'val on: Boolean? = "true"', 'Bool'),
+                           (4, 's', 's', 'T', 200, 'GO', 'var s string = "s"', NULL)
+                    """);
+        }
+
+        List<TranspileRow> rows = TranspileAudit.loadTranspilations(conn);
+        assertEquals("List<Str>", rows.get(1).valueKind());
+        assertNull(rows.get(3).valueKind());
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(rows);
+        assertEquals(3, result.verifiedCount());
+        assertEquals(1, result.mismatchedCount());
+        assertEquals(3L, result.mismatches().get(0).id());
+    }
 }

@@ -13,6 +13,11 @@ from pathlib import Path
 
 _SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 _DEFAULT_DB_PATH = Path(__file__).resolve().parent / "tapestry.db"
+# Same definition as schema.sql, for tables created before the column existed.
+_VALUE_KIND_COLUMN = (
+    "value_kind TEXT CHECK (value_kind IS NULL OR (value_kind IN "
+    "('Int', 'Float', 'Bool', 'List<Str>', 'List<Int>', 'List<Float>', 'List<Bool>') AND template_version IS NULL))"
+)
 
 
 class SqlArchive:
@@ -35,6 +40,8 @@ class SqlArchive:
                 "ALTER TABLE transpilations ADD COLUMN template_version INTEGER "
                 "CHECK (template_version IS NULL OR template_version >= 1)"
             )
+        if "value_kind" not in cols:
+            self._conn.execute("ALTER TABLE transpilations ADD COLUMN " + _VALUE_KIND_COLUMN)
         # The pre-versioning custom_templates table (one row per language) becomes
         # version 1 of each language not already versioned; the old table is left as-is.
         legacy = self._conn.execute(
@@ -91,15 +98,17 @@ class SqlArchive:
 
     def record_transpilation(self, name: str, val: str, type_spec: str, confidence: int,
                               target_language: str, rendered_code: str,
-                              template_version: int = None) -> int:
+                              template_version: int = None, value_kind: str = None) -> int:
         """Inserts a row into transpilations, returns the new row id.
-        template_version is None for built-in languages."""
+        template_version is None for built-in languages. value_kind is None for
+        string-template renderings; for a typed rendering it is the value's kind
+        and val is its canonical DPL literal."""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO transpilations (name, val, type_spec, confidence, "
-                "target_language, rendered_code, template_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "target_language, rendered_code, template_version, value_kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (str(name), str(val), str(type_spec), confidence, str(target_language),
-                 str(rendered_code), template_version),
+                 str(rendered_code), template_version, value_kind),
             )
             self._conn.commit()
             return cur.lastrowid

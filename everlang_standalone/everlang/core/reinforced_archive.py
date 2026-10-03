@@ -20,7 +20,9 @@ SuperTranspiler output through the same two backends: each rendered
 language's code is gated by the C++ verifier and persisted into the SQL
 archive's `transpilations` table, which 5-runtime-java's TranspileAudit
 independently re-renders and cross-checks (the same pattern already used
-for `emulate_repair` vs. RepairAuditor).
+for `emulate_repair` vs. RepairAuditor). `transpile_typed_and_archive` does
+the same for numbers, booleans and lists rendered with native types, marking
+each row with its `value_kind`.
 """
 import importlib.util
 import sqlite3
@@ -33,6 +35,7 @@ from typing import Dict, Optional, Tuple
 from .archive import EArchive
 from .particle import EParticle
 from ..transpiler import LANGUAGE_TEMPLATES, SuperTranspiler, validate_template
+from ..transpiler.typed import default_type_spec, infer
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CPP_BINARY = _REPO_ROOT / "1-phase-cpp" / "bin" / "verify_particle"
@@ -197,9 +200,28 @@ class ReinforcedArchive:
         with self._languages_lock:
             rendered = self._transpiler.transpile(name, val, type_spec, conf)
             versions = dict(self._template_versions)
+        self._archive_renderings(name, val, type_spec, conf, rendered, versions, None)
+        return rendered
 
+    def transpile_typed_and_archive(self, name: str, value, type_spec: Optional[str], conf: int) -> Dict[str, str]:
+        """transpile_and_archive for a number, boolean or list: renders it with
+        SuperTranspiler.transpile_typed (native types, built-in languages only)
+        and archives each rendering with its value_kind, storing the value's
+        canonical DPL literal as val so 5-runtime-java can re-render it.
+        Raises ValueError for a value transpile_typed does not accept."""
+        typed_value = infer(value)
+        if type_spec is None:
+            type_spec = default_type_spec(typed_value)
+        with self._languages_lock:  # transpile_typed iterates the template dict register_language edits
+            rendered = self._transpiler.transpile_typed(name, typed_value, type_spec, conf)
+        self._archive_renderings(name, typed_value.dpl_literal(), type_spec, conf, rendered, {}, typed_value.kind)
+        return rendered
+
+    def _archive_renderings(self, name, val, type_spec, conf, rendered, versions, value_kind) -> None:
+        """Gates each rendering through the C++ verifier and persists it (or its
+        rejection) to SQL; a no-op without SQL."""
         if not self.sql_available:
-            return rendered
+            return
 
         for target_language, code in rendered.items():
             verdict, verifier_reason = self._verify_with_cpp(code, conf)
@@ -221,8 +243,8 @@ class ReinforcedArchive:
                 target_language=target_language,
                 rendered_code=code,
                 template_version=versions.get(target_language),
+                value_kind=value_kind,
             )
-        return rendered
 
     # -- custom language management ----------------------------------------
 

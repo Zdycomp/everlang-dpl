@@ -1,16 +1,17 @@
 """Result types and diagnostic wording shared by the baseline and Mega stages,
 so both produce byte-identical output for the same program."""
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple, Optional, Union
 
 from ..core.particle import EParticle
+from ..transpiler.typed import TypedValue
 from .grammar import Diagnostic
 
 
 class DeclarationResult(NamedTuple):
     name: str
     type_spec: str
-    value: str
+    value: Union[str, TypedValue]
     confidence: int
     renderings: Dict[str, str]
 
@@ -35,7 +36,7 @@ class ExecutionResult:
 
 def unexpected_char(c: str, line: int, col: int) -> Diagnostic:
     hint = ("did you mean '->'?" if c == "-"
-            else "DPL uses letters, digits, '_', quotes, and the symbols : < > = @ ( ) ->")
+            else "DPL uses letters, digits, '_', quotes, and the symbols : < > = @ ( ) [ ] , ->")
     return Diagnostic("lex", "error", line, col, f"unexpected character {c!r}", hint)
 
 

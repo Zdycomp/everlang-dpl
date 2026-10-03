@@ -9,7 +9,7 @@ from typing import List, Tuple
 
 from .grammar import (
     ARROW, AT, COLON, DECLARATION_KINDS, EOF, EQ, ERROR, GT, IDENT, INT, KEYWORDS, KW_COLLIDE,
-    KW_CONFIDENCE, KW_PARTICLE, LPAREN, LT, NEWLINE, RPAREN, STRING, SYMBOLS, TokenStream,
+    KW_CONFIDENCE, KW_PARTICLE, LPAREN, LT, NEWLINE, NUMBER, RPAREN, STRING, SYMBOLS, TokenStream,
 )
 from .results import bad_string, unexpected_char
 
@@ -64,10 +64,10 @@ _MASTER = re.compile(
     r'(?P<NL>\n)'
     r'|(?P<COMMENT>#[^\n]*)'
     r'|(?P<IDENT>[A-Za-z_][A-Za-z0-9_]*)'
-    r'|(?P<INT>[0-9]+)'
+    r'|(?P<NUM>-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)'
     r'|(?P<STRING>' + _STRING + r')'
     r'|(?P<ARROW>->)'
-    r'|(?P<SYM>[:<>=@()])'
+    r'|(?P<SYM>[:<>=@()\[\],])'
     r'|(?P<BADSTR>' + _BADSTR + r')'
     r'|(?P<ERR>[^ \t\n])'  # not `.`: backtracking would hand ERR a trailing space at end of input
     r')'
@@ -195,8 +195,9 @@ class Supercodalexer:
                 if "\\" in text:
                     text = _unescape(text)
                 append((STRING, text, line, col))
-            elif kind == "INT":
-                append((INT, m.group(kind), line, col))
+            elif kind == "NUM":
+                text = m.group(kind)
+                append((INT if text.isdigit() else NUMBER, text, line, col))
             elif kind == "ARROW":
                 append((ARROW, "->", line, col))
             elif kind == "COMMENT":

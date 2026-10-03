@@ -10,14 +10,21 @@ confidence model, and fanned out to every transpiler target.
 program     := { line } EOF
 line        := [ statement ] ( NEWLINE | EOF )
 statement   := declaration | collision
-declaration := "particle" IDENT ":" "E" "<" IDENT ">" "=" STRING "@" "confidence" "(" INT ")"
+declaration := "particle" IDENT ":" "E" "<" IDENT ">" "=" value "@" "confidence" "(" INT ")"
+value       := STRING | scalar | "[" item { "," item } "]"
+scalar      := INT | NUMBER | "true" | "false"
+item        := STRING | scalar                (every item of one list is the same kind)
 collision   := "collide" IDENT IDENT [ "->" IDENT ]
 
 IDENT    := [A-Za-z_][A-Za-z0-9_]*        (except the keywords particle, collide, confidence)
 INT      := [0-9]+
+NUMBER   := '-'? [0-9]+ ( '.' [0-9]+ )? ( [eE] [+-]? [0-9]+ )?     (when not a plain INT)
 STRING   := '"' { any char except '"', '\', newline  |  '\"'  |  '\\'  |  '\n'  |  '\r' } '"'
 comment  := '#' to end of line            (ignored)
 ```
+
+`true` and `false` are ordinary identifiers that mean a boolean only in value
+position, so a particle may still be named `true`.
 
 Spaces and tabs separate tokens; `\r\n` is read as `\n`. A declaration line has
 the same shape as `SuperTranspiler`'s `DPL` rendering, and `SuperTranspiler`
@@ -28,6 +35,18 @@ so any DPL rendering reads back to the same value and renders identically again.
 
 - **declaration** creates `EParticle(value, confidence)` bound to `IDENT`. A
   confidence above 256 is clamped by `EParticle` and reported as a warning.
+- A **quoted value** is a string and renders through `SuperTranspiler.transpile`'s
+  string templates, exactly as before typed values existed.
+- Any **other value** is typed (`everlang/transpiler/typed.py`): a number with
+  `.` or an exponent is a `Float`, other numbers are an `Int`, `true`/`false` a
+  `Bool`, and a list is `List<Str|Int|Float|Bool>`. The particle holds the
+  Python value (`85.5`, `True`, `["tcp", "udp"]`) and the declaration renders
+  through `SuperTranspiler.transpile_typed`: native types and literals in every
+  built-in language (`var cpu float64 = 85.5`, `[]string{"tcp", "udp"}`), with
+  custom languages skipped. Numbers are canonicalised (`1.50` → `1.5`, `007` →
+  `7`). An Int outside ±(2^63-1), a Float that overflows, an empty list, a list
+  inside a list, and a list mixing kinds (including `[1, 2.5]`) are parse errors.
+  A typed DPL rendering reads back to the same value and renders identically.
 - **collision** runs `PhaseEngine.collide(a, b)` on two bound particles and records
   the outcome (`Z_CONTAGION`, `EXCEL`, `EXPEL`, `REPEL`). With `-> name`, the
   resulting particle is bound to `name` and can be collided again.
@@ -40,7 +59,7 @@ so any DPL rendering reads back to the same value and renders identically again.
 |---|---|
 | `Supercodalexer` | Tokens `(kind, text, line, col)`, and one diagnostic for **every** bad character, unterminated string, or unknown escape — not just the first. |
 | `QuantificationUltraParser` | The program's statements, plus every syntax error in the file. Each error carries a fix hint. Parsing resumes at the next line after an error. |
-| `MegaExecuter` | Per declaration: the particle and its rendering in every transpiler language (built-in and custom). Per collision: a trace entry (operands, outcome, reason, result). Runtime diagnostics. With a `ReinforcedArchive`, renderings go through `transpile_and_archive` and collisions through `log_boundary_marker`, so they are C++-gated and persisted. |
+| `MegaExecuter` | Per declaration: the particle and its rendering in every transpiler language (built-in and custom; built-in only for a typed value). Per collision: a trace entry (operands, outcome, reason, result). Runtime diagnostics. With a `ReinforcedArchive`, renderings go through `transpile_and_archive` (`transpile_typed_and_archive` for a typed value) and collisions through `log_boundary_marker`, so they are C++-gated and persisted. |
 
 ## Speed
 
@@ -56,6 +75,10 @@ difference is speed:
 | Quantification Ultra Parser | Declarations the lexer already verified (`TokenStream.declaration_starts`) are built from known offsets; otherwise a 14-kind list comparison; recursive descent only for the rest | 1.5–2.4× |
 | MegaExecuter | All active templates compiled into one generated f-string function; direct type dispatch | 2.1–2.4× |
 | **End to end** | | **2.9–3.6×** |
+
+These ratios are for string declarations. A typed declaration always takes the
+per-token lexer path and the recursive-descent parser, so a program made mostly
+of typed values gains less.
 
 End to end does not reach 4×. The parser and executor are dominated by work any
 implementation must do — building `Declaration` nodes, constructing `EParticle`s,

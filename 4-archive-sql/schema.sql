@@ -43,7 +43,10 @@ CREATE TABLE IF NOT EXISTS transpilations (
     target_language TEXT NOT NULL,
     rendered_code TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-    template_version INTEGER CHECK (template_version IS NULL OR template_version >= 1)
+    template_version INTEGER CHECK (template_version IS NULL OR template_version >= 1),
+    -- NULL: rendered by a string template. Otherwise a typed rendering (built-in
+    -- languages only) whose val is the value's canonical DPL literal.
+    value_kind TEXT CHECK (value_kind IS NULL OR (value_kind IN ('Int', 'Float', 'Bool', 'List<Str>', 'List<Int>', 'List<Float>', 'List<Bool>') AND template_version IS NULL))
 );
 
 CREATE TABLE IF NOT EXISTS kmer_indices (

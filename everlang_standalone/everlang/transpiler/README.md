@@ -70,6 +70,46 @@ The transpiler adjusts template variants based on confidence (0-256):
 - **51-199 (Medium)**: Standard templates with normal safety
 - **200-256 (High)**: Optimistic mode, unchecked/trusted rendering
 
+## Typed Values
+
+`render`, `render-all` and `SuperTranspiler.transpile` quote every value as a
+string: `85.5` comes out as `var x string = "85.5"`. Numbers, booleans and lists
+go through `SuperTranspiler.transpile_typed` instead (`typed.py`), which keeps
+each language's native type and literal syntax:
+
+```python
+from everlang_standalone.everlang.transpiler import SuperTranspiler
+
+t = SuperTranspiler()
+t.transpile_typed("cpu", 85.5, None, 200)["GO"]                # var cpu float64 = 85.5
+t.transpile_typed("protocols", ["tcp", "udp"], None, 200)["C_CLANG"]
+# const char* protocols[2] = {"tcp", "udp"};
+t.transpile_value("id", "node_99", None, 200)                  # str -> the string templates
+```
+
+| Kind | Kotlin | Rust | C | Go | Groovy |
+|---|---|---|---|---|---|
+| Int | `Long` (`5L`) | `i64` | `long long` | `int64` | `Long` (`5L`) |
+| Float | `Double` | `f64` | `double` | `float64` | `Double` (`1.5d`) |
+| Bool | `Boolean` | `bool` | `bool` | `bool` | `Boolean` |
+| List | `listOf(..)` | `Some(vec![..])` | `T name[n] = {..}` | `[]T{..}` | `List<T> .. = [..]` |
+
+- Values are a Python `bool`, `int` (within ±(2^63-1)), finite `float`, or a
+  non-empty list of one of those or of `str`. Empty, nested and mixed-kind lists
+  (`[1, 2.5]` included) raise `ValueError`, as do plain strings.
+- Strings inside lists are escaped per language: `\`, `"`, newline and carriage
+  return everywhere; `$` in Kotlin and Groovy; other control characters as each
+  language's numeric escape; `??` in C, so no trigraph forms.
+- `type_spec` appears only in DPL's `E<...>` (default `Int`/`Float`/`Bool`/`List`);
+  the other languages take the type from the value.
+- Only the six built-in languages are rendered; custom templates are string templates.
+- The C snippet uses `bool`, so it needs `<stdbool.h>` before C23.
+- `tests/test_typed_transpiler.py` compiles the C, Go and Rust output with the
+  real toolchains when installed. The Kotlin and Groovy output was checked by
+  hand with `kotlinc` 2.0.21 (`-Werror`) and Groovy 4.0.22.
+- `ReinforcedArchive.transpile_typed_and_archive` archives typed renderings with
+  their `value_kind`, and 5-runtime-java's TranspileAudit re-renders them.
+
 ## Command Reference
 
 ### render
@@ -94,6 +134,16 @@ Generate code for all 6 languages simultaneously.
 everlang-transpile stats
 ```
 Display supported languages and performance metrics.
+
+### config
+```bash
+everlang-transpile config FILE [--confidence N] [--language LANGUAGE]
+```
+Render every value of a `.toml` (Python 3.11+) or `.json` file. Nested keys are
+joined with `_` (`node.alpha.cpu` → `node_alpha_cpu`) and lists of tables are
+indexed (`modules_0_enabled`). Strings use the string templates; numbers,
+booleans and lists are typed. A value neither accepts (a TOML date, a mixed
+list) is reported on stderr and skipped, and the exit code is 1.
 
 ## Performance
 

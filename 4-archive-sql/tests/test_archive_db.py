@@ -217,6 +217,27 @@ class TestSqlArchiveCustomTemplates(unittest.TestCase):
         self.assertIsNone(rows[builtin_id])
 
 
+class TestSqlArchiveValueKind(unittest.TestCase):
+    def setUp(self):
+        self.archive = SqlArchive(os.path.join(tempfile.mkdtemp(), "k.db"))
+        self.addCleanup(self.archive.close)
+
+    def test_typed_row_records_its_kind(self):
+        typed_id = self.archive.record_transpilation("cpu", "85.5", "Float", 200, "GO", "var cpu float64 = 85.5",
+                                                     value_kind="Float")
+        plain_id = self.archive.record_transpilation("cpu", "85.5", "Float", 200, "GO", 'var cpu string = "85.5"')
+        rows = dict(self.archive._conn.execute("SELECT id, value_kind FROM transpilations").fetchall())
+        self.assertEqual(rows, {typed_id: "Float", plain_id: None})
+
+    def test_unknown_kind_is_rejected(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.archive.record_transpilation("x", "1", "T", 1, "GO", "var x int64 = 1", value_kind="List<List<Int>>")
+
+    def test_typed_row_cannot_carry_a_template_version(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.archive.record_transpilation("x", "1", "T", 1, "TOML", "x = 1", template_version=1, value_kind="Int")
+
+
 class TestGenomicsRecorders(unittest.TestCase):
     def setUp(self):
         self.archive = SqlArchive(os.path.join(tempfile.mkdtemp(), "g.db"))
@@ -259,8 +280,29 @@ class TestSqlArchiveMigration(unittest.TestCase):
         self.addCleanup(archive.close)
         cols = {r[1] for r in archive._conn.execute("PRAGMA table_info(transpilations)")}
         self.assertIn("template_version", cols)
+        self.assertIn("value_kind", cols)
         self.assertEqual(archive._conn.execute("SELECT COUNT(*) FROM transpilations").fetchone()[0], 1)
         archive.record_transpilation("y", "v", "T", 200, "SWIFT", "let y", template_version=1)
+        archive.record_transpilation("z", "1", "T", 200, "GO", "var z int64 = 1", value_kind="Int")
+        with self.assertRaises(sqlite3.IntegrityError):
+            archive.record_transpilation("w", "1", "T", 200, "GO", "w", value_kind="Nope")
+
+    def test_versioned_table_without_value_kind_gains_it(self):
+        db_path = os.path.join(tempfile.mkdtemp(), "v1.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE transpilations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+            "val TEXT NOT NULL, type_spec TEXT NOT NULL, confidence INTEGER NOT NULL, "
+            "target_language TEXT NOT NULL, rendered_code TEXT NOT NULL, created_at TEXT, "
+            "template_version INTEGER)"
+        )
+        conn.commit()
+        conn.close()
+        archive = SqlArchive(db_path)
+        self.addCleanup(archive.close)
+        archive.record_transpilation("z", "true", "Bool", 200, "GO", "var z bool = true", value_kind="Bool")
+        with self.assertRaises(sqlite3.IntegrityError):
+            archive.record_transpilation("t", "1", "T", 200, "TOML", "t", template_version=2, value_kind="Int")
 
     def test_legacy_custom_templates_become_version_one(self):
         db_path = os.path.join(tempfile.mkdtemp(), "legacy.db")

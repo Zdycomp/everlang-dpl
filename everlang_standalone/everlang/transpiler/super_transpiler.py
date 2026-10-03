@@ -17,7 +17,9 @@ Option<T>, a raw (deliberately unchecked) C pointer, Go's var declaration,
 and Groovy's `as` type-coercion operator are all real language features.
 """
 import string
-from typing import Callable, Dict
+from typing import Callable, Dict, Optional
+
+from .typed import TYPED_LANGUAGES, default_type_spec, infer, render_typed
 
 # DPL, KOTLIN, RUST, C_CLANG, GO are verbatim from
 # benchmarks/ez_micro_containers.py::SyntaxMutatorContainer.PARADIGMS.
@@ -118,6 +120,24 @@ class SuperTranspiler:
             lang_val = escape(val) if escape is not None else val
             offsets[lang] = template.format(name=name, val=lang_val, type_spec=type_spec, conf=conf)
         return offsets
+
+    def transpile_typed(self, name: str, value, type_spec: Optional[str], conf: int) -> Dict[str, str]:
+        """Renders a number, boolean or list (a TypedValue, or a Python value
+        `typed.infer` accepts) with each language's native type and literal
+        syntax: `85.5` stays a float, `true` a boolean, a list an array. Only
+        built-in languages are rendered (custom templates are string templates).
+        `type_spec` appears only in DPL's `E<...>`; None picks Int/Float/Bool/List."""
+        typed_value = infer(value)
+        if type_spec is None:
+            type_spec = default_type_spec(typed_value)
+        return {lang: render_typed(lang, name, typed_value, type_spec, conf)
+                for lang in self.templates if lang in TYPED_LANGUAGES}
+
+    def transpile_value(self, name: str, value, type_spec: Optional[str], conf: int) -> Dict[str, str]:
+        """transpile() for a str (type_spec defaulting to String), else transpile_typed()."""
+        if isinstance(value, str):
+            return self.transpile(name, value, "String" if type_spec is None else type_spec, conf)
+        return self.transpile_typed(name, value, type_spec, conf)
 
     def compute_syntax_distance(self, pattern1: str, pattern2: str) -> int:
         """Ported verbatim from the original benchmark: a coarse structural

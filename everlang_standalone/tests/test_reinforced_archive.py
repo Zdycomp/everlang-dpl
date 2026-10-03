@@ -47,6 +47,10 @@ class TestReinforcedArchiveFallback(unittest.TestCase):
         b = self.reinforced.calculate_evolve_vector(1.0, 2.0, 4.0)
         self.assertEqual(a, b)
 
+    def test_typed_transpile_works_without_backends(self):
+        rendered = self.reinforced.transpile_typed_and_archive("cpu", 85.5, None, 200)
+        self.assertEqual(rendered["C_CLANG"], "const double cpu = 85.5;")
+
     def test_calculate_evolve_vector_noop_matches(self):
         a = self.plain.calculate_evolve_vector(1.0, 0.0, 4.0)
         b = self.reinforced.calculate_evolve_vector(1.0, 0.0, 4.0)
@@ -210,6 +214,36 @@ class TestReinforcedArchiveIntegration(unittest.TestCase):
         self.assertEqual(reopened.template_versions, {"TOML": 2})
         reopened.transpile_and_archive("k", "v", "T", 200)
         self.assertEqual(self._versioned_rows("TOML"), [('[k] = "v"', 2)])
+
+    def test_typed_renderings_are_archived_with_their_kind_and_literal(self):
+        rendered = self.archive.transpile_typed_and_archive("protocols", ["tcp", "udp"], None, 200)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT target_language, val, type_spec, rendered_code, value_kind, template_version "
+                "FROM transpilations").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 6)
+        self.assertEqual({r[0]: r[3] for r in rows}, rendered)
+        self.assertEqual({r[1:3] + r[4:] for r in rows}, {('["tcp", "udp"]', "List", "List<Str>", None)})
+        self.assertEqual(rendered["GO"], 'var protocols []string = []string{"tcp", "udp"}')
+
+    def test_typed_path_rejects_plain_strings_without_writing(self):
+        with self.assertRaises(ValueError):
+            self.archive.transpile_typed_and_archive("s", "text", None, 200)
+        self.assertEqual(self._rows("transpilations"), [])
+
+    def test_typed_path_skips_custom_languages(self):
+        self.archive.register_language("TOML", '{name} = "{val}"')
+        rendered = self.archive.transpile_typed_and_archive("n", 3, None, 200)
+        self.assertNotIn("TOML", rendered)
+        self.assertEqual(len(self._rows("transpilations")), 6)
+
+    def test_oversized_typed_rendering_is_rejected(self):
+        self.archive.transpile_typed_and_archive("big", ["X" * 5000], None, 200)
+        self.assertEqual(self._rows("transpilations"), [])
+        self.assertEqual(len(self._rows("rejected_writes")), 6)
 
     def test_transpile_and_archive_rejects_oversized_rendering(self):
         # A huge value makes every rendered snippet exceed verify_particle's

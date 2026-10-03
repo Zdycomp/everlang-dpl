@@ -14,7 +14,8 @@ package com.everlang.runtime;
  *   target_language TEXT,
  *   rendered_code TEXT,
  *   created_at TEXT,
- *   template_version INTEGER -- NULL for built-in languages and pre-versioning rows
+ *   template_version INTEGER, -- NULL for built-in languages and pre-versioning rows
+ *   value_kind TEXT           -- NULL for string-template rows; else a typed row whose val is a DPL literal
  * );
  * </pre>
  *
@@ -29,10 +30,16 @@ public record TranspileRow(
         int confidence,
         String targetLanguage,
         String renderedCode,
-        Integer templateVersion
+        Integer templateVersion,
+        String valueKind
 ) {
     public TranspileRow(long id, String name, String val, String typeSpec, int confidence,
                         String targetLanguage, String renderedCode) {
-        this(id, name, val, typeSpec, confidence, targetLanguage, renderedCode, null);
+        this(id, name, val, typeSpec, confidence, targetLanguage, renderedCode, null, null);
+    }
+
+    public TranspileRow(long id, String name, String val, String typeSpec, int confidence,
+                        String targetLanguage, String renderedCode, Integer templateVersion) {
+        this(id, name, val, typeSpec, confidence, targetLanguage, renderedCode, templateVersion, null);
     }
 }

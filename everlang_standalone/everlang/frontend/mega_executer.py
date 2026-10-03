@@ -6,7 +6,7 @@ from typing import Callable, Dict, Tuple
 
 from ..core.particle import EParticle
 from ..core.phase_engine import PhaseEngine
-from ..transpiler import VALUE_ESCAPES, SuperTranspiler
+from ..transpiler import VALUE_ESCAPES, SuperTranspiler, TypedValue
 from .grammar import Collision, Declaration
 from .results import (
     CollisionResult, DeclarationResult, ExecutionResult, already_bound, clamped, unbound,
@@ -84,6 +84,18 @@ class MegaExecuter:
                 name, type_spec, value, declared, line = node
                 if name in env:
                     diags_append(already_bound(name, line))
+                    continue
+                if type(value) is TypedValue:
+                    particle = EParticle(value.to_python(), declared)
+                    conf = particle.confidence
+                    if conf != declared:
+                        diags_append(clamped(name, declared, conf, line))
+                    env[name] = particle
+                    if archive is None:
+                        renderings = self._transpiler.transpile_typed(name, value, type_spec, conf)
+                    else:
+                        renderings = archive.transpile_typed_and_archive(name, value, type_spec, conf)
+                    decls_append(DeclarationResult(name, type_spec, value, conf, renderings))
                     continue
                 particle = EParticle(value, declared)
                 conf = particle.confidence

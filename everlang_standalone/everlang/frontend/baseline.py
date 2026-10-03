@@ -7,9 +7,10 @@ from ..core.phase_engine import PhaseEngine
 from ..core.particle import EParticle
 from ..transpiler import SuperTranspiler
 from .grammar import (
-    ARROW, EOF, ERROR, IDENT, INT, KEYWORDS, NEWLINE, STRING, SYMBOLS,
+    ARROW, EOF, ERROR, IDENT, INT, KEYWORDS, NEWLINE, NUMBER, STRING, SYMBOLS,
     Diagnostic, ParseResult, Token, parse_statement,
 )
+from ..transpiler.typed import TypedValue
 from .results import (
     CollisionResult, DeclarationResult, ExecutionResult,
     already_bound, bad_string, clamped, unbound, unexpected_char,
@@ -47,11 +48,9 @@ class BaselineLexer:
                 text = src[i:j]
                 toks.append(Token(KEYWORDS.get(text, IDENT), text, line, col))
                 i = j
-            elif c in _DIGITS:
-                j = i + 1
-                while j < n and src[j] in _DIGITS:
-                    j += 1
-                toks.append(Token(INT, src[i:j], line, col))
+            elif c in _DIGITS or (c == "-" and i + 1 < n and src[i + 1] in _DIGITS):
+                j, plain = self._number(src, i + 1 if c == "-" else i, n)
+                toks.append(Token(INT if plain and c != "-" else NUMBER, src[i:j], line, col))
                 i = j
             elif c == '"':
                 i = self._string(src, i, n, line, col, toks, diags)
@@ -67,6 +66,28 @@ class BaselineLexer:
                 i += 1
         toks.append(Token(EOF, "", line, n - line_start + 1))
         return toks, diags
+
+    @staticmethod
+    def _number(src, i, n):
+        """Scans digits [ '.' digits ] [ ('e'|'E') ['+'|'-'] digits ] from src[i], a
+        digit. Returns (end, True if only the leading digits were consumed)."""
+        j = i
+        while j < n and src[j] in _DIGITS:
+            j += 1
+        digits_end = j
+        if j + 1 < n and src[j] == "." and src[j + 1] in _DIGITS:
+            j += 2
+            while j < n and src[j] in _DIGITS:
+                j += 1
+        if j < n and src[j] in "eE":
+            k = j + 1
+            if k < n and src[k] in "+-":
+                k += 1
+            if k < n and src[k] in _DIGITS:
+                j = k + 1
+                while j < n and src[j] in _DIGITS:
+                    j += 1
+        return j, j == digits_end
 
     @staticmethod
     def _string(src, i, n, line, col, toks, diags) -> int:
@@ -128,14 +149,18 @@ class BaselineExecutor:
         if node.name in env:
             self._result.diagnostics.append(already_bound(node.name, node.line))
             return
-        particle = EParticle(node.value, node.confidence)
+        typed = type(node.value) is TypedValue
+        particle = EParticle(node.value.to_python() if typed else node.value, node.confidence)
         if particle.confidence != node.confidence:
             self._result.diagnostics.append(clamped(node.name, node.confidence, particle.confidence, node.line))
         env[node.name] = particle
-        if self._archive is not None:
-            renderings = self._archive.transpile_and_archive(node.name, node.value, node.type_spec, particle.confidence)
+        if typed:
+            transpile = (self._archive.transpile_typed_and_archive if self._archive is not None
+                         else self._transpiler.transpile_typed)
         else:
-            renderings = self._transpiler.transpile(node.name, node.value, node.type_spec, particle.confidence)
+            transpile = (self._archive.transpile_and_archive if self._archive is not None
+                         else self._transpiler.transpile)
+        renderings = transpile(node.name, node.value, node.type_spec, particle.confidence)
         self._result.declarations.append(
             DeclarationResult(node.name, node.type_spec, node.value, particle.confidence, renderings))
 

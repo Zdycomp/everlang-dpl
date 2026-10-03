@@ -33,6 +33,9 @@ import java.util.Map;
  * history, the row's provenance is broken and it is a mismatch. A non-built-in
  * row with no version (written before versioning existed) is treated as
  * verified — no rule is invented for it.
+ *
+ * <p>A row with a {@code valueKind} is a typed rendering ({@code SuperTranspiler.transpile_typed}):
+ * see {@link TypedValueRenderer}.
  */
 public final class TranspileAuditor {
 
@@ -82,6 +85,9 @@ public final class TranspileAuditor {
             // Corrupted row: report it as a mismatch rather than crash the whole audit.
             return "<null column in row " + row.id() + ">";
         }
+        if (row.valueKind() != null) {
+            return expectedTyped(row);
+        }
         String builtin = switch (row.targetLanguage()) {
             case "DPL" -> "particle " + name + " : E<" + typeSpec + "> = \"" + escapeDplValue(val) + "\" @ confidence(" + conf + ")";
             case "KOTLIN" -> "val " + name + ": " + typeSpec + "? = \"" + val + "\"";
@@ -107,6 +113,28 @@ public final class TranspileAuditor {
         } catch (IllegalArgumentException e) {
             return "<invalid custom template " + row.targetLanguage() + " v" + version + ": " + e.getMessage() + ">";
         }
+    }
+
+    /**
+     * A typed row: {@code val} is parsed as a DPL literal of {@code valueKind} and re-rendered
+     * by {@link TypedValueRenderer}. Only built-in languages render typed values, and a typed
+     * row never carries a template version, so anything else is a mismatch.
+     */
+    private static String expectedTyped(TranspileRow row) {
+        String kind = row.valueKind();
+        if (row.templateVersion() != null) {
+            return "<typed row " + row.id() + " has template_version " + row.templateVersion() + ">";
+        }
+        List<String> items;
+        try {
+            items = TypedValueRenderer.parse(kind, row.val());
+        } catch (IllegalArgumentException e) {
+            return "<invalid " + kind + " value in row " + row.id() + ": " + e.getMessage() + ">";
+        }
+        String expected = TypedValueRenderer.render(row.targetLanguage(), row.name(), kind, items,
+                row.typeSpec(), row.confidence());
+        return expected != null ? expected
+                : "<typed row " + row.id() + " for non-built-in language " + row.targetLanguage() + ">";
     }
 
     /**

@@ -6,11 +6,16 @@ Usage:
     everlang-transpile render <name> <value> <type> <confidence>
     everlang-transpile render-all <name> <value> <type> <confidence>
     everlang-transpile stats
+    everlang-transpile config <file.toml|file.json> [--confidence N] [--language LANG]
 """
 import sys
 import argparse
-from typing import Optional
+import json
+import re
+from typing import Iterator, List, Optional, Tuple
+from .super_transpiler import SuperTranspiler
 from .super_transpiler_v2 import SuperTranspilerV2
+from .typed import infer
 
 
 def render_to_language(name: str, value: str, type_spec: str, conf: int, language: str) -> None:
@@ -74,6 +79,73 @@ def show_stats() -> None:
     print("  • PyPy compatible: 5-10x speedup possible")
 
 
+def flatten_config(data, prefix: str = "") -> Iterator[Tuple[str, object]]:
+    """Yields (name, value) for every leaf of a parsed config. Nested tables
+    join their keys with '_'; a list of tables is indexed (`modules_0_enabled`).
+    Names are made identifiers: other characters become '_', and a leading
+    digit gets a '_' prefix."""
+    if isinstance(data, dict):
+        for key, value in data.items():
+            yield from flatten_config(value, f"{prefix}_{key}" if prefix else str(key))
+    elif isinstance(data, list) and data and all(isinstance(item, dict) for item in data):
+        for index, item in enumerate(data):
+            yield from flatten_config(item, f"{prefix}_{index}")
+    else:
+        name = re.sub(r"[^A-Za-z0-9_]", "_", prefix)
+        yield ("_" + name if name[:1].isdigit() else name), data
+
+
+def load_config(path: str):
+    if path.endswith(".json"):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    try:
+        import tomllib
+    except ImportError:  # Python < 3.11
+        raise ValueError("reading TOML needs Python 3.11+ (tomllib); convert the file to JSON") from None
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def transpile_config(path: str, conf: int, language: Optional[str] = None) -> int:
+    """Renders every leaf of a TOML or JSON config: strings through the string
+    templates, numbers, booleans and lists with native types (transpile_typed).
+    A leaf neither path accepts is reported on stderr and skipped; returns 1 if
+    any was skipped."""
+    try:
+        data = load_config(path)
+    except (OSError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    transpiler = SuperTranspiler()
+    skipped: List[str] = []
+    seen = set()
+    for name, value in flatten_config(data):
+        if name in seen:
+            skipped.append(f"{name}: duplicate name after flattening")
+            continue
+        seen.add(name)
+        try:
+            kind = "Str" if isinstance(value, str) else infer(value).kind
+            rendered = transpiler.transpile_value(name, value, None, conf)
+        except ValueError as exc:
+            skipped.append(f"{name}: {exc}")
+            continue
+        if language is not None:
+            if language.upper() not in rendered:
+                print(f"Error: Language '{language}' not supported", file=sys.stderr)
+                return 1
+            print(rendered[language.upper()])
+            continue
+        print(f"# {name}  ({kind})")
+        for lang, code in rendered.items():
+            print(f"{lang:<8} {code}")
+        print()
+    for problem in skipped:
+        print(f"skipped {problem}", file=sys.stderr)
+    return 1 if skipped else 0
+
+
 def main_transpile() -> Optional[int]:
     """Main entry point for everlang-transpile CLI."""
     parser = argparse.ArgumentParser(
@@ -84,6 +156,7 @@ Examples:
   everlang-transpile render message "Hello, World" String 200 KOTLIN
   everlang-transpile render-all x "test value" String 150
   everlang-transpile stats
+  everlang-transpile config node.toml --confidence 200
         """,
     )
 
@@ -107,6 +180,13 @@ Examples:
     # Stats subcommand
     subparsers.add_parser("stats", help="Show transpiler statistics")
 
+    # Config subcommand (typed values)
+    config_parser = subparsers.add_parser(
+        "config", help="Render every value of a TOML/JSON config, keeping numbers, booleans and lists typed")
+    config_parser.add_argument("path", help="Path to a .toml or .json file")
+    config_parser.add_argument("--confidence", type=int, default=200, help="Confidence for every value (default 200)")
+    config_parser.add_argument("--language", help="Print only this language's renderings")
+
     args = parser.parse_args()
 
     try:
@@ -116,6 +196,8 @@ Examples:
             render_all_languages(args.name, args.value, args.type, args.confidence)
         elif args.command == "stats":
             show_stats()
+        elif args.command == "config":
+            return transpile_config(args.path, args.confidence, args.language)
         else:
             parser.print_help()
             return 1

@@ -11,7 +11,7 @@ from everlang.frontend import (
 )
 from everlang.frontend.bench import make_program, measure
 from everlang.frontend.mega_executer import compile_renderer
-from everlang.transpiler import SuperTranspiler
+from everlang.transpiler import SuperTranspiler, TypedValue, infer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CPP_BINARY = REPO_ROOT / "1-phase-cpp" / "bin" / "verify_particle"
@@ -69,6 +69,21 @@ class TestSupercodalexer(unittest.TestCase):
         self.assertEqual(diags, [])
         self.assertEqual(toks[-1], ("EOF", "", 2, 14))
 
+    def test_number_literals(self):
+        toks, diags = self.lex("12 -3 1.5 -0.25 2e+10 6E-3 1. 1e 1e+ --4 -x")
+        self.assertEqual([(t[0], t[1]) for t in toks[:-1]], [
+            ("INT", "12"), ("NUMBER", "-3"), ("NUMBER", "1.5"), ("NUMBER", "-0.25"), ("NUMBER", "2e+10"),
+            ("NUMBER", "6E-3"), ("INT", "1"), ("ERROR", "."), ("INT", "1"), ("IDENT", "e"), ("INT", "1"),
+            ("IDENT", "e"), ("ERROR", "+"), ("ERROR", "-"), ("NUMBER", "-4"), ("ERROR", "-"), ("IDENT", "x"),
+        ])
+        self.assertEqual([d.message for d in diags], ["unexpected character '.'", "unexpected character '+'",
+                                                      "unexpected character '-'", "unexpected character '-'"])
+
+    def test_list_symbols(self):
+        toks, diags = self.lex('[1, "a"]')
+        self.assertEqual(diags, [])
+        self.assertEqual(kinds(toks), ["LBRACKET", "INT", "COMMA", "STRING", "RBRACKET", "EOF"])
+
     def test_token_stream_records_verified_declarations(self):
         toks, _ = self.lex('collide a b\nparticle p : E<T> = "v" @ confidence(5)\n')
         self.assertEqual(toks.declaration_starts, (4,))
@@ -103,6 +118,37 @@ class TestQuantificationUltraParser(unittest.TestCase):
         result = QuantificationUltraParser().parse(tokens)
         self.assertEqual(len(lex_diags), 1)
         self.assertEqual(result.diagnostics, [])
+
+    def test_typed_values(self):
+        result = self.parse('particle f : E<Float> = 1.50 @ confidence(1)\n'
+                            'particle b : E<Bool> = false @ confidence(1)\n'
+                            'particle n : E<Int> = 007 @ confidence(1)\n'
+                            'particle l : E<List> = [ "a" ,"b" ] @ confidence(1)\n'
+                            'particle s : E<T> = "true" @ confidence(1)\n')
+        self.assertEqual(result.diagnostics, [])
+        self.assertEqual([s.value for s in result.statements], [
+            TypedValue("Float", ("1.5",)), TypedValue("Bool", ("false",)), TypedValue("Int", ("7",)),
+            TypedValue("List<Str>", ("a", "b")), "true",
+        ])
+
+    def test_typed_value_errors(self):
+        cases = {
+            "particle x : E<T> = [] @ confidence(1)": "a list needs at least one value",
+            "particle x : E<T> = [1, true] @ confidence(1)": "list values must all be the same kind, found Int then Bool",
+            "particle x : E<T> = [[1]] @ confidence(1)": "a list cannot contain another list",
+            "particle x : E<T> = [1, ] @ confidence(1)": "expected a list value, found ']'",
+            "particle x : E<T> = [1 2] @ confidence(1)": "expected ',' or ']', found '2'",
+            "particle x : E<T> = [1 @ confidence(1)": "expected ',' or ']', found '@'",
+            "particle x : E<T> = maybe @ confidence(1)": "expected a value, found 'maybe'",
+            "particle x : E<T> = 9223372036854775808 @ confidence(1)": "number 9223372036854775808 is outside the 64-bit Int range",
+            "particle x : E<T> = 1e999 @ confidence(1)": "number 1e999 is too large for a Float",
+            f"particle x : E<T> = {'9' * 5000} @ confidence(1)": f"number {'9' * 5000} is outside the 64-bit Int range",
+            "particle x : E<T> = 5 @ confidence(-5)": "expected a confidence number, found '-5'",
+        }
+        for src, message in cases.items():
+            result = self.parse(src + "\nparticle ok : E<T> = 1 @ confidence(1)")
+            self.assertEqual([d.message for d in result.diagnostics], [message], src)
+            self.assertEqual([s.name for s in result.statements], ["ok"], src)
 
     def test_plain_token_list_parses_identically(self):
         tokens, _ = Supercodalexer().lex(make_program(50))
@@ -156,6 +202,36 @@ class TestMegaExecuter(unittest.TestCase):
             back = self.run_src(dpl)
             self.assertEqual(back.diagnostics, [], (conf, dpl))
             self.assertEqual(back.execution.declarations[0].value, value)
+
+    def test_typed_declaration_renders_native_types(self):
+        result = self.run_src('particle cpu : E<Float> = 85.5 @ confidence(200)\n'
+                              'particle p : E<List> = ["tcp", "udp"] @ confidence(150)')
+        self.assertEqual(result.diagnostics, [])
+        cpu, protocols = result.execution.declarations
+        self.assertEqual(cpu.renderings, SuperTranspiler().transpile_typed("cpu", 85.5, "Float", 200))
+        self.assertEqual(protocols.renderings["GO"], 'var p []string = []string{"tcp", "udp"}')
+        self.assertEqual(result.execution.particles["cpu"].value, 85.5)
+        self.assertEqual(result.execution.particles["p"].value, ["tcp", "udp"])
+
+    def test_typed_dpl_renderings_read_back_identically(self):
+        rng = random.Random(5)
+        alphabet = 'ab "\\$?#@()<>:=[],\t\n\r'
+        makers = [
+            lambda: rng.randint(-(2 ** 63 - 1), 2 ** 63 - 1), lambda: rng.uniform(-1e9, 1e9),
+            lambda: rng.choice([1e-300, 1e300, 1e-05, 1e16, -0.0, 0.1]), lambda: rng.random() < 0.5,
+            lambda: "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 8))),
+        ]
+        for _ in range(300):
+            make = rng.choice(makers)
+            value = [make() for _ in range(rng.randint(1, 4))] if rng.random() < 0.6 else make()
+            if isinstance(value, str):
+                value = [value]
+            renderings = SuperTranspiler().transpile_typed("q", value, "T", 7)
+            back = self.run_src(renderings["DPL"])
+            self.assertEqual(back.diagnostics, [], repr(value))
+            decl = back.execution.declarations[0]
+            self.assertEqual(decl.value, infer(value), repr(value))
+            self.assertEqual(decl.renderings, renderings, repr(value))
 
     def test_custom_language_renderings_included(self):
         transpiler = SuperTranspiler()
@@ -234,10 +310,14 @@ class TestBaselineEquivalence(unittest.TestCase):
     """Mega stages must agree with the textbook baseline on any input."""
 
     ATOMS = ["particle", "collide", "confidence", "E", "p1", "_x9", ":", "<", ">", "=", "@", "(", ")", "->",
-             "-", '"v"', '"a\\"b"', '"bad\\q"', '"open', "12", "300", "#c", " ", "\t", "\r", "é", "$", "\\"]
+             "-", '"v"', '"a\\"b"', '"bad\\q"', '"open', "12", "300", "#c", " ", "\t", "\r", "é", "$", "\\",
+             "[", "]", ",", ".", "1.5", "-3", "2e+9", "1e", "007", "true", "false", "99999999999999999999", "1e999"]
     GOOD = ['particle p : E<T> = "v" @ confidence(5)', 'particle  rate:E< float >="0.5"@confidence ( 200 )  # c',
             "collide a b", "collide a b -> c", 'particle collide : E<T> = "v" @ confidence(1)',
-            'particle a : E<T> = "v" @ confidence(90)', 'particle b : E<T> = "w" @ confidence(300)']
+            'particle a : E<T> = "v" @ confidence(90)', 'particle b : E<T> = "w" @ confidence(300)',
+            "particle f : E<Float> = 85.5 @ confidence(200)", "particle t : E<Bool> = true @ confidence(1)",
+            'particle l : E<List> = ["a", "b\\n"] @ confidence(9)', "particle n : E<Int> = -42 @ confidence(3)",
+            "particle m : E<L> = [1, 2.5] @ confidence(3)", "particle w : E<L> = [1.5,2e3 , -0.0]@confidence(4)"]
 
     def assert_equivalent(self, src):
         bt, bd = BaselineLexer().lex(src)

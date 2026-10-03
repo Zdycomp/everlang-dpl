@@ -94,13 +94,15 @@ public final class TranspileAudit {
      * Reads all rows from the {@code transpilations} table via a read-only
      * SELECT. Package-visible/static for direct unit/integration testing
      * without going through {@code main}. Databases created before
-     * {@code template_version} existed load with a null version.
+     * {@code template_version} or {@code value_kind} existed load with nulls.
      */
     static List<TranspileRow> loadTranspilations(Connection conn) throws SQLException {
         List<TranspileRow> rows = new ArrayList<>();
         boolean versioned = hasColumn(conn, "transpilations", "template_version");
+        boolean typed = hasColumn(conn, "transpilations", "value_kind");
         String sql = "SELECT id, name, val, type_spec, confidence, target_language, rendered_code"
                 + (versioned ? ", template_version" : "")
+                + (typed ? ", value_kind" : "")
                 + " FROM transpilations";
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -118,7 +120,8 @@ public final class TranspileAudit {
                         rs.getInt("confidence"),
                         rs.getString("target_language"),
                         rs.getString("rendered_code"),
-                        version
+                        version,
+                        typed ? rs.getString("value_kind") : null
                 ));
             }
         }

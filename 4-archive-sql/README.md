@@ -70,7 +70,10 @@ CREATE TABLE IF NOT EXISTS transpilations (
     target_language TEXT NOT NULL,
     rendered_code TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-    template_version INTEGER CHECK (template_version IS NULL OR template_version >= 1)
+    template_version INTEGER CHECK (template_version IS NULL OR template_version >= 1),
+    -- NULL: rendered by a string template. Otherwise a typed rendering (built-in
+    -- languages only) whose val is the value's canonical DPL literal.
+    value_kind TEXT CHECK (value_kind IS NULL OR (value_kind IN ('Int', 'Float', 'Bool', 'List<Str>', 'List<Int>', 'List<Float>', 'List<Bool>') AND template_version IS NULL))
 );
 
 CREATE TABLE IF NOT EXISTS custom_template_versions (
@@ -95,8 +98,15 @@ languages. Editing a template adds a version; retiring one clears `active`
 but never deletes the row. A custom-language `transpilations` row records the
 `template_version` that rendered it (`NULL` for built-in languages), so the
 auditor can re-render old rows after a template changes. `SqlArchive` adds
-`template_version` to a `transpilations` table created by an older schema
-when it opens the database.
+`template_version` and `value_kind` to a `transpilations` table created by an
+older schema when it opens the database.
+
+`value_kind` marks a typed rendering (`SuperTranspiler.transpile_typed`): a
+number, boolean or list rendered with each built-in language's native type and
+literal syntax rather than through the string templates. Such a row's `val` is
+the value's canonical DPL literal (`85.5`, `true`, `["tcp", "udp"]`), which the
+auditor parses to re-render it. The CHECK limits `value_kind` to the seven kinds
+`everlang/transpiler/typed.py` defines and forbids it on custom-template rows.
 
 ## `SqlArchive` public API (`archive_db.py`)
 
@@ -125,7 +135,7 @@ class SqlArchive:
 
     def record_transpilation(self, name: str, val: str, type_spec: str, confidence: int,
                               target_language: str, rendered_code: str,
-                              template_version: int = None) -> int:
+                              template_version: int = None, value_kind: str = None) -> int:
         """Inserts a row into transpilations, returns the new row id."""
 
     def save_custom_template(self, language: str, template: str) -> int:

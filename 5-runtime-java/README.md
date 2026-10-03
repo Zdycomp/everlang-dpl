@@ -114,10 +114,21 @@ re-scanned, so a value containing `{type_spec}` is not expanded. A stored
 template using anything else is reported as an invalid-template mismatch, not
 a crash.
 
+Typed rows: a row with a non-null `value_kind` is a typed rendering
+(`SuperTranspiler.transpile_typed`, `everlang/transpiler/typed.py`). Its `val`
+is the value's canonical DPL literal (`85.5`, `-7`, `true`, `["tcp", "udp"]`);
+`TypedValueRenderer` parses it and re-renders it with the same native types,
+literal suffixes and per-language string escapes as the Python side, e.g.
+`var cpu float64 = 85.5` or `const char* p[2] = {"tcp", "udp"};`. A literal
+that does not parse as its kind, a typed row for a non-built-in language, and a
+typed row with a `template_version` are all mismatches. Float digits are
+compared as stored, not re-derived from Python's `repr`.
+
 A row whose `target_language` is not built in and has no `template_version`
 (written before versioning existed) is treated as verified — no rule is
 invented for it. Databases created before `template_version` or
-`custom_template_versions` existed are read as having neither. See
+`custom_template_versions` existed are read as having neither, and databases
+without `value_kind` as having no typed rows. See
 `TranspileAuditor.java` javadoc.
 
 This runtime never writes to the database — it opens a plain JDBC
@@ -136,7 +147,8 @@ CREATE TABLE transpilations (
     target_language TEXT,
     rendered_code TEXT,
     created_at TEXT,
-    template_version INTEGER   -- optional column
+    template_version INTEGER,  -- optional column
+    value_kind TEXT            -- optional column; NULL = string-template row
 );
 
 CREATE TABLE custom_template_versions (   -- optional table
@@ -181,4 +193,10 @@ Exit codes:
   unknown-language row (treated as verified), and an empty list.
 - `TranspileAuditIntegrationTest` — creates a temp SQLite file, builds the
   `transpilations` table inline per the schema above, inserts a clean row
-  and a corrupted row, and verifies the read + audit path end to end.
+  and a corrupted row, and verifies the read + audit path end to end,
+  including typed rows.
+- `TypedValueRendererTest` — the typed renderings and escapes, checked against
+  the Python renderer's own output, and malformed literals.
+- `everlang_standalone/tests/test_typed_transpiler.py` (Python side) writes
+  hundreds of random and hostile typed values through `ReinforcedArchive` and
+  runs this jar's `TranspileAudit` on the result whenever the jar is built.
