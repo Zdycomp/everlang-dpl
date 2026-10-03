@@ -15,6 +15,7 @@
 #include <iostream>
 #include <string>
 #include <sys/wait.h>
+#include <unistd.h>
 
 namespace {
 
@@ -132,6 +133,65 @@ void ExpectCase(const std::string& name, const std::string& argsSuffix,
     }
 }
 
+// Writes `data` to a fresh temp file and reads it back, asserting the
+// bytes read back are identical (same size, same content) to `data`. This
+// is an independent sanity check on byte-preservation through file I/O
+// (used for payloads containing embedded newlines, where a future
+// line-based refactor of the test harness could silently truncate or
+// otherwise mangle the value before it ever reaches the binary's stdin).
+void ExpectByteRoundTrip(const std::string& name, const std::string& data) {
+    gTotal++;
+
+    std::string tmpFile = "/tmp/verify_particle_test_rt.XXXXXX";
+    char tmpTemplate[256];
+    std::snprintf(tmpTemplate, sizeof(tmpTemplate), "%s", tmpFile.c_str());
+    int fd = mkstemp(tmpTemplate);
+    if (fd < 0) {
+        std::cout << "FAIL: " << name << " (mkstemp failed)\n";
+        gFailures++;
+        return;
+    }
+
+    ssize_t written = write(fd, data.data(), data.size());
+    close(fd);
+
+    bool pass = true;
+    std::string reason;
+
+    if (written < 0 || static_cast<size_t>(written) != data.size()) {
+        pass = false;
+        reason = "write() did not persist all bytes; ";
+    }
+
+    FILE* readFile = std::fopen(tmpTemplate, "rb");
+    std::string readBack;
+    if (readFile != nullptr) {
+        char readBuf[8192];
+        size_t n;
+        while ((n = std::fread(readBuf, 1, sizeof(readBuf), readFile)) > 0) {
+            readBack.append(readBuf, n);
+        }
+        std::fclose(readFile);
+    } else {
+        pass = false;
+        reason += "failed to reopen temp file for read; ";
+    }
+    std::remove(tmpTemplate);
+
+    if (readBack.size() != data.size() || readBack != data) {
+        pass = false;
+        reason += "round-trip mismatch: expected " + std::to_string(data.size()) +
+                  " bytes, got " + std::to_string(readBack.size()) + " bytes; ";
+    }
+
+    if (pass) {
+        std::cout << "PASS: " << name << "\n";
+    } else {
+        std::cout << "FAIL: " << name << " (" << reason << ")\n";
+        gFailures++;
+    }
+}
+
 } // namespace
 
 int main() {
@@ -167,6 +227,62 @@ int main() {
 
     // wrong argc: 2+ extra args (argc==3)
     ExpectCase("usage_extra_args", "100 200", "x", "INVALID:USAGE", 2);
+
+    // --- Transpiler-phase traffic: per-language rendered-snippet payloads ---
+    // (everlang/transpiler/ renders a value into DPL/Kotlin/Rust/C/Go/Groovy
+    // snippets; everlang/core/reinforced_archive.py pipes each rendered
+    // snippet through verify_particle individually before persisting it.)
+
+    // A typical rendered C snippet with embedded double quotes and a
+    // trailing "//" comment (~55 bytes). Contract only cares about byte
+    // count and emptiness, not content, so this is just a plain VALID case.
+    {
+        std::string snippet = "const char* txRate = \"0.025\"; // Unchecked pointer";
+        ExpectCase("transpiled_quotes_and_comment", "150", snippet, "VALID", 0);
+    }
+
+    // A snippet containing an embedded newline (template output could span
+    // lines). The contract restricts only total byte count and emptiness,
+    // not content, so this must still be VALID. Also independently confirm
+    // the bytes (including the embedded '\n') round-trip byte-for-byte
+    // through file I/O, rather than trusting VALID/exit 0 alone to prove
+    // the newline survived intact.
+    {
+        std::string snippet =
+            "fun render(): String {\n    return \"0.025\"\n} // Kotlin snippet\n";
+        ExpectCase("transpiled_embedded_newline", "150", snippet, "VALID", 0);
+        ExpectByteRoundTrip("transpiled_embedded_newline_byte_roundtrip", snippet);
+    }
+
+    // UTF-8 multi-byte boundary cases: the 4096-byte cap is byte-based, not
+    // character-based. Build a value that is exactly 4096 BYTES including a
+    // 2-byte UTF-8 character ("é", 0xC3 0xA9) at the end -> VALID, and one
+    // at exactly 4097 bytes -> INVALID:VALUE_TOO_LONG. Both have fewer than
+    // 4096 *characters*, so this specifically exercises byte-counting.
+    {
+        std::string multiByteChar = "\xC3\xA9"; // U+00E9 "e", UTF-8, 2 bytes
+        std::string data4096 = std::string(4094, 'a') + multiByteChar;
+        if (data4096.size() != 4096) {
+            std::cout << "FAIL: utf8_boundary_setup (expected 4096-byte fixture, got "
+                       << data4096.size() << ")\n";
+            gFailures++;
+            gTotal++;
+        } else {
+            ExpectCase("utf8_exactly_4096_bytes_with_multibyte_char", "100", data4096,
+                       "VALID", 0);
+        }
+
+        std::string data4097 = std::string(4095, 'a') + multiByteChar;
+        if (data4097.size() != 4097) {
+            std::cout << "FAIL: utf8_boundary_setup_4097 (expected 4097-byte fixture, got "
+                       << data4097.size() << ")\n";
+            gFailures++;
+            gTotal++;
+        } else {
+            ExpectCase("utf8_exactly_4097_bytes_with_multibyte_char", "100", data4097,
+                       "INVALID:VALUE_TOO_LONG", 1);
+        }
+    }
 
     std::cout << "\n" << (gTotal - gFailures) << "/" << gTotal << " cases passed.\n";
 

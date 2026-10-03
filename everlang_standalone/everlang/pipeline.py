@@ -6,7 +6,13 @@ from .containers.governor import ContractGovernorContainer
 from .containers.corpus import EvolveArchiveCorpusContainer
 
 class EZPipeline:
-    """The 4-Stage Pipeline: EXAMINE -> EVALUATE -> EXECUTE -> ARCHIVE"""
+    """The 4-Stage Pipeline: EXAMINE -> EVALUATE -> EXECUTE -> ARCHIVE
+
+    EXAMINE is SyntaxMutatorContainer, which classifies a code snippet by its
+    markers (ERROR/INVALID -> repair, BAD_POINTER/CRASH -> quarantine,
+    otherwise normalized) and attaches the language's syntax offset. It does
+    not run DnaSequencer.
+    """
     def __init__(self):
         self.archive = EArchive()
         self.c1 = SyntaxMutatorContainer(self.archive)

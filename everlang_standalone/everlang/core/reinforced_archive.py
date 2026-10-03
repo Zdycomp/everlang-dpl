@@ -14,6 +14,15 @@ Both phases are optional at runtime: if the C++ binary isn't built, or the
 SQL module can't be imported, ReinforcedArchive falls back to exactly
 EArchive's own in-process behavior. Nothing here changes EArchive itself or
 its existing callers/tests.
+
+`transpile_and_archive` additionally routes everlang/transpiler's
+SuperTranspiler output through the same two backends: each rendered
+language's code is gated by the C++ verifier and persisted into the SQL
+archive's `transpilations` table, which 5-runtime-java's TranspileAudit
+independently re-renders and cross-checks (the same pattern already used
+for `emulate_repair` vs. RepairAuditor). `transpile_typed_and_archive` does
+the same for numbers, booleans and lists rendered with native types, marking
+each row with its `value_kind`.
 """
 import importlib.util
 import sqlite3
@@ -21,10 +30,12 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from .archive import EArchive
 from .particle import EParticle
+from ..transpiler import LANGUAGE_TEMPLATES, SuperTranspiler, validate_template
+from ..transpiler.typed import default_type_spec, infer
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CPP_BINARY = _REPO_ROOT / "1-phase-cpp" / "bin" / "verify_particle"
@@ -45,6 +56,12 @@ class ReinforcedArchive:
     ) -> None:
         self._archive = EArchive()
         self._log_lock = threading.Lock()
+        self._transpiler = SuperTranspiler()
+        self._template_versions: Dict[str, int] = {}
+        # Guards the transpiler's templates together with _template_versions, so a
+        # rendering is always stamped with the version that produced it (taken before
+        # _log_lock, never after, to keep a single lock order).
+        self._languages_lock = threading.Lock()
 
         self._cpp_binary = Path(cpp_binary_path) if cpp_binary_path else _DEFAULT_CPP_BINARY
         self.cpp_verifier_available = self._cpp_binary.is_file()
@@ -65,6 +82,7 @@ class ReinforcedArchive:
 
             self._sql = archive_db.SqlArchive(db_path=sql_db_path)
             self.sql_available = True
+            self._load_custom_templates()
         except Exception as exc:  # native/SQL reinforcement is best-effort
             print(f"ReinforcedArchive: SQL archive unavailable ({exc})", file=sys.stderr)
             self._sql = None
@@ -100,17 +118,19 @@ class ReinforcedArchive:
 
     # -- EArchive-compatible API -------------------------------------------
 
-    def _sql_write(self, fn, *args, **kwargs) -> None:
-        """Runs one SqlArchive write, never letting a sqlite3 error escape to
-        the caller (see memory-safety audit finding B): a locked/closed/
-        unreachable database must not crash a self-healing write that already
-        succeeded in-memory, nor leave the caller unaware the SQL leg failed."""
+    def _sql_write(self, fn, *args, **kwargs):
+        """Runs one SqlArchive write and returns its result (None on failure),
+        never letting a sqlite3 error escape to the caller (see memory-safety
+        audit finding B): a locked/closed/unreachable database must not crash
+        a self-healing write that already succeeded in-memory, nor leave the
+        caller unaware the SQL leg failed."""
         try:
             with self._log_lock:
-                fn(*args, **kwargs)
+                return fn(*args, **kwargs)
         except sqlite3.Error as exc:
             print(f"ReinforcedArchive: SQL write failed, disabling SQL reinforcement ({exc})", file=sys.stderr)
             self.sql_available = False
+            return None
 
     def log_boundary_marker(self, context: str, particle: EParticle, reason: str) -> None:
         # Never regress existing in-process behavior.
@@ -169,6 +189,129 @@ class ReinforcedArchive:
                 force=force,
             )
         return vector
+
+    def transpile_and_archive(self, name: str, val: str, type_spec: str, conf: int) -> Dict[str, str]:
+        """Renders `val` into every SuperTranspiler-configured language,
+        gates each rendering through the C++ verifier, and persists each
+        one into the SQL archive's `transpilations` table. Always returns
+        the rendered dict (the transpiler itself never depends on either
+        backend being available -- same fallback philosophy as the rest of
+        this class)."""
+        with self._languages_lock:
+            rendered = self._transpiler.transpile(name, val, type_spec, conf)
+            versions = dict(self._template_versions)
+        self._archive_renderings(name, val, type_spec, conf, rendered, versions, None)
+        return rendered
+
+    def transpile_typed_and_archive(self, name: str, value, type_spec: Optional[str], conf: int) -> Dict[str, str]:
+        """transpile_and_archive for a number, boolean or list: renders it with
+        SuperTranspiler.transpile_typed (native types, built-in languages only)
+        and archives each rendering with its value_kind, storing the value's
+        canonical DPL literal as val so 5-runtime-java can re-render it.
+        Raises ValueError for a value transpile_typed does not accept."""
+        typed_value = infer(value)
+        if type_spec is None:
+            type_spec = default_type_spec(typed_value)
+        with self._languages_lock:  # transpile_typed iterates the template dict register_language edits
+            rendered = self._transpiler.transpile_typed(name, typed_value, type_spec, conf)
+        self._archive_renderings(name, typed_value.dpl_literal(), type_spec, conf, rendered, {}, typed_value.kind)
+        return rendered
+
+    def _archive_renderings(self, name, val, type_spec, conf, rendered, versions, value_kind) -> None:
+        """Gates each rendering through the C++ verifier and persists it (or its
+        rejection) to SQL; a no-op without SQL."""
+        if not self.sql_available:
+            return
+
+        for target_language, code in rendered.items():
+            verdict, verifier_reason = self._verify_with_cpp(code, conf)
+            if verdict is False:
+                self._sql_write(
+                    self._sql.record_rejected_write,
+                    table_name="transpilations",
+                    reason=verifier_reason or "INVALID",
+                    payload=f"name={name!r} target_language={target_language!r} code={code!r}",
+                )
+                continue
+            # verdict True, or None (verifier unavailable) -> persist as-is.
+            self._sql_write(
+                self._sql.record_transpilation,
+                name=name,
+                val=val,
+                type_spec=type_spec,
+                confidence=conf,
+                target_language=target_language,
+                rendered_code=code,
+                template_version=versions.get(target_language),
+                value_kind=value_kind,
+            )
+
+    # -- custom language management ----------------------------------------
+
+    def _load_custom_templates(self) -> None:
+        """Load custom templates from SQL on init and register them with the transpiler."""
+        if not self.sql_available:
+            return
+        try:
+            templates = self._sql.load_custom_templates()
+        except sqlite3.Error as exc:
+            print(f"ReinforcedArchive: could not load custom templates ({exc})", file=sys.stderr)
+            return
+        for language, (version, template) in templates.items():
+            try:
+                self._transpiler.register_language(language, template)
+            except ValueError as exc:
+                print(f"ReinforcedArchive: skipping stored template {language} v{version} ({exc})", file=sys.stderr)
+                continue
+            self._template_versions[language] = version
+
+    def register_language(self, language: str, template: str) -> Optional[int]:
+        """Register a custom language target. With SQL available, the template
+        is stored as a new version and that version number is returned and
+        stamped on every rendering archived from then on; otherwise None."""
+        validate_template(template)
+        lang_upper = language.upper()
+        if lang_upper in LANGUAGE_TEMPLATES:
+            raise ValueError(f"{lang_upper} is a built-in language and cannot be overridden")
+        with self._languages_lock:
+            # Persist first: an unexpected exception from the save must leave the
+            # in-memory transpiler untouched. A sqlite3 failure follows the
+            # degrade-don't-raise contract: SQL reinforcement switches off and the
+            # template still works in memory, unversioned.
+            version = None
+            if self.sql_available:
+                version = self._sql_write(
+                    self._sql.save_custom_template,
+                    language=lang_upper,
+                    template=template,
+                )
+            self._transpiler.register_language(language, template)
+            if version is None:
+                self._template_versions.pop(lang_upper, None)
+            else:
+                self._template_versions[lang_upper] = version
+            return version
+
+    def unregister_language(self, language: str) -> bool:
+        """Remove a custom language. Returns True if removed. Its stored
+        versions are retired, not deleted, so archived rows stay auditable."""
+        lang_upper = language.upper()
+        with self._languages_lock:
+            if not self._transpiler.unregister_language(language):
+                return False
+            self._template_versions.pop(lang_upper, None)
+            if self.sql_available:
+                self._sql_write(self._sql.retire_custom_template, language=lang_upper)
+            return True
+
+    @property
+    def template_versions(self) -> Dict[str, int]:
+        with self._languages_lock:
+            return dict(self._template_versions)
+
+    @property
+    def custom_languages(self) -> Dict[str, str]:
+        return self._transpiler.custom_languages
 
     def close(self) -> None:
         if self._sql is not None:

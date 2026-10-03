@@ -38,3 +38,4 @@ env/
 # Java phase build output
 5-runtime-java/target/
 5-runtime-java/dependency-reduced-pom.xml
+a.out
