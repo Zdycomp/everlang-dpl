@@ -1,6 +1,6 @@
 # DnaSequencer - DNA Sequence Analysis Tool
 
-Fast, production-ready DNA sequence analysis with lexer/parser and confidence-based validation.
+A pure-Python DNA sequence lexer/parser: tokens, Watson-Crick pairs, codons and GC content, with every invalid character reported rather than dropped. A teaching and design exercise, not a replacement for Biopython or seqkit, which are orders of magnitude faster (see Performance).
 
 ## Installation
 
@@ -23,12 +23,12 @@ everlang-dna stats
 
 ## Features
 
-- **Lexer/Parser Pattern**: Proven design used in production DNA analysis
+- **Lexer/Parser Pattern**: the compiler front-end design applied to a DNA string
 - **Quaternary Encoding**: Efficient 2-bit per base representation (A=0, T=1, C=2, G=3)
 - **Error Recovery**: Continues parsing on invalid input, marking ERROR tokens
 - **Watson-Crick Pairs**: Automatically identifies complementary base pairs
 - **Codon Detection**: Finds coding triplets and reading frames
-- **High Performance**: ~39,000 sequences/sec (optimized) or 5-10x faster with PyPy
+- **Speed**: about 0.2 Mbp/s (`DnaSequencer`) to 0.4 Mbp/s (`UltraFastDnaSequencer`); see Performance
 
 ## API Usage
 
@@ -50,11 +50,19 @@ for codon in codons:
 
 ## Performance
 
-| Operation | Throughput | Notes |
-|-----------|-----------|-------|
-| Tokenization | ~39k seqs/sec | Ultra-fast tuple-based |
-| Parsing | ~39k seqs/sec | Single pass |
-| With PyPy | 195-390k seqs/sec | 5-10x faster |
+Measured on CPython 3.11 in the project's CI container, random A/C/G/T input, one
+`run()` per sequence (lexing and parsing together):
+
+| Implementation | 12 bp | 100 bp | 1 Mbp |
+|---|---|---|---|
+| `DnaSequencer` | ~34k seqs/s | ~3.3k seqs/s | ~4.5 s (0.22 Mbp/s) |
+| `UltraFastDnaSequencer` | ~100k seqs/s | ~11.6k seqs/s | ~2.8 s (0.36 Mbp/s) |
+
+For comparison, reverse-complementing and validating 1 Mbp with plain
+`str.translate` takes about 9 ms and Biopython's `reverse_complement` about 2 ms.
+This module builds token and pair objects for every base, which is what costs the
+time; use it to learn or to get per-base diagnostics, not for bulk sequence work.
+PyPy speedups have not been measured here.
 
 ## Command Reference
 

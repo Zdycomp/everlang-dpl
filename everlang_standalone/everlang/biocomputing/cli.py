@@ -81,9 +81,9 @@ def show_stats() -> None:
     print("  - Error recovery: Continue parsing on invalid input")
     print()
     print("Performance:")
-    print("  - Optimized implementation: ~39,000 sequences/sec")
-    print("  - Ultra-fast implementation: ~39,455 sequences/sec")
-    print("  - PyPy compatible: 5-10x speedup possible")
+    print("  - DnaSequencer: ~34k sequences/sec at 12 bp, ~3.3k at 100 bp (~0.2 Mbp/sec)")
+    print("  - UltraFastDnaSequencer: ~100k sequences/sec at 12 bp, ~11.6k at 100 bp (~0.4 Mbp/sec)")
+    print("  - Much slower than plain str operations or Biopython; see biocomputing/README.md")
 
 
 def main_dna() -> Optional[int]:

@@ -214,7 +214,7 @@ class DnaSequencer:
     - Pre-allocated lists for fixed-size collections
     - Single-pass GC content calculation (no intermediate lists)
     - Lazy error collection (only computed on demand)
-    Achieves ~18k-22k sequences/sec on typical hardware."""
+    Measured: ~34k sequences/sec at 12 bp, ~3.3k at 100 bp (~0.2 Mbp/sec)."""
 
     def run(self, raw_sequence: str) -> dict:
         """Lex and parse raw_sequence, returning a result dict.
@@ -222,8 +222,8 @@ class DnaSequencer:
         Keys: tokens, pairs, codons, trailing_partial, lexer_errors,
         parser_errors, gc_content, valid.
 
-        Optimized throughput: 18k-22k sequences/sec (baseline CPython).
-        For 2x+ speedup, use sequencer_ultra.UltraFastDnaSequencer (tuple-based API).
+        Throughput (CPython 3.11): ~34k sequences/sec at 12 bp, ~3.3k at 100 bp.
+        For about 3x, use sequencer_ultra.UltraFastDnaSequencer (tuple-based API).
         """
         lexer = DnaLexer(raw_sequence)
         tokens = lexer.tokenize()

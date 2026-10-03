@@ -1,196 +1,110 @@
 #!/usr/bin/env python3
 """
-Real-time sequence matching against GRCh38 (human genome).
+K-mer sequence matching demo on a SYNTHETIC reference.
 
-Demonstrates:
-- K-mer indexing of reference genome
-- Sub-millisecond query latency
-- Confidence scoring of matches
-- Scalability to full 3.2 billion bp genome
+The reference is random A/C/G/T generated here with a fixed seed. It is not real
+human sequence, and nothing is downloaded: the file keeps its original name only
+so existing links and docs still resolve.
+
+Measures, for the pure-Python KmerIndex + SequenceQueryEngine:
+- index build time and memory per unique 11-mer
+- query throughput
+- whether the top hit lands on the true locus, for exact and mutated queries
 
 Usage:
   python3 benchmarks/grch38_realtime_demo.py
 """
-import sys
 import os
-import time
 import random
+import sys
+import tempfile
+import time
+import tracemalloc
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from everlang.genomics.reference_loader import GRCh38Loader
 from everlang.genomics.query_engine import SequenceQueryEngine
+from everlang.genomics.reference_loader import ReferenceGenomeLoader
+
+SEED = 7
+RECORDS = {"synthA": 100_000, "synthB": 100_000, "synthC": 100_000, "synthD": 100_000}
+QUERIES_PER_CASE = 300
+QUERY_LENGTH = 60
+MIN_COVERAGE = 0.5
 
 
-def generate_test_sequences(base_sequence: str, count: int = 100, mutation_rate: float = 0.01):
-    """Generate test queries with optional mutations."""
-    bases = "ATCG"
-    sequences = []
-    seq_len = len(base_sequence)
+def make_reference(rng):
+    return {name: "".join(rng.choice("ACGT") for _ in range(size)) for name, size in RECORDS.items()}
 
-    for i in range(count):
-        # Extract random subsequence with length 50-100
-        if seq_len <= 50:
-            start = 0
-            end = min(50, seq_len)
-        else:
-            start = random.randint(0, max(0, seq_len - 100))
-            end = min(seq_len, start + random.randint(50, 100))
 
-        seq = list(base_sequence[start:end])
-
-        # Apply random mutations
-        for j in range(len(seq)):
-            if random.random() < mutation_rate:
-                seq[j] = random.choice(bases)
-
-        sequences.append(''.join(seq))
-
-    return sequences
+def make_queries(rng, reference, count, mismatches):
+    """(sequence, (record, offset)) pairs sampled from the reference, with `mismatches` substitutions."""
+    queries = []
+    names = list(reference)
+    for _ in range(count):
+        name = rng.choice(names)
+        start = rng.randrange(0, len(reference[name]) - QUERY_LENGTH)
+        seq = list(reference[name][start:start + QUERY_LENGTH])
+        for i in rng.sample(range(QUERY_LENGTH), mismatches):
+            seq[i] = rng.choice([b for b in "ACGT" if b != seq[i]])
+        queries.append(("".join(seq), (name, start)))
+    return queries
 
 
 def main():
-    print("=" * 80)
-    print("  REAL-TIME SEQUENCE MATCHING: GRCh38 HUMAN GENOME")
-    print("=" * 80)
+    rng = random.Random(SEED)
+    reference = make_reference(rng)
+    total_bp = sum(len(s) for s in reference.values())
 
-    # Step 1: Load reference genome
-    print("\n[1] Loading GRCh38 chromosomes...")
-    loader = GRCh38Loader()
+    print("=" * 78)
+    print("  K-MER SEQUENCE MATCHING DEMO (SYNTHETIC RANDOM REFERENCE)")
+    print("=" * 78)
 
-    # Load chromosome 1 (largest: 248M bp, we'll use 100k for demo)
-    loader.load_grch38_chromosome("chr1")
-
-    # Load a few more chromosomes
-    for chr_name in ["chr2", "chr3", "chrX"]:
-        loader.load_grch38_chromosome(chr_name)
+    with tempfile.NamedTemporaryFile("w", suffix=".fa", delete=False) as handle:
+        for name, seq in reference.items():
+            handle.write(f">{name}\n{seq}\n")
+        fasta = handle.name
+    try:
+        loader = ReferenceGenomeLoader()
+        tracemalloc.start()
+        start = time.perf_counter()
+        loader.load_fasta(fasta)
+        build_seconds = time.perf_counter() - start
+        peak_bytes = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+    finally:
+        os.unlink(fasta)
 
     index = loader.get_index()
-    stats = loader.stats()
+    unique = loader.stats()["index_stats"]["unique_kmers"]
+    print(f"\nReference: {len(reference)} random records, {total_bp:,} bp (seed {SEED})")
+    print(f"Index build: {build_seconds:.1f} s ({total_bp / build_seconds / 1000:,.0f} kbp/s), "
+          f"{unique:,} unique 11-mers, peak {peak_bytes / 1e6:.0f} MB "
+          f"(~{peak_bytes / unique:.0f} bytes per unique 11-mer)")
 
-    print(f"    Loaded: {', '.join(stats['chromosomes_loaded'])}")
-    print(f"    Total genome: {stats['total_genome_length']:,} bp")
-    print(f"    K-mer index: {stats['index_stats']['unique_kmers']:,} unique k-mers")
-
-    # Step 2: Create query engine
-    print("\n[2] Initializing query engine...")
     engine = SequenceQueryEngine(index)
-    print("    Ready for real-time queries")
+    print(f"\nQueries: {QUERY_LENGTH} bp sampled from the reference, min_coverage={MIN_COVERAGE}")
+    print(f"\n{'mismatches':>10} {'queries/s':>10} {'any hit':>9} {'top hit at true locus':>22}")
+    for mismatches in (0, 1, 2, 4):
+        queries = make_queries(rng, reference, QUERIES_PER_CASE, mismatches)
+        start = time.perf_counter()
+        results = [engine.query(seq, top_k=1, min_coverage=MIN_COVERAGE) for seq, _ in queries]
+        elapsed = time.perf_counter() - start
+        hit = sum(1 for r in results if r)
+        correct = 0
+        for (_, (name, offset)), r in zip(queries, results):
+            if r and loader.resolve(r[0].reference_position) == (name, offset):
+                correct += 1
+        print(f"{mismatches:>10} {len(queries) / elapsed:>10,.0f} {hit / len(queries):>8.0%} "
+              f"{correct / len(queries):>21.0%}")
 
-    # Step 3: Run benchmark queries
-    print("\n[3] Running real-time queries...")
-
-    # Get a reference sequence from the index
-    ref_seq = "ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG"
-
-    # Generate test queries
-    test_queries = generate_test_sequences(ref_seq, count=1000, mutation_rate=0.05)
-
-    print(f"    Query count: {len(test_queries)}")
-
-    # Benchmark queries
-    start = time.perf_counter()
-    total_matches = 0
-
-    for i, query in enumerate(test_queries):
-        matches = engine.query(query, top_k=5, min_coverage=0.7)
-        total_matches += len(matches)
-
-        if i % 250 == 0:
-            print(f"      [{i:4d}/{len(test_queries)}] {len(matches)} matches")
-
-    elapsed = time.perf_counter() - start
-
-    # Step 4: Print results
-    print("\n" + "=" * 80)
-    print("  REAL-TIME MATCHING RESULTS")
-    print("=" * 80)
-
-    throughput = len(test_queries) / elapsed
-    latency_per_query = (elapsed / len(test_queries)) * 1000
-
-    print(f"\nThroughput: {throughput:>12,.0f} queries/sec")
-    print(f"Latency:    {latency_per_query:>12.3f} ms/query")
-    print(f"Total time: {elapsed:>12.3f} seconds")
-    print(f"Matches:    {total_matches:>12,}")
-
-    # Show example results
-    print("\n" + "-" * 80)
-    print("  EXAMPLE MATCH RESULTS")
-    print("-" * 80)
-
-    example_query = test_queries[0]
-    example_matches = engine.query(example_query, top_k=3, min_coverage=0.7)
-
-    print(f"\nQuery: {example_query[:50]}...{example_query[-10:]}")
-    print(f"\nTop 3 matches:")
-
-    for i, match in enumerate(example_matches, 1):
-        print(f"  [{i}] Position: {match.reference_position:>10,} | "
-              f"Coverage: {match.coverage:.1%} | "
-              f"Confidence: {match.confidence:>3} | "
-              f"Strength: {match.match_strength}")
-
-    # Engine statistics
-    print("\n" + "-" * 80)
-    print("  ENGINE STATISTICS")
-    print("-" * 80)
-
-    engine_stats = engine.stats()
-    print(f"\nTotal queries processed: {engine_stats['total_queries']:,}")
-    print(f"Total matches found:     {engine_stats['total_matches_found']:,}")
-    print(f"Avg matches per query:   {engine_stats['avg_matches_per_query']:.2f}")
-
-    # Scaling projection
-    print("\n" + "=" * 80)
-    print("  SCALING PROJECTION TO FULL GRCh38 (3.2 BILLION BP)")
-    print("=" * 80)
-
-    grch38_bp = 3_200_000_000
-    demo_bp = stats['total_genome_length']
-    scale_factor = grch38_bp / demo_bp if demo_bp > 0 else 0
-
-    # K-mers scale linearly with genome size
-    projected_kmers = stats['index_stats']['unique_kmers'] * scale_factor
-
-    # Memory estimate (8 bytes per k-mer position, 5 positions per unique k-mer on average)
-    bytes_per_entry = 4  # int position
-    avg_positions_per_kmer = stats['index_stats']['avg_kmers_per_position']
-    projected_memory_gb = (projected_kmers * avg_positions_per_kmer * bytes_per_entry) / (1024**3)
-
-    # Query latency stays constant (hash lookup)
-    projected_latency = latency_per_query
-
-    print(f"\nDemonstrated scale: {demo_bp:>15,} bp")
-    print(f"Full GRCh38:        {grch38_bp:>15,} bp")
-    print(f"Scale factor:       {scale_factor:>15.0f}x")
-    print(f"\nProjected for full GRCh38:")
-    print(f"  Unique k-mers:     {projected_kmers:>15,.0f}")
-    print(f"  Memory required:   {projected_memory_gb:>15.1f} GB")
-    print(f"  Query latency:     {projected_latency:>15.3f} ms (unchanged)")
-    print(f"  Throughput:        {throughput:>15,.0f} queries/sec (unchanged)")
-
-    print("\n" + "=" * 80)
-    print("  DEPLOYMENT OPTIONS")
-    print("=" * 80)
-    print("""
-1. SINGLE NODE (current):
-   - Throughput: 3,000-5,000 queries/sec
-   - Latency: <1ms per query
-   - Memory: 16-32 GB RAM
-
-2. DISTRIBUTED (sharded by chromosome):
-   - Throughput: 50,000-100,000 queries/sec (10-20 nodes)
-   - Latency: <2ms per query (with network)
-   - Memory: 2-4 GB per node
-
-3. CLOUD (with C++ acceleration):
-   - Throughput: 100,000-500,000 queries/sec
-   - Latency: <500µs per query
-   - See: everlang_standalone/everlang/genomics/cpp/ (future)
-""")
-
-    print("=" * 80)
+    print("\nWhat this does and does not show:")
+    print("- Correctness on random sequence only. Real genomes are repetitive, which makes seed hits")
+    print("  far less specific; none of that is exercised here.")
+    print("- Memory and build time grow with reference size. At the rate measured above a")
+    print(f"  3.2 Gbp genome would need roughly {3.2e9 / total_bp * peak_bytes / 1e9:,.0f} GB and a very long build in this")
+    print("  pure-Python index, so it is not a full-genome tool. BWA, minimap2 and similar aligners")
+    print("  index a human genome in a few GB.")
     return 0
 
 
