@@ -13,6 +13,7 @@
 //     4. avg_kmers_per_position = total_kmers/unique_kmers in [1.0, 10.0]
 //        (sanity bound: each k-mer appears 1-10 times on average)
 
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -72,7 +73,7 @@ int main(int argc, char** argv) {
 
     // Validate avg_kmers_per_position in reasonable range
     double avg = static_cast<double>(total_kmers) / unique_kmers;
-    if (avg < 1.0 || avg > 100.0) {
+    if (avg < 1.0 || avg > 10.0) {
         std::cerr << "INVALID:AVG_KMERS_PER_POSITION_OUT_OF_RANGE" << std::endl;
         return 1;
     }

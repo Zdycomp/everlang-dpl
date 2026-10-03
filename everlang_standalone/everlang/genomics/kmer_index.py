@@ -134,7 +134,7 @@ class KmerIndex:
         seq = sequence.upper()
         kmer_count = len(seq) - self.kmer_size + 1
 
-        if kmer_count == 0:
+        if kmer_count <= 0:
             return 0.0
 
         matched = 0
@@ -143,7 +143,7 @@ class KmerIndex:
             if all(b in "ATCG" for b in kmer) and self.query(kmer):
                 matched += 1
 
-        return matched / kmer_count if kmer_count > 0 else 0.0
+        return matched / kmer_count
 
     @staticmethod
     def _encode_kmer(kmer: str) -> int:

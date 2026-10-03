@@ -1,6 +1,8 @@
 """
 Tests for genomics module: k-mer indexing, query engine, reference loading.
 """
+import os
+import tempfile
 import unittest
 from everlang.genomics import KmerIndex, SequenceQueryEngine, ReferenceGenomeLoader
 from everlang.genomics.reference_loader import GRCh38Loader
@@ -251,3 +253,54 @@ IIIIIIIIIIIIIIIIIIII
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRecordCoordinates(unittest.TestCase):
+    """Each loaded record gets its own range in one global coordinate space."""
+
+    def _fasta(self, records):
+        handle = tempfile.NamedTemporaryFile("w", suffix=".fa", delete=False)
+        self.addCleanup(os.unlink, handle.name)
+        for name, seq in records:
+            handle.write(f">{name}\n{seq}\n")
+        handle.close()
+        return handle.name
+
+    def test_identical_records_do_not_share_positions(self):
+        seq = "ATCGGCTAGCTAGGCTAACGT"
+        loader = ReferenceGenomeLoader()
+        loader.load_fasta(self._fasta([("chrA", seq), ("chrB", seq)]))
+        kmer = seq[:11]
+        positions = sorted(loader.get_index().query(kmer))
+        self.assertEqual(positions, [0, len(seq)])
+        self.assertEqual(loader.resolve(positions[0]), ("chrA", 0))
+        self.assertEqual(loader.resolve(positions[1]), ("chrB", 0))
+        self.assertEqual(loader.record_offset("chrB"), len(seq))
+
+    def test_resolve_rejects_positions_outside_records(self):
+        loader = ReferenceGenomeLoader()
+        loader.load_fasta(self._fasta([("chrA", "ATCGATCGATCGAT")]))
+        with self.assertRaises(ValueError):
+            loader.resolve(14)
+        with self.assertRaises(ValueError):
+            loader.resolve(-1)
+
+    def test_query_hits_from_different_chromosomes_stay_separate(self):
+        seq = "GATTACAGATTACAGATTACACCGT"
+        loader = ReferenceGenomeLoader()
+        loader.load_fasta(self._fasta([("chrA", seq), ("chrB", seq)]))
+        matches = SequenceQueryEngine(loader.get_index()).query(seq, top_k=10, min_coverage=0.5)
+        resolved = {loader.resolve(m.reference_position) for m in matches}
+        self.assertIn(("chrA", 0), resolved)
+        self.assertIn(("chrB", 0), resolved)
+
+    def test_subset_honours_max_bp_per_chr(self):
+        loader = GRCh38Loader()
+        loader.load_grch38_subset(chromosomes=["chr1", "chr2"], max_bp_per_chr=5_000)
+        self.assertEqual(loader.chromosomes, {"chr1": 5_000, "chr2": 5_000})
+        self.assertEqual(loader.resolve(5_000), ("chr2", 0))
+
+    def test_coverage_of_query_shorter_than_k_is_zero(self):
+        index = KmerIndex()
+        index.add_sequence("ATCGATCGATCGATCG")
+        self.assertEqual(index.get_coverage("ATCG"), 0.0)

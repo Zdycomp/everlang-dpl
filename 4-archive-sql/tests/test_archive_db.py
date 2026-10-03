@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import archive_db
 from archive_db import SqlArchive
 
 
@@ -214,6 +215,28 @@ class TestSqlArchiveCustomTemplates(unittest.TestCase):
         rows = dict(self.archive._conn.execute("SELECT id, template_version FROM transpilations").fetchall())
         self.assertEqual(rows[row_id], 3)
         self.assertIsNone(rows[builtin_id])
+
+
+class TestGenomicsRecorders(unittest.TestCase):
+    def setUp(self):
+        self.archive = SqlArchive(os.path.join(tempfile.mkdtemp(), "g.db"))
+        self.addCleanup(self.archive.close)
+        self.conn = self.archive._conn
+
+    def test_valid_index_and_query_are_recorded(self):
+        self.assertIsNotNone(archive_db.record_kmer_index(self.conn, "idx", 11, 5, 10, 100))
+        qid = archive_db.record_sequence_query(self.conn, "idx", "ATCG", 5, 0.7, 1, 0.2)
+        self.assertIsNotNone(archive_db.record_sequence_match(self.conn, qid, 3, 2, 0.5, 120, "high"))
+
+    def test_constraint_violation_raises_and_rolls_back(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            archive_db.record_kmer_index(self.conn, "bad", 12, 5, 10, 100)  # kmer_size must be 11
+        self.assertFalse(self.conn.in_transaction)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM kmer_indices").fetchone()[0], 0)
+
+    def test_match_for_missing_query_raises(self):
+        with self.assertRaises(sqlite3.IntegrityError):
+            archive_db.record_sequence_match(self.conn, 999, 3, 2, 0.5, 120, "high")
 
 
 class TestSqlArchiveMigration(unittest.TestCase):

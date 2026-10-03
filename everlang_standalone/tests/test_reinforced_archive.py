@@ -180,6 +180,28 @@ class TestReinforcedArchiveIntegration(unittest.TestCase):
             conn.close()
         self.assertEqual(history, [(1, 0)])
 
+    def test_failed_save_leaves_language_unregistered(self):
+        def boom(**_):
+            raise RuntimeError("disk on fire")
+        self.archive._sql.save_custom_template = boom
+        with self.assertRaises(RuntimeError):
+            self.archive.register_language("TOML", '{name} = "{val}"')
+        self.assertNotIn("TOML", self.archive.custom_languages)
+
+    def test_sqlite_failure_degrades_to_unversioned_in_memory_template(self):
+        def locked(**_):
+            raise sqlite3.OperationalError("database is locked")
+        self.archive._sql.save_custom_template = locked
+        self.assertIsNone(self.archive.register_language("TOML", '{name} = "{val}"'))
+        self.assertFalse(self.archive.sql_available)
+        self.assertIn("TOML", self.archive.custom_languages)
+        self.assertEqual(self.archive.template_versions, {})
+
+    def test_builtin_name_rejected_before_anything_is_saved(self):
+        with self.assertRaises(ValueError):
+            self.archive.register_language("dpl", '{name} = "{val}"')
+        self.assertEqual(self._rows("custom_template_versions"), [])
+
     def test_restart_reloads_active_version(self):
         self.archive.register_language("TOML", '{name} = "{val}"')
         self.archive.register_language("TOML", '[{name}] = "{val}"')

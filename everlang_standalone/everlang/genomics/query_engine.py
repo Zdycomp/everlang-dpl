@@ -57,29 +57,32 @@ class SequenceQueryEngine:
         if not kmer_matches:
             return []
 
-        # Group matches by reference position
-        position_hits: Dict[int, int] = {}
+        coverage = self.index.get_coverage(seq)
+        if coverage < min_coverage:
+            return []
 
+        # A k-mer matching at reference `pos` from query offset `off` implies the
+        # query starts at pos - off. Offsets per k-mer are computed once.
+        k = self.index.kmer_size
+        offsets_by_kmer: Dict[str, List[int]] = {}
+        for off in range(len(seq) - k + 1):
+            offsets_by_kmer.setdefault(seq[off:off + k], []).append(off)
+
+        position_hits: Dict[int, int] = {}
         for kmer, positions in kmer_matches.items():
+            offsets = offsets_by_kmer.get(kmer, ())
             for pos in positions:
-                # Key insight: if k-mer matches at position, the query likely
-                # starts at (pos - offset_in_query)
-                for offset in range(len(seq) - self.index.kmer_size + 1):
-                    if seq[offset : offset + self.index.kmer_size] == kmer:
-                        ref_start = pos - offset
-                        if ref_start >= 0:
-                            position_hits[ref_start] = position_hits.get(ref_start, 0) + 1
+                for off in offsets:
+                    ref_start = pos - off
+                    if ref_start >= 0:
+                        position_hits[ref_start] = position_hits.get(ref_start, 0) + 1
 
         if not position_hits:
             return []
 
         # Score each position
         matches = []
-        coverage = self.index.get_coverage(seq)
-
         for ref_pos, hit_count in position_hits.items():
-            if coverage < min_coverage:
-                continue
 
             confidence = self._compute_confidence(
                 coverage=coverage,

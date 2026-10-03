@@ -32,7 +32,7 @@ from typing import Dict, Optional, Tuple
 
 from .archive import EArchive
 from .particle import EParticle
-from ..transpiler import SuperTranspiler, validate_template
+from ..transpiler import LANGUAGE_TEMPLATES, SuperTranspiler, validate_template
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CPP_BINARY = _REPO_ROOT / "1-phase-cpp" / "bin" / "verify_particle"
@@ -249,17 +249,24 @@ class ReinforcedArchive:
         stamped on every rendering archived from then on; otherwise None."""
         validate_template(template)
         lang_upper = language.upper()
+        if lang_upper in LANGUAGE_TEMPLATES:
+            raise ValueError(f"{lang_upper} is a built-in language and cannot be overridden")
         with self._languages_lock:
+            # Persist first: an unexpected exception from the save must leave the
+            # in-memory transpiler untouched. A sqlite3 failure follows the
+            # degrade-don't-raise contract: SQL reinforcement switches off and the
+            # template still works in memory, unversioned.
+            version = None
+            if self.sql_available:
+                version = self._sql_write(
+                    self._sql.save_custom_template,
+                    language=lang_upper,
+                    template=template,
+                )
             self._transpiler.register_language(language, template)
-            self._template_versions.pop(lang_upper, None)
-            if not self.sql_available:
-                return None
-            version = self._sql_write(
-                self._sql.save_custom_template,
-                language=lang_upper,
-                template=template,
-            )
-            if version is not None:
+            if version is None:
+                self._template_versions.pop(lang_upper, None)
+            else:
                 self._template_versions[lang_upper] = version
             return version
 

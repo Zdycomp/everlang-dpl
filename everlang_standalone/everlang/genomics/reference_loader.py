@@ -6,7 +6,8 @@ Supports:
 - Sharded indexing (split by chromosome or position)
 - Incremental building (add sequences on demand)
 """
-from typing import Optional, List, Dict
+from bisect import bisect_right
+from typing import Optional, List, Dict, Tuple
 import os
 from .kmer_index import KmerIndex
 
@@ -24,6 +25,33 @@ class ReferenceGenomeLoader:
         """
         self.index = KmerIndex(shard_id=shard_id, shard_count=shard_count)
         self.chromosomes: Dict[str, int] = {}  # chr_name → length
+        # Records are laid end to end in one global coordinate space, so index
+        # positions from different chromosomes never collide.
+        self._record_starts: List[int] = []
+        self._record_names: List[str] = []
+        self._next_offset = 0
+
+    def _add_record(self, name: str, seq: str) -> None:
+        offset = self._next_offset
+        self.index.add_sequence(seq, start_pos=offset)
+        self.chromosomes[name] = len(seq)
+        self._record_starts.append(offset)
+        self._record_names.append(name)
+        self._next_offset = offset + len(seq)
+
+    def record_offset(self, name: str) -> int:
+        """Global start position of the most recently loaded record called `name`."""
+        for start, rec in zip(reversed(self._record_starts), reversed(self._record_names)):
+            if rec == name:
+                return start
+        raise KeyError(name)
+
+    def resolve(self, position: int) -> Tuple[str, int]:
+        """Maps a global index position to (record name, position within that record)."""
+        i = bisect_right(self._record_starts, position) - 1
+        if i < 0 or position >= self._next_offset:
+            raise ValueError(f"position {position} is outside every loaded record")
+        return self._record_names[i], position - self._record_starts[i]
 
     def load_fasta(self, fasta_path: str, max_bp: Optional[int] = None) -> None:
         """
@@ -48,8 +76,7 @@ class ReferenceGenomeLoader:
                     # Save previous sequence
                     if current_chr and current_seq:
                         seq = ''.join(current_seq)
-                        self.index.add_sequence(seq, start_pos=0)
-                        self.chromosomes[current_chr] = len(seq)
+                        self._add_record(current_chr, seq)
                         total_bp += len(seq)
 
                     # Check limit
@@ -65,8 +92,7 @@ class ReferenceGenomeLoader:
             # Save final sequence
             if current_chr and current_seq:
                 seq = ''.join(current_seq)
-                self.index.add_sequence(seq, start_pos=0)
-                self.chromosomes[current_chr] = len(seq)
+                self._add_record(current_chr, seq)
                 total_bp += len(seq)
 
     def load_fastq(self, fastq_path: str, max_bp: Optional[int] = None) -> None:
@@ -112,8 +138,7 @@ class ReferenceGenomeLoader:
                     read_id = header[1:].split()[0]
 
                     # Index the sequence
-                    self.index.add_sequence(sequence, start_pos=0)
-                    self.chromosomes[read_id] = len(sequence)
+                    self._add_record(read_id, sequence)
                     total_bp += len(sequence)
                     read_count += 1
 
@@ -134,8 +159,7 @@ class ReferenceGenomeLoader:
         bases = "ATCG"
         chr1_seq = ''.join(random.choice(bases) for _ in range(size_bp))
 
-        self.index.add_sequence(chr1_seq, start_pos=0)
-        self.chromosomes["chr1"] = len(chr1_seq)
+        self._add_record("chr1", chr1_seq)
 
     def get_index(self) -> KmerIndex:
         """Return the built k-mer index."""
@@ -160,7 +184,8 @@ class GRCh38Loader(ReferenceGenomeLoader):
         "chr18", "chr19", "chr20", "chr21", "chr22", "chrX", "chrY", "chrM",
     ]
 
-    def load_grch38_chromosome(self, chr_name: str, local_path: Optional[str] = None) -> None:
+    def load_grch38_chromosome(self, chr_name: str, local_path: Optional[str] = None,
+                               max_bp: int = 100_000) -> None:
         """
         Load a specific GRCh38 chromosome.
 
@@ -170,6 +195,7 @@ class GRCh38Loader(ReferenceGenomeLoader):
         Args:
             chr_name: Chromosome name (e.g., "chr1", "chrX")
             local_path: Optional path to local FASTA file
+            max_bp: Cap on synthetic chromosome length
         """
         if local_path and os.path.exists(local_path):
             self.load_fasta(local_path)
@@ -206,15 +232,13 @@ class GRCh38Loader(ReferenceGenomeLoader):
 
             size = chr_sizes.get(chr_name, 1_000_000)
 
-            # For testing: use smaller subset
-            size = min(size, 100_000)
+            size = min(size, max_bp)
 
             import random
             bases = "ATCG"
             seq = ''.join(random.choice(bases) for _ in range(size))
 
-            self.index.add_sequence(seq, start_pos=0)
-            self.chromosomes[chr_name] = size
+            self._add_record(chr_name, seq)
 
     def load_grch38_subset(self, chromosomes: List[str] = None, max_bp_per_chr: int = 100_000) -> None:
         """
@@ -228,7 +252,7 @@ class GRCh38Loader(ReferenceGenomeLoader):
             chromosomes = self.GRCh38_CHROMOSOMES
 
         for chr_name in chromosomes:
-            self.load_grch38_chromosome(chr_name)
+            self.load_grch38_chromosome(chr_name, max_bp=max_bp_per_chr)
 
     def load_grch38_fastq(self, fastq_path: str) -> None:
         """
