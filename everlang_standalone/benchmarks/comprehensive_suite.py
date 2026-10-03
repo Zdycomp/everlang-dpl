@@ -163,13 +163,13 @@ def main():
         print("\n" + "=" * 80)
         print("  PERFORMANCE SUMMARY")
         print("=" * 80)
-        print(f"\n{'Component':<25} {'Throughput':<20} {'vs. Baseline':<15}")
+        # Each component runs a different workload, so throughputs are not
+        # compared against each other as speedups.
+        print(f"\n{'Component':<25} {'Throughput':<20}")
         print("-" * 80)
 
-        baseline = results[0].throughput
         for result in results:
-            speedup = result.throughput / baseline if baseline > 0 else 0
-            print(f"{result.name:<25} {result.throughput:>15,.0f}/sec   {speedup:>10.2f}x")
+            print(f"{result.name:<25} {result.throughput:>15,.0f}/sec")
 
         print("\n" + "=" * 80)
         print("  NOTES:")

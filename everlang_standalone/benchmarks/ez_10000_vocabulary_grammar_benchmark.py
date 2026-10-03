@@ -40,8 +40,8 @@ PIPELINE_LANGUAGES = [
 ]
 PIPELINE_SAMPLE_SNIPPETS = [
     "def calculate_total(items): return sum(items)",
-    "val x: String? = null",  # syntax drift -> EMULATED_REPAIR
-    "void* ptr = NULL; *ptr = 0xDEADBEEF;",  # memory hazard -> QUARANTINED_Z
+    "val x: String? = INVALID",  # syntax drift -> EMULATED_REPAIR
+    "void* ptr = BAD_POINTER; *ptr = 0xDEADBEEF;",  # memory hazard -> QUARANTINED_Z
 ]
 
 

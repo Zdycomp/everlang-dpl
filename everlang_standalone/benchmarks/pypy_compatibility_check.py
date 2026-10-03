@@ -16,10 +16,11 @@ Expected speedup over CPython:
   - SuperTranspiler: 3-5x faster
   - Full pipeline: 4-7x faster
 """
+import os
 import sys
 
 # Ensure import path works in both CPython and PyPy
-sys.path.insert(0, "/home/user/everlang-dpl/everlang_standalone")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from everlang.biocomputing.sequencer import DnaSequencer, DnaSyntaxError
 from everlang.transpiler import SuperTranspiler
