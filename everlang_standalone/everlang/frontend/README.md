@@ -20,11 +20,9 @@ comment  := '#' to end of line            (ignored)
 ```
 
 Spaces and tabs separate tokens; `\r\n` is read as `\n`. A declaration line has
-the same shape as `SuperTranspiler`'s `DPL` rendering, so DPL output reads back
-in — **except when the value contains `"` or `\`**. The parser decodes `\"` and
-`\\`, but the `DPL` template inserts the value without escaping it. Escaping
-there would change a built-in template, which `5-runtime-java`'s auditor also
-hardcodes, so it isn't done here.
+the same shape as `SuperTranspiler`'s `DPL` rendering, and `SuperTranspiler`
+escapes `\` and `"` in DPL values (`escape_dpl_value`), so any DPL rendering
+reads back to the same value and renders identically again.
 
 ## Semantics
 

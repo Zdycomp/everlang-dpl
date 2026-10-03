@@ -6,7 +6,7 @@ from typing import Callable, Dict, Tuple
 
 from ..core.particle import EParticle
 from ..core.phase_engine import PhaseEngine
-from ..transpiler import SuperTranspiler
+from ..transpiler import VALUE_ESCAPES, SuperTranspiler
 from .grammar import Collision, Declaration
 from .results import (
     CollisionResult, DeclarationResult, ExecutionResult, already_bound, clamped, unbound,
@@ -18,11 +18,12 @@ _COMPILED: Dict[Tuple[Tuple[str, str], ...], Callable] = {}
 _COMPILED_MAX = 64  # each custom-template edit is a new key; bound the cache
 
 
-def _fstring_source(template: str):
+def _fstring_source(template: str, val_expr: str = "val"):
     """Python source for an f-string equal to template.format(name=, val=,
     type_spec=, conf=), or None if the template uses anything but bare fields.
-    Literal text goes through repr(), and only the four whitelisted names can
-    appear inside braces, so no template content is ever evaluated as code."""
+    Literal text goes through repr(), and only the four whitelisted names (with
+    `val` replaced by the generator's own `val_expr`) can appear inside braces,
+    so no template content is ever evaluated as code."""
     try:
         parts = list(string.Formatter().parse(template))
     except ValueError:
@@ -33,7 +34,7 @@ def _fstring_source(template: str):
         if field is not None:
             if field not in _FIELDS or spec or conversion:
                 return None
-            body.append("{" + field + "}")
+            body.append("{" + (val_expr if field == "val" else field) + "}")
     return "f" + repr("".join(body))
 
 
@@ -47,10 +48,15 @@ def compile_renderer(templates: Dict[str, str]) -> Callable[[str, str, str, int]
     namespace = {}
     entries = []
     for idx, (lang, template) in enumerate(key):
-        expr = _fstring_source(template)
+        val_expr = "val"
+        escape = VALUE_ESCAPES.get(lang)
+        if escape is not None:
+            namespace[f"_esc{idx}"] = escape
+            val_expr = f"_esc{idx}(val)"
+        expr = _fstring_source(template, val_expr)
         if expr is None:
             namespace[f"_fmt{idx}"] = template.format
-            expr = f"_fmt{idx}(name=name, val=val, type_spec=type_spec, conf=conf)"
+            expr = f"_fmt{idx}(name=name, val={val_expr}, type_spec=type_spec, conf=conf)"
         entries.append(f"{lang!r}: {expr}")
     source = "def render(name, val, type_spec, conf):\n    return {" + ", ".join(entries) + "}\n"
     exec(compile(source, "<mega-renderer>", "exec"), namespace)

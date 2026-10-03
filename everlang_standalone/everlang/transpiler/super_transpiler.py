@@ -17,7 +17,7 @@ Option<T>, a raw (deliberately unchecked) C pointer, Go's var declaration,
 and Groovy's `as` type-coercion operator are all real language features.
 """
 import string
-from typing import Dict
+from typing import Callable, Dict
 
 # DPL, KOTLIN, RUST, C_CLANG, GO are verbatim from
 # benchmarks/ez_micro_containers.py::SyntaxMutatorContainer.PARADIGMS.
@@ -31,6 +31,17 @@ LANGUAGE_TEMPLATES: Dict[str, str] = {
     # mirroring the type-annotated style of the other five templates.
     "GROOVY": "def {name} = \"{val}\" as {type_spec} // confidence({conf})",
 }
+
+
+def escape_dpl_value(val) -> str:
+    """Escapes `\\` and `"` so a DPL rendering reads back through
+    everlang.frontend unchanged. 5-runtime-java's TranspileAuditor applies the
+    same rule to its own DPL template."""
+    return str(val).replace("\\", "\\\\").replace('"', '\\"')
+
+
+# Applied to {val} before substitution, for the named language only.
+VALUE_ESCAPES: Dict[str, Callable[[object], str]] = {"DPL": escape_dpl_value}
 
 
 _ALLOWED_FIELDS = frozenset(("name", "val", "type_spec", "conf"))
@@ -101,7 +112,9 @@ class SuperTranspiler:
         no execution, no code generation beyond template substitution."""
         offsets = {}
         for lang, template in self.templates.items():
-            offsets[lang] = template.format(name=name, val=val, type_spec=type_spec, conf=conf)
+            escape = VALUE_ESCAPES.get(lang)
+            lang_val = escape(val) if escape is not None else val
+            offsets[lang] = template.format(name=name, val=lang_val, type_spec=type_spec, conf=conf)
         return offsets
 
     def compute_syntax_distance(self, pattern1: str, pattern2: str) -> int:

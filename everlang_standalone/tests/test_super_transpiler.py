@@ -1,6 +1,6 @@
 import unittest
 
-from everlang.transpiler import SuperTranspiler, LANGUAGE_TEMPLATES, validate_template
+from everlang.transpiler import SuperTranspiler, LANGUAGE_TEMPLATES, escape_dpl_value, validate_template
 
 
 class TestSuperTranspiler(unittest.TestCase):
@@ -55,6 +55,17 @@ class TestSuperTranspiler(unittest.TestCase):
         custom = SuperTranspiler(templates={"SWIFT": "let {name} = \"{val}\""})
         out = custom.transpile("x", "v", "T", 100)
         self.assertEqual(out, {"SWIFT": 'let x = "v"'})
+
+    def test_dpl_escapes_quotes_and_backslashes(self):
+        out = self.t.transpile("x", 'say "hi" \\ ok', "T", 100)
+        self.assertEqual(out["DPL"], 'particle x : E<T> = "say \\"hi\\" \\\\ ok" @ confidence(100)')
+
+    def test_only_dpl_values_are_escaped(self):
+        out = self.t.transpile("x", 'a"b', "T", 100)
+        self.assertEqual(out["GO"], 'var x string = "a"b"')
+
+    def test_escape_backslash_before_quote(self):
+        self.assertEqual(escape_dpl_value('\\"'), '\\\\\\"')
 
     def test_values_containing_braces_do_not_break_formatting(self):
         # str.format on the template (not the value) means a value containing

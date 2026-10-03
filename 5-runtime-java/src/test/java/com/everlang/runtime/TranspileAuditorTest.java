@@ -79,6 +79,33 @@ class TranspileAuditorTest {
     }
 
     @Test
+    void dplValueQuotesAndBackslashesAreEscaped() {
+        // Byte-for-byte what super_transpiler.py renders for val = say "hi" \ ok
+        TranspileRow row = new TranspileRow(20L, "x", "say \"hi\" \\ ok", "T", 100, "DPL",
+                "particle x : E<T> = \"say \\\"hi\\\" \\\\ ok\" @ confidence(100)");
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row));
+
+        assertEquals(1, result.verifiedCount());
+        assertEquals(0, result.mismatchedCount());
+    }
+
+    @Test
+    void unescapedDplRowWrittenBeforeEscapingIsFlagged() {
+        TranspileRow row = new TranspileRow(21L, "x", "a\"b", "T", 100, "DPL",
+                "particle x : E<T> = \"a\"b\" @ confidence(100)");
+
+        assertEquals(1, TranspileAuditor.audit(List.of(row)).mismatchedCount());
+    }
+
+    @Test
+    void onlyDplValuesAreEscaped() {
+        TranspileRow row = new TranspileRow(22L, "x", "a\"b", "T", 100, "GO", "var x string = \"a\"b\"");
+
+        assertEquals(1, TranspileAuditor.audit(List.of(row)).verifiedCount());
+    }
+
+    @Test
     void corruptedRowIsCaughtAsMismatch() {
         TranspileRow row = new TranspileRow(7L, "x", "hello", "String", 200, "DPL",
                 "particle x : E<String> = \"WRONG\" @ confidence(200)");

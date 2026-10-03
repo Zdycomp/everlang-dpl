@@ -23,7 +23,9 @@ import java.util.Map;
  *
  * For a row whose {@code targetLanguage} is one of the six above, the matching
  * template is re-rendered from the row's own inputs and compared byte-for-byte
- * to {@code renderedCode}; a mismatch is any difference.
+ * to {@code renderedCode}; a mismatch is any difference. The DPL value is
+ * escaped first ({@code \} → {@code \\}, {@code "} → {@code \"}), as Python's
+ * {@code VALUE_ESCAPES["DPL"]} does.
  *
  * <p>A row stamped with a {@code templateVersion} is a custom-language row: it
  * is re-rendered from exactly that version in {@code custom_template_versions}
@@ -77,7 +79,7 @@ public final class TranspileAuditor {
         int conf = row.confidence();
 
         String builtin = switch (row.targetLanguage()) {
-            case "DPL" -> "particle " + name + " : E<" + typeSpec + "> = \"" + val + "\" @ confidence(" + conf + ")";
+            case "DPL" -> "particle " + name + " : E<" + typeSpec + "> = \"" + escapeDplValue(val) + "\" @ confidence(" + conf + ")";
             case "KOTLIN" -> "val " + name + ": " + typeSpec + "? = \"" + val + "\"";
             case "RUST" -> "let " + name + ": Option<" + typeSpec + "> = Some(\"" + val + "\".to_string());";
             case "C_CLANG" -> "const char* " + name + " = \"" + val + "\"; // Unchecked pointer";
@@ -101,6 +103,14 @@ public final class TranspileAuditor {
         } catch (IllegalArgumentException e) {
             return "<invalid custom template " + row.targetLanguage() + " v" + version + ": " + e.getMessage() + ">";
         }
+    }
+
+    /**
+     * Mirrors {@code super_transpiler.py :: escape_dpl_value}: backslash first,
+     * then double quote, so a DPL rendering reads back through the Python frontend.
+     */
+    static String escapeDplValue(String val) {
+        return val.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     /**

@@ -132,10 +132,16 @@ class TestMegaExecuter(unittest.TestCase):
         self.assertEqual([d[:4] for d in second.execution.declarations],
                          [d[:4] for d in first.execution.declarations])
 
-    def test_dpl_rendering_of_quote_or_backslash_does_not_read_back(self):
-        # Documented limit (frontend/README.md): the built-in DPL template does not escape values.
-        result = self.run_src('particle q : E<T> = "a\\"b" @ confidence(1)')
-        self.assertNotEqual(self.run_src(result.execution.declarations[0].renderings["DPL"]).diagnostics, [])
+    def test_dpl_rendering_with_quotes_and_backslashes_reads_back_identically(self):
+        rng = random.Random(99)
+        alphabet = 'ab "\\\\#@()<>:= \t'
+        for _ in range(300):
+            value = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 12)))
+            dpl = SuperTranspiler().transpile("q", value, "T", 7)["DPL"]
+            back = self.run_src(dpl)
+            self.assertEqual(back.diagnostics, [], repr(value))
+            self.assertEqual(back.execution.declarations[0].value, value)
+            self.assertEqual(back.execution.declarations[0].renderings["DPL"], dpl)
 
     def test_custom_language_renderings_included(self):
         transpiler = SuperTranspiler()
