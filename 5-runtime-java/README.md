@@ -104,6 +104,13 @@ Templates (`{name}`/`{val}`/`{type_spec}`/`{conf}` substituted from the row):
 - `GO`: `var {name} string = "{val}"`
 - `GROOVY`: `def {name} = "{val}" as {type_spec} // confidence({conf})`
 
+`{val}` is escaped for its language in all six (Python's `escape_string`, see
+`TypedValueRenderer.escapeString`): backslash, `"`, newline and carriage return
+everywhere; `$` in Kotlin and Groovy; other control characters as each language's
+numeric escape; and the second `?` of `??` in C. Rows archived before the five
+non-DPL templates were escaped, with any such character in the value, now report as
+mismatches.
+
 Custom languages: a row with a non-null `template_version` is re-rendered
 from exactly that version in `custom_template_versions`, read in full,
 retired versions included. If that version is missing, the row is a mismatch,

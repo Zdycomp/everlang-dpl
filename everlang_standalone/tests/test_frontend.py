@@ -282,6 +282,21 @@ class TestMegaExecuter(unittest.TestCase):
         expected = {k: v.format(name="n", val="v", type_spec="t", conf=1) for k, v in templates.items()}
         self.assertEqual(render("n", "v", "t", 1), expected)
 
+    def test_compiled_renderer_escapes_exactly_like_transpile(self):
+        transpiler = SuperTranspiler()
+        transpiler.register_language("TOML", '{name} = "{val}"')
+        render = compile_renderer(transpiler.templates)
+        rng = random.Random(11)
+        alphabet = 'ab "\\$?\n\r\t\x00\x1f\x7f é{}#'
+        values = ["", "plain", "hello 85.5", 'q"', "\\", "$", "??", "?", "a?b?c", "\t", "é"]
+        values += ["".join(rng.choice(alphabet) for _ in range(rng.randint(0, 10))) for _ in range(500)]
+        for value in values:
+            self.assertEqual(render("n", value, "T", 5), transpiler.transpile("n", value, "T", 5), repr(value))
+
+    def test_compiled_renderer_with_only_unescaped_languages_has_one_path(self):
+        render = compile_renderer({"TOML": '{name} = "{val}"'})
+        self.assertEqual(render("n", 'a"b$', "T", 1), {"TOML": 'n = "a"b$"'})
+
     def test_renderer_cache_is_bounded(self):
         from everlang.frontend import mega_executer
         for i in range(mega_executer._COMPILED_MAX + 10):
@@ -311,7 +326,8 @@ class TestBaselineEquivalence(unittest.TestCase):
 
     ATOMS = ["particle", "collide", "confidence", "E", "p1", "_x9", ":", "<", ">", "=", "@", "(", ")", "->",
              "-", '"v"', '"a\\"b"', '"bad\\q"', '"open', "12", "300", "#c", " ", "\t", "\r", "é", "$", "\\",
-             "[", "]", ",", ".", "1.5", "-3", "2e+9", "1e", "007", "true", "false", "99999999999999999999", "1e999"]
+             "[", "]", ",", ".", "1.5", "-3", "2e+9", "1e", "007", "true", "false", "99999999999999999999", "1e999",
+             '"$x ??"', '"a\\nb\\r"', '"\\\\"']
     GOOD = ['particle p : E<T> = "v" @ confidence(5)', 'particle  rate:E< float >="0.5"@confidence ( 200 )  # c',
             "collide a b", "collide a b -> c", 'particle collide : E<T> = "v" @ confidence(1)',
             'particle a : E<T> = "v" @ confidence(90)', 'particle b : E<T> = "w" @ confidence(300)',

@@ -3,7 +3,7 @@ SuperTranspiler v2: Refined, production-ready code generation across six languag
 
 Enhancements over v1:
 1. Input validation & sanitization
-2. Language-specific escaping (quotes, newlines, special chars)
+2. Language-specific escaping (typed.escape_string: quotes, backslashes, newlines, `$`, control characters)
 3. Type mapping (DPL → language-native types)
 4. Confidence-aware rendering (adjust safety/visibility based on confidence)
 5. Template caching (compile once, render many times)
@@ -14,17 +14,7 @@ Enhancements over v1:
 from typing import Dict, List
 import re
 
-# Language-specific escape sequences for string literals
-# Backslash is listed first: rules apply in order, and escaping it after `"`
-# would double the backslash that `"` -> `\"` just inserted.
-ESCAPE_RULES: Dict[str, Dict[str, str]] = {
-    "DPL": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
-    "KOTLIN": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
-    "RUST": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
-    "C_CLANG": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
-    "GO": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
-    "GROOVY": {"\\": "\\\\", "\"": "\\\"", "\n": "\\n", "\r": "\\r"},
-}
+from .typed import TYPED_LANGUAGES, escape_string
 
 # Type mapping from abstract spec to language-native types
 TYPE_MAPPINGS: Dict[str, Dict[str, str]] = {
@@ -119,13 +109,9 @@ class SuperTranspilerV2:
 
     def escape_value(self, val: str, language: str) -> str:
         """Apply language-specific escaping to string value."""
-        if language not in ESCAPE_RULES:
+        if language not in TYPED_LANGUAGES:
             return val
-        
-        result = val
-        for char, escaped in ESCAPE_RULES[language].items():
-            result = result.replace(char, escaped)
-        return result
+        return escape_string(language, val)
 
     def map_type(self, type_spec: str, language: str) -> str:
         """Map abstract type spec to language-native type."""

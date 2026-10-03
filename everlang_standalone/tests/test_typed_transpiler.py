@@ -122,10 +122,27 @@ class TestRendering(unittest.TestCase):
         self.assertEqual(self.t.transpile("cpu", 85.5, "float", 200)["GO"], 'var cpu string = "85.5"')
 
 
-def _program(lang):
+HOSTILE_STRINGS = {
+    "quotes": 'say "hi"',
+    "path": "C:\\Users\\x\\",
+    "shell": "$HOME ${x} $",
+    "trigraph": "a??=b ???) ?",
+    "lines": "a\nb\rc\r\n",
+    "control": "nul\x00bell\x07esc\x1b\x1f",
+    "mixed": '"\\"\n$??"\x01\ttab',
+    "plain": "hello 85.5 {y}",
+    "empty": "",
+}
+
+
+def _program(lang, legacy=False):
     t = SuperTranspiler()
-    lines = [t.transpile_typed(name, value, None, 200)[lang] for name, value in CONFIG.items()]
-    names = list(CONFIG)
+    if legacy:  # plain strings through the original string templates
+        lines = [t.transpile(name, value, "String", 200)[lang] for name, value in HOSTILE_STRINGS.items()]
+        names = list(HOSTILE_STRINGS)
+    else:
+        lines = [t.transpile_typed(name, value, None, 200)[lang] for name, value in CONFIG.items()]
+        names = list(CONFIG)
     if lang == "C_CLANG":
         uses = "".join(f"    (void){n};\n" for n in names)
         return ("#include <stdbool.h>\n" + "\n".join(lines) + "\nint main(void) {\n" + uses + "    return 0;\n}\n")
@@ -141,15 +158,16 @@ class TestRenderingsCompile(unittest.TestCase):
     """Every typed rendering of CONFIG, hostile strings included, compiled by
     the real toolchain wherever it is installed."""
 
-    def _compile(self, lang, filename, argv):
+    def _compile(self, lang, filename, argv, legacy=False):
         work = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, work, True)
         path = os.path.join(work, filename)
-        with open(path, "w") as f:
-            f.write(_program(lang))
+        program = _program(lang, legacy)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(program)
         env = dict(os.environ, GOCACHE=os.path.join(work, "gocache"), GO111MODULE="off")
         proc = subprocess.run(argv(path, work), capture_output=True, text=True, cwd=work, env=env, timeout=120)
-        self.assertEqual(proc.returncode, 0, proc.stderr + "\n" + _program(lang))
+        self.assertEqual(proc.returncode, 0, proc.stderr + "\n" + program)
 
     @unittest.skipUnless(shutil.which("gcc"), "gcc not installed")
     def test_c(self):
@@ -164,6 +182,20 @@ class TestRenderingsCompile(unittest.TestCase):
     @unittest.skipUnless(shutil.which("rustc"), "rustc not installed")
     def test_rust(self):
         self._compile("RUST", "typed.rs", lambda p, w: ["rustc", "-D", "warnings", "-o", os.path.join(w, "a"), p])
+
+    @unittest.skipUnless(shutil.which("gcc"), "gcc not installed")
+    def test_c_plain_strings(self):
+        for std in ("c99", "c11"):
+            self._compile("C_CLANG", "plain.c", lambda p, w: ["gcc", f"-std={std}", "-Wall", "-Wextra", "-Werror", "-pedantic",
+                                                              "-o", os.path.join(w, "a"), p], legacy=True)
+
+    @unittest.skipUnless(shutil.which("go"), "go not installed")
+    def test_go_plain_strings(self):
+        self._compile("GO", "plain.go", lambda p, w: ["go", "vet", p], legacy=True)
+
+    @unittest.skipUnless(shutil.which("rustc"), "rustc not installed")
+    def test_rust_plain_strings(self):
+        self._compile("RUST", "plain.rs", lambda p, w: ["rustc", "-D", "warnings", "-o", os.path.join(w, "a"), p], legacy=True)
 
 
 class TestConfigCommand(unittest.TestCase):
@@ -246,7 +278,9 @@ class TestJavaAuditAgreesWithPython(unittest.TestCase):
         rng = random.Random(7)
         for i, value in enumerate(list(CONFIG.values()) + [_random_value(rng) for _ in range(200)]):
             archive.transpile_typed_and_archive(f"v{i}", value, None, rng.randint(0, 256))
-        archive.transpile_and_archive("plain", 'say "hi"', "String", 100)
+        for name, value in HOSTILE_STRINGS.items():
+            archive.transpile_and_archive(f"s_{name}", value, "String", 100)
+        archive.transpile_and_archive("rnd", "".join(rng.choice('ab"\\$?\n\r\t\x00\x1f é') for _ in range(40)), "String", 7)
         proc = self._audit(db_path)
         self.assertEqual(proc.returncode, 0, proc.stdout[-3000:] + proc.stderr[-2000:])
         self.assertIn("MISMATCHED=0", proc.stdout)

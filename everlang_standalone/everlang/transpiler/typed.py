@@ -140,6 +140,25 @@ def validate(value: TypedValue) -> None:
             raise ValueError(f"{item!r} is not true or false")
 
 
+# Per language: the characters escape_string rewrites. A string with none of them
+# (nearly every value) is returned as is, without the per-character loop.
+_BASE_SPECIAL = r'\\"\n\r'
+_CONTROL = r"\x00-\x08\x0b\x0c\x0e-\x1f"  # every control character except tab (and \n, \r above)
+_NEEDS_ESCAPE = {
+    "DPL": re.compile(f"[{_BASE_SPECIAL}]"),
+    "KOTLIN": re.compile(f"[{_BASE_SPECIAL}{_CONTROL}$]"),
+    "GROOVY": re.compile(f"[{_BASE_SPECIAL}{_CONTROL}$]"),
+    "RUST": re.compile(f"[{_BASE_SPECIAL}{_CONTROL}]"),
+    "GO": re.compile(f"[{_BASE_SPECIAL}{_CONTROL}]"),
+    "C_CLANG": re.compile(f"[{_BASE_SPECIAL}{_CONTROL}]|[?][?]"),
+}
+
+
+# Matches a string some built-in language would rewrite; a miss means every built-in
+# language's escape_string returns it unchanged.
+NEEDS_ESCAPE_ANY = re.compile(f"[{_BASE_SPECIAL}{_CONTROL}$]|[?][?]")
+
+
 def escape_string(language: str, text: str) -> str:
     """Escapes `text` for a double-quoted literal in `language`: backslash,
     double quote, newline and carriage return everywhere; `$` for Kotlin and
@@ -147,6 +166,8 @@ def escape_string(language: str, text: str) -> str:
     each language's own numeric escape; and, in C, each `?` that follows a `?`
     so no trigraph can form. DPL leaves other control characters raw, which its
     grammar allows."""
+    if not _NEEDS_ESCAPE[language].search(text):
+        return text
     out = []
     prev = ""
     for ch in text:

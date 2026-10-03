@@ -23,9 +23,11 @@ import java.util.Map;
  *
  * For a row whose {@code targetLanguage} is one of the six above, the matching
  * template is re-rendered from the row's own inputs and compared byte-for-byte
- * to {@code renderedCode}; a mismatch is any difference. The DPL value is
- * escaped first (backslash, double quote, newline, carriage return), as Python's
- * {@code VALUE_ESCAPES["DPL"]} does.
+ * to {@code renderedCode}; a mismatch is any difference. The value is escaped
+ * first for its language, as Python's {@code VALUE_ESCAPES} does: DPL escapes
+ * backslash, double quote, newline and carriage return; the other five also escape
+ * {@code $} (Kotlin, Groovy), other control characters and {@code ??} (C), per
+ * {@code typed.py :: escape_string}.
  *
  * <p>A row stamped with a {@code templateVersion} is a custom-language row: it
  * is re-rendered from exactly that version in {@code custom_template_versions}
@@ -90,11 +92,11 @@ public final class TranspileAuditor {
         }
         String builtin = switch (row.targetLanguage()) {
             case "DPL" -> "particle " + name + " : E<" + typeSpec + "> = \"" + escapeDplValue(val) + "\" @ confidence(" + conf + ")";
-            case "KOTLIN" -> "val " + name + ": " + typeSpec + "? = \"" + val + "\"";
-            case "RUST" -> "let " + name + ": Option<" + typeSpec + "> = Some(\"" + val + "\".to_string());";
-            case "C_CLANG" -> "const char* " + name + " = \"" + val + "\"; // Unchecked pointer";
-            case "GO" -> "var " + name + " string = \"" + val + "\"";
-            case "GROOVY" -> "def " + name + " = \"" + val + "\" as " + typeSpec + " // confidence(" + conf + ")";
+            case "KOTLIN" -> "val " + name + ": " + typeSpec + "? = \"" + escape("KOTLIN", val) + "\"";
+            case "RUST" -> "let " + name + ": Option<" + typeSpec + "> = Some(\"" + escape("RUST", val) + "\".to_string());";
+            case "C_CLANG" -> "const char* " + name + " = \"" + escape("C_CLANG", val) + "\"; // Unchecked pointer";
+            case "GO" -> "var " + name + " string = \"" + escape("GO", val) + "\"";
+            case "GROOVY" -> "def " + name + " = \"" + escape("GROOVY", val) + "\" as " + typeSpec + " // confidence(" + conf + ")";
             default -> null;
         };
         if (builtin != null) {
@@ -135,6 +137,14 @@ public final class TranspileAuditor {
                 row.typeSpec(), row.confidence());
         return expected != null ? expected
                 : "<typed row " + row.id() + " for non-built-in language " + row.targetLanguage() + ">";
+    }
+
+    /**
+     * Mirrors {@code typed.py :: escape_string}, which Python's {@code VALUE_ESCAPES} applies to
+     * {@code {val}} in the five non-DPL built-in templates (see {@link TypedValueRenderer#escapeString}).
+     */
+    private static String escape(String language, String val) {
+        return TypedValueRenderer.escapeString(language, val);
     }
 
     /**

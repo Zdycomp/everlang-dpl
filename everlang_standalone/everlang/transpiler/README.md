@@ -70,6 +70,24 @@ The transpiler adjusts template variants based on confidence (0-256):
 - **51-199 (Medium)**: Standard templates with normal safety
 - **200-256 (High)**: Optimistic mode, unchecked/trusted rendering
 
+## String Escaping
+
+`SuperTranspiler.transpile` escapes `{val}` for its language before substituting it
+(`VALUE_ESCAPES`, built on `typed.escape_string`), so a value containing a quote,
+backslash or newline no longer breaks the generated string literal:
+
+| Language | Escaped in the value |
+|---|---|
+| DPL, Go, Rust | `\`, `"`, newline, carriage return; Go and Rust also write other control characters as `\xhh` (DPL leaves them raw) |
+| Kotlin, Groovy | the same, plus `$` (string templates), other control characters as `\uhhhh` |
+| C | the same as Go, control characters as `\ooo`, and the second `?` of every `??` (no trigraphs) |
+
+Custom languages get the raw value, since their templates decide how it is quoted.
+Only `{val}` is escaped; `name` and `type_spec` are inserted as given. Rows archived
+before this change whose value contained any of these characters now report as
+mismatches in `TranspileAudit`, as DPL rows did when DPL escaping was added.
+`SuperTranspilerV2` uses the same escaper.
+
 ## Typed Values
 
 `render`, `render-all` and `SuperTranspiler.transpile` quote every value as a

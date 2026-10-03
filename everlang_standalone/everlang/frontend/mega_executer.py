@@ -7,6 +7,7 @@ from typing import Callable, Dict, Tuple
 from ..core.particle import EParticle
 from ..core.phase_engine import PhaseEngine
 from ..transpiler import VALUE_ESCAPES, SuperTranspiler, TypedValue
+from ..transpiler.typed import NEEDS_ESCAPE_ANY
 from .grammar import Collision, Declaration
 from .results import (
     CollisionResult, DeclarationResult, ExecutionResult, already_bound, clamped, unbound,
@@ -40,25 +41,29 @@ def _fstring_source(template: str, val_expr: str = "val"):
 
 def compile_renderer(templates: Dict[str, str]) -> Callable[[str, str, str, int], Dict[str, str]]:
     """One function rendering every language at once, cached per template set.
-    A template that can't be expressed as a plain f-string keeps str.format."""
+    A template that can't be expressed as a plain f-string keeps str.format.
+    `val` must be a str. When it contains nothing any built-in language would
+    escape (nearly always), the generated function skips every escaper."""
     key = tuple(templates.items())
     renderer = _COMPILED.get(key)
     if renderer is not None:
         return renderer
-    namespace = {}
-    entries = []
+    namespace = {"_needs_escape": NEEDS_ESCAPE_ANY.search}
+    plain, escaped = [], []
     for idx, (lang, template) in enumerate(key):
-        val_expr = "val"
         escape = VALUE_ESCAPES.get(lang)
+        for entries, val_expr in ((plain, "val"), (escaped, f"_esc{idx}(val)" if escape is not None else "val")):
+            expr = _fstring_source(template, val_expr)
+            if expr is None:
+                namespace[f"_fmt{idx}"] = template.format
+                expr = f"_fmt{idx}(name=name, val={val_expr}, type_spec=type_spec, conf=conf)"
+            entries.append(f"{lang!r}: {expr}")
         if escape is not None:
             namespace[f"_esc{idx}"] = escape
-            val_expr = f"_esc{idx}(val)"
-        expr = _fstring_source(template, val_expr)
-        if expr is None:
-            namespace[f"_fmt{idx}"] = template.format
-            expr = f"_fmt{idx}(name=name, val={val_expr}, type_spec=type_spec, conf=conf)"
-        entries.append(f"{lang!r}: {expr}")
-    source = "def render(name, val, type_spec, conf):\n    return {" + ", ".join(entries) + "}\n"
+    source = "def render(name, val, type_spec, conf):\n"
+    if plain != escaped:
+        source += "    if _needs_escape(val) is None:\n        return {" + ", ".join(plain) + "}\n"
+    source += "    return {" + ", ".join(escaped) + "}\n"
     exec(compile(source, "<mega-renderer>", "exec"), namespace)
     if len(_COMPILED) >= _COMPILED_MAX:
         _COMPILED.clear()

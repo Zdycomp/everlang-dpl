@@ -60,9 +60,24 @@ class TestSuperTranspiler(unittest.TestCase):
         out = self.t.transpile("x", 'say "hi" \\ ok', "T", 100)
         self.assertEqual(out["DPL"], 'particle x : E<T> = "say \\"hi\\" \\\\ ok" @ confidence(100)')
 
-    def test_only_dpl_values_are_escaped(self):
-        out = self.t.transpile("x", 'a"b', "T", 100)
-        self.assertEqual(out["GO"], 'var x string = "a"b"')
+    def test_every_builtin_escapes_its_own_string_literal(self):
+        out = self.t.transpile("x", 'a"b\\c\n$d??=\x01', "T", 100)
+        self.assertEqual(out["GO"], 'var x string = "a\\"b\\\\c\\n$d??=\\x01"')
+        self.assertEqual(out["RUST"], 'let x: Option<T> = Some("a\\"b\\\\c\\n$d??=\\x01".to_string());')
+        self.assertEqual(out["KOTLIN"], 'val x: T? = "a\\"b\\\\c\\n\\$d??=\\u0001"')
+        self.assertEqual(out["GROOVY"], 'def x = "a\\"b\\\\c\\n\\$d??=\\u0001" as T // confidence(100)')
+        self.assertEqual(out["C_CLANG"], 'const char* x = "a\\"b\\\\c\\n$d?\\?=\\001"; // Unchecked pointer')
+
+    def test_plain_values_are_unchanged(self):
+        out = self.t.transpile("x", "hello 85.5 {y}", "T", 100)
+        self.assertEqual(out["GO"], 'var x string = "hello 85.5 {y}"')
+
+    def test_custom_languages_still_get_the_raw_value(self):
+        self.t.register_language("TOML", '{name} = "{val}"')
+        self.assertEqual(self.t.transpile("x", 'a"b', "T", 100)["TOML"], 'x = "a"b"')
+
+    def test_non_string_values_render_as_before(self):
+        self.assertEqual(self.t.transpile("x", 85.5, "T", 100)["GO"], 'var x string = "85.5"')
 
     def test_escape_backslash_before_quote(self):
         self.assertEqual(escape_dpl_value('\\"'), '\\\\\\"')

@@ -19,7 +19,7 @@ and Groovy's `as` type-coercion operator are all real language features.
 import string
 from typing import Callable, Dict, Optional
 
-from .typed import TYPED_LANGUAGES, default_type_spec, infer, render_typed
+from .typed import TYPED_LANGUAGES, default_type_spec, escape_string, infer, render_typed
 
 # DPL, KOTLIN, RUST, C_CLANG, GO are verbatim from
 # benchmarks/ez_micro_containers.py::SyntaxMutatorContainer.PARADIGMS.
@@ -44,8 +44,17 @@ def escape_dpl_value(val) -> str:
             .replace("\n", "\\n").replace("\r", "\\r"))
 
 
-# Applied to {val} before substitution, for the named language only.
+def _escaper(language: str) -> Callable[[object], str]:
+    return lambda val: escape_string(language, str(val))
+
+
+# Applied to {val} before substitution, for the named built-in language only (custom
+# languages get the raw value: their templates decide how it is quoted). DPL escapes
+# `\`, `"`, newline and carriage return; the other five also escape what their string
+# literals need (typed.escape_string): `$` in Kotlin and Groovy, control characters,
+# and `??` in C. 5-runtime-java's TranspileAuditor applies the same rules.
 VALUE_ESCAPES: Dict[str, Callable[[object], str]] = {"DPL": escape_dpl_value}
+VALUE_ESCAPES.update({lang: _escaper(lang) for lang in TYPED_LANGUAGES if lang != "DPL"})
 
 
 _ALLOWED_FIELDS = frozenset(("name", "val", "type_spec", "conf"))

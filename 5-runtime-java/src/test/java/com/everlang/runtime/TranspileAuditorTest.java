@@ -118,8 +118,37 @@ class TranspileAuditorTest {
     }
 
     @Test
-    void onlyDplValuesAreEscaped() {
-        TranspileRow row = new TranspileRow(22L, "x", "a\"b", "T", 100, "GO", "var x string = \"a\"b\"");
+    void everyBuiltinEscapesItsOwnStringLiteral() {
+        String val = "a\"b\\c\n$d??=\u0001";
+        List<TranspileRow> rows = List.of(
+                new TranspileRow(30L, "x", val, "T", 100, "GO", "var x string = \"a\\\"b\\\\c\\n$d??=\\x01\""),
+                new TranspileRow(31L, "x", val, "T", 100, "RUST",
+                        "let x: Option<T> = Some(\"a\\\"b\\\\c\\n$d??=\\x01\".to_string());"),
+                new TranspileRow(32L, "x", val, "T", 100, "KOTLIN", "val x: T? = \"a\\\"b\\\\c\\n\\$d??=\\u0001\""),
+                new TranspileRow(33L, "x", val, "T", 100, "GROOVY",
+                        "def x = \"a\\\"b\\\\c\\n\\$d??=\\u0001\" as T // confidence(100)"),
+                new TranspileRow(34L, "x", val, "T", 100, "C_CLANG",
+                        "const char* x = \"a\\\"b\\\\c\\n$d?\\?=\\001\"; // Unchecked pointer"));
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(rows);
+
+        assertEquals(5, result.verifiedCount(), result.mismatches().toString());
+    }
+
+    @Test
+    void rawValueWrittenBeforeEscapingIsFlaggedForEveryBuiltin() {
+        TranspileRow go = new TranspileRow(22L, "x", "a\"b", "T", 100, "GO", "var x string = \"a\"b\"");
+        TranspileRow kotlin = new TranspileRow(23L, "x", "$a", "T", 100, "KOTLIN", "val x: T? = \"$a\"");
+        TranspileRow c = new TranspileRow(24L, "x", "a\\b", "T", 100, "C_CLANG",
+                "const char* x = \"a\\b\"; // Unchecked pointer");
+
+        assertEquals(3, TranspileAuditor.audit(List.of(go, kotlin, c)).mismatchedCount());
+    }
+
+    @Test
+    void valuesNeedingNoEscapingAreUnchanged() {
+        TranspileRow row = new TranspileRow(25L, "x", "hello 85.5 {y}", "T", 100, "GO",
+                "var x string = \"hello 85.5 {y}\"");
 
         assertEquals(1, TranspileAuditor.audit(List.of(row)).verifiedCount());
     }

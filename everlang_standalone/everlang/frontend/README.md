@@ -30,6 +30,8 @@ Spaces and tabs separate tokens; `\r\n` is read as `\n`. A declaration line has
 the same shape as `SuperTranspiler`'s `DPL` rendering, and `SuperTranspiler`
 escapes `\`, `"`, newline and carriage return in DPL values (`escape_dpl_value`),
 so any DPL rendering reads back to the same value and renders identically again.
+The other five built-in languages escape their own string literals too (see the
+transpiler README).
 
 ## Semantics
 
@@ -72,18 +74,24 @@ difference is speed:
 | Stage | How it's faster | Measured vs baseline (10k lines) |
 |---|---|---|
 | Supercodalexer | Whole well-formed lines matched by one regex; token tuples built in C via `zip`/`map`; per-token master regex only for other lines | 4.2–4.9× |
-| Quantification Ultra Parser | Declarations the lexer already verified (`TokenStream.declaration_starts`) are built from known offsets; otherwise a 14-kind list comparison; recursive descent only for the rest | 1.5–2.4× |
-| MegaExecuter | All active templates compiled into one generated f-string function; direct type dispatch | 2.1–2.4× |
-| **End to end** | | **2.9–3.6×** |
+| Quantification Ultra Parser | Declarations the lexer already verified (`TokenStream.declaration_starts`) are built from known offsets; otherwise a 14-kind list comparison; recursive descent only for the rest | 1.5–2.8× |
+| MegaExecuter | All active templates compiled into one generated f-string function, which skips every escaper when the value has nothing to escape; direct type dispatch | 2.1–3.0× |
+| **End to end** | | **2.9–3.8×** |
 
 These ratios are for string declarations. A typed declaration always takes the
 per-token lexer path and the recursive-descent parser, so a program made mostly
 of typed values gains less.
 
+The upper ends rose when the baseline started escaping the value in all six
+languages for every declaration, while MegaExecuter checks once and skips the
+escapers for a value that needs none, so part of the gain is the baseline getting
+slower. Typical end-to-end runs are 3.6–3.8×; one run in eight reached 4.2×,
+which is timing noise, not a result.
+
 End to end does not reach 4×. The parser and executor are dominated by work any
 implementation must do — building `Declaration` nodes, constructing `EParticle`s,
 rendering every language, building result records — which is about two thirds
-of MegaExecuter's time. Getting past ~3.7× needs native code or giving up
+of MegaExecuter's time. Getting past ~3.8× needs native code or giving up
 byte-identical eager output.
 
 `python3 -m everlang.frontend.bench [lines]` prints current ratios. The unit
