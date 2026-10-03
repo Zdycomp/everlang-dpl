@@ -36,8 +36,9 @@ $(KMER_ASAN_TARGET): $(SRC_DIR)/verify_kmer_index.cpp | $(BIN_DIR)
 $(TEST_TARGET): $(TEST_DIR)/test_verify_particle.cpp
 	$(CXX) -std=c++17 -Wall -Wextra -O2 -o $@ $<
 
-test: $(TARGET) $(TEST_TARGET)
+test: $(TARGET) $(KMER_TARGET) $(TEST_TARGET)
 	./$(TEST_TARGET)
+	sh $(TEST_DIR)/test_verify_kmer_index.sh $(KMER_TARGET)
 
 clean:
 	rm -f $(TARGET) $(ASAN_TARGET) $(KMER_TARGET) $(KMER_ASAN_TARGET) $(TEST_TARGET)

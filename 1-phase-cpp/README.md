@@ -106,6 +106,10 @@ pipe and capturing stdout, and asserts stdout content and exit code for each
 contract case (including the 4096/4097-byte boundary and the `argc`
 mismatch cases).
 
+It also builds `bin/verify_kmer_index` and runs
+`tests/test_verify_kmer_index.sh` against it, which checks the output line
+and exit code of every `VALID` / `INVALID:<REASON>` / `INVALID:USAGE` case.
+
 ## Sanitizer build
 
 ```bash
