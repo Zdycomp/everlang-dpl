@@ -54,6 +54,11 @@ class ReinforcedArchive:
         self._archive = EArchive()
         self._log_lock = threading.Lock()
         self._transpiler = SuperTranspiler()
+        self._template_versions: Dict[str, int] = {}
+        # Guards the transpiler's templates together with _template_versions, so a
+        # rendering is always stamped with the version that produced it (taken before
+        # _log_lock, never after, to keep a single lock order).
+        self._languages_lock = threading.Lock()
 
         self._cpp_binary = Path(cpp_binary_path) if cpp_binary_path else _DEFAULT_CPP_BINARY
         self.cpp_verifier_available = self._cpp_binary.is_file()
@@ -110,17 +115,19 @@ class ReinforcedArchive:
 
     # -- EArchive-compatible API -------------------------------------------
 
-    def _sql_write(self, fn, *args, **kwargs) -> None:
-        """Runs one SqlArchive write, never letting a sqlite3 error escape to
-        the caller (see memory-safety audit finding B): a locked/closed/
-        unreachable database must not crash a self-healing write that already
-        succeeded in-memory, nor leave the caller unaware the SQL leg failed."""
+    def _sql_write(self, fn, *args, **kwargs):
+        """Runs one SqlArchive write and returns its result (None on failure),
+        never letting a sqlite3 error escape to the caller (see memory-safety
+        audit finding B): a locked/closed/unreachable database must not crash
+        a self-healing write that already succeeded in-memory, nor leave the
+        caller unaware the SQL leg failed."""
         try:
             with self._log_lock:
-                fn(*args, **kwargs)
+                return fn(*args, **kwargs)
         except sqlite3.Error as exc:
             print(f"ReinforcedArchive: SQL write failed, disabling SQL reinforcement ({exc})", file=sys.stderr)
             self.sql_available = False
+            return None
 
     def log_boundary_marker(self, context: str, particle: EParticle, reason: str) -> None:
         # Never regress existing in-process behavior.
@@ -187,7 +194,9 @@ class ReinforcedArchive:
         the rendered dict (the transpiler itself never depends on either
         backend being available -- same fallback philosophy as the rest of
         this class)."""
-        rendered = self._transpiler.transpile(name, val, type_spec, conf)
+        with self._languages_lock:
+            rendered = self._transpiler.transpile(name, val, type_spec, conf)
+            versions = dict(self._template_versions)
 
         if not self.sql_available:
             return rendered
@@ -211,6 +220,7 @@ class ReinforcedArchive:
                 confidence=conf,
                 target_language=target_language,
                 rendered_code=code,
+                template_version=versions.get(target_language),
             )
         return rendered
 
@@ -222,35 +232,53 @@ class ReinforcedArchive:
             return
         try:
             templates = self._sql.load_custom_templates()
-            for language, template in templates.items():
-                try:
-                    validate_template(template)
-                    self._transpiler.register_language(language, template)
-                except ValueError:
-                    pass
-        except Exception:
-            pass
+        except sqlite3.Error as exc:
+            print(f"ReinforcedArchive: could not load custom templates ({exc})", file=sys.stderr)
+            return
+        for language, (version, template) in templates.items():
+            try:
+                self._transpiler.register_language(language, template)
+            except ValueError as exc:
+                print(f"ReinforcedArchive: skipping stored template {language} v{version} ({exc})", file=sys.stderr)
+                continue
+            self._template_versions[language] = version
 
-    def register_language(self, language: str, template: str) -> None:
-        """Register a custom language target, persisting it in SQL if available."""
+    def register_language(self, language: str, template: str) -> Optional[int]:
+        """Register a custom language target. With SQL available, the template
+        is stored as a new version and that version number is returned and
+        stamped on every rendering archived from then on; otherwise None."""
         validate_template(template)
-        self._transpiler.register_language(language, template)
-        if self.sql_available:
-            self._sql_write(
+        lang_upper = language.upper()
+        with self._languages_lock:
+            self._transpiler.register_language(language, template)
+            self._template_versions.pop(lang_upper, None)
+            if not self.sql_available:
+                return None
+            version = self._sql_write(
                 self._sql.save_custom_template,
-                language=language.upper(),
+                language=lang_upper,
                 template=template,
             )
+            if version is not None:
+                self._template_versions[lang_upper] = version
+            return version
 
     def unregister_language(self, language: str) -> bool:
-        """Remove a custom language. Returns True if removed."""
-        removed = self._transpiler.unregister_language(language)
-        if removed and self.sql_available:
-            self._sql_write(
-                self._sql.delete_custom_template,
-                language=language.upper(),
-            )
-        return removed
+        """Remove a custom language. Returns True if removed. Its stored
+        versions are retired, not deleted, so archived rows stay auditable."""
+        lang_upper = language.upper()
+        with self._languages_lock:
+            if not self._transpiler.unregister_language(language):
+                return False
+            self._template_versions.pop(lang_upper, None)
+            if self.sql_available:
+                self._sql_write(self._sql.delete_custom_template, language=lang_upper)
+            return True
+
+    @property
+    def template_versions(self) -> Dict[str, int]:
+        with self._languages_lock:
+            return dict(self._template_versions)
 
     @property
     def custom_languages(self) -> Dict[str, str]:

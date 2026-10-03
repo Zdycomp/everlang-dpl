@@ -13,7 +13,8 @@ package com.everlang.runtime;
  *   confidence INTEGER, -- the only CHECK-constrained column
  *   target_language TEXT,
  *   rendered_code TEXT,
- *   created_at TEXT
+ *   created_at TEXT,
+ *   template_version INTEGER -- NULL for built-in languages and pre-versioning rows
  * );
  * </pre>
  *
@@ -27,6 +28,11 @@ public record TranspileRow(
         String typeSpec,
         int confidence,
         String targetLanguage,
-        String renderedCode
+        String renderedCode,
+        Integer templateVersion
 ) {
+    public TranspileRow(long id, String name, String val, String typeSpec, int confidence,
+                        String targetLanguage, String renderedCode) {
+        this(id, name, val, typeSpec, confidence, targetLanguage, renderedCode, null);
+    }
 }

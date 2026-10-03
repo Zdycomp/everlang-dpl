@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TranspileAuditorTest {
@@ -118,59 +119,124 @@ class TranspileAuditorTest {
         assertTrue(result.mismatches().isEmpty());
     }
 
-    @Test
-    void customTemplateRowIsVerified() {
-        Map<String, String> custom = Map.of("SWIFT", "let {name}: {type_spec} = \"{val}\"");
-        TranspileRow row = new TranspileRow(10L, "x", "hello", "String", 200, "SWIFT",
-                "let x: String = \"hello\"");
+    private static final Map<String, Map<Integer, String>> SWIFT_V1_V2 = Map.of("SWIFT", Map.of(
+            1, "let {name} = \"{val}\"",
+            2, "let {name}: {type_spec} = \"{val}\""));
 
-        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
+    @Test
+    void customRowIsVerifiedAgainstItsStampedVersion() {
+        TranspileRow row = new TranspileRow(10L, "x", "hello", "String", 200, "SWIFT",
+                "let x: String = \"hello\"", 2);
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), SWIFT_V1_V2);
 
         assertEquals(1, result.verifiedCount());
         assertEquals(0, result.mismatchedCount());
     }
 
     @Test
-    void corruptedCustomTemplateRowIsMismatch() {
-        Map<String, String> custom = Map.of("SWIFT", "let {name}: {type_spec} = \"{val}\"");
-        TranspileRow row = new TranspileRow(11L, "x", "hello", "String", 200, "SWIFT",
-                "let x: String = \"WRONG\"");
+    void rowFromOlderVersionStillVerifiesAfterTemplateEdit() {
+        TranspileRow oldRow = new TranspileRow(11L, "x", "hello", "String", 200, "SWIFT",
+                "let x = \"hello\"", 1);
+        TranspileRow newRow = new TranspileRow(12L, "x", "hello", "String", 200, "SWIFT",
+                "let x: String = \"hello\"", 2);
 
-        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(oldRow, newRow), SWIFT_V1_V2);
 
-        assertEquals(0, result.verifiedCount());
+        assertEquals(2, result.verifiedCount());
+        assertEquals(0, result.mismatchedCount());
+    }
+
+    @Test
+    void corruptedCustomRowIsMismatch() {
+        TranspileRow row = new TranspileRow(13L, "x", "hello", "String", 200, "SWIFT",
+                "let x: String = \"WRONG\"", 2);
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), SWIFT_V1_V2);
+
+        assertEquals(1, result.mismatchedCount());
+        assertEquals("let x: String = \"hello\"", result.mismatches().get(0).expected());
+    }
+
+    @Test
+    void rowStampedWithMissingVersionIsMismatch() {
+        TranspileRow row = new TranspileRow(14L, "x", "hello", "String", 200, "SWIFT",
+                "let x = \"hello\"", 3);
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), SWIFT_V1_V2);
+
+        assertEquals(1, result.mismatchedCount());
+        assertEquals("<missing custom template SWIFT v3>", result.mismatches().get(0).expected());
+    }
+
+    @Test
+    void rowForDeletedLanguageHistoryIsMismatch() {
+        TranspileRow row = new TranspileRow(15L, "x", "hello", "String", 200, "TOML",
+                "[x]\nvalue = \"hello\"", 1);
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), SWIFT_V1_V2);
+
         assertEquals(1, result.mismatchedCount());
     }
 
     @Test
-    void customTemplateWithConfPlaceholder() {
-        Map<String, String> custom = Map.of("PYTHON", "{name} = \"{val}\"  # confidence={conf}");
-        TranspileRow row = new TranspileRow(12L, "x", "hello", "String", 200, "PYTHON",
-                "x = \"hello\"  # confidence=200");
+    void unversionedCustomRowIsTreatedAsVerified() {
+        TranspileRow row = new TranspileRow(16L, "x", "hello", "String", 200, "SWIFT",
+                "anything at all");
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), SWIFT_V1_V2);
+
+        assertEquals(1, result.verifiedCount());
+    }
+
+    @Test
+    void invalidStoredTemplateIsMismatchNotCrash() {
+        Map<String, Map<Integer, String>> custom = Map.of("BAD", Map.of(1, "{name} {bogus}"));
+        TranspileRow row = new TranspileRow(17L, "x", "hello", "String", 200, "BAD", "x ?", 1);
 
         TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
 
-        assertEquals(1, result.verifiedCount());
-        assertEquals(0, result.mismatchedCount());
+        assertEquals(1, result.mismatchedCount());
+        assertTrue(result.mismatches().get(0).expected().startsWith("<invalid custom template BAD v1"));
     }
 
     @Test
     void builtinTakesPrecedenceOverCustom() {
-        Map<String, String> custom = Map.of("DPL", "wrong template {name} {val}");
-        TranspileRow row = new TranspileRow(13L, "x", "hello", "String", 200, "DPL",
-                "particle x : E<String> = \"hello\" @ confidence(200)");
+        Map<String, Map<Integer, String>> custom = Map.of("DPL", Map.of(1, "wrong template {name} {val}"));
+        TranspileRow row = new TranspileRow(18L, "x", "hello", "String", 200, "DPL",
+                "particle x : E<String> = \"hello\" @ confidence(200)", 1);
 
         TranspileAuditor.AuditResult result = TranspileAuditor.audit(List.of(row), custom);
 
         assertEquals(1, result.verifiedCount());
-        assertEquals(0, result.mismatchedCount());
     }
 
     @Test
-    void renderTemplateProducesCorrectOutput() {
-        String result = TranspileAuditor.renderTemplate(
-                "let {name}: {type_spec} = \"{val}\" // conf={conf}",
-                "x", "hello", "String", 200);
-        assertEquals("let x: String = \"hello\" // conf=200", result);
+    void renderTemplateSubstitutesAllFields() {
+        assertEquals("let x: String = \"hello\" // conf=200", TranspileAuditor.renderTemplate(
+                "let {name}: {type_spec} = \"{val}\" // conf={conf}", "x", "hello", "String", 200));
+    }
+
+    @Test
+    void renderTemplateNeverRescansSubstitutedValues() {
+        // Python's str.format inserts values verbatim; a chained String.replace
+        // would expand the "{type_spec}" inside val and report false drift.
+        assertEquals("x = \"{type_spec}\" : T", TranspileAuditor.renderTemplate(
+                "{name} = \"{val}\" : {type_spec}", "x", "{type_spec}", "T", 1));
+    }
+
+    @Test
+    void renderTemplateUnescapesDoubledBraces() {
+        assertEquals("{x} = {\"v\"}", TranspileAuditor.renderTemplate(
+                "{{{name}}} = {{\"{val}\"}}", "x", "v", "T", 1));
+        assertEquals("{name}", TranspileAuditor.renderTemplate("{{name}}", "x", "v", "T", 1));
+    }
+
+    @Test
+    void renderTemplateRejectsUnsupportedPlaceholder() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TranspileAuditor.renderTemplate("{name:>5}", "x", "v", "T", 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> TranspileAuditor.renderTemplate("{name} }", "x", "v", "T", 1));
     }
 }

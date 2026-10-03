@@ -16,6 +16,7 @@ by hand, not invented): Kotlin's nullable-type declaration, Rust's
 Option<T>, a raw (deliberately unchecked) C pointer, Go's var declaration,
 and Groovy's `as` type-coercion operator are all real language features.
 """
+import string
 from typing import Dict
 
 # DPL, KOTLIN, RUST, C_CLANG, GO are verbatim from
@@ -32,18 +33,31 @@ LANGUAGE_TEMPLATES: Dict[str, str] = {
 }
 
 
-_REQUIRED_PLACEHOLDERS = frozenset(("{name}", "{val}"))
+_ALLOWED_FIELDS = frozenset(("name", "val", "type_spec", "conf"))
+_REQUIRED_FIELDS = frozenset(("name", "val"))
 
 
 def validate_template(template: str) -> None:
-    """Raises ValueError if template is missing required placeholders."""
-    missing = [p for p in _REQUIRED_PLACEHOLDERS if p not in template]
-    if missing:
-        raise ValueError(f"Template missing required placeholders: {', '.join(sorted(missing))}")
+    """Raises ValueError unless `template` uses only bare {name}/{val}/
+    {type_spec}/{conf} fields (plus {{ }} escapes) and contains {name} and
+    {val}. Format specs, conversions and attribute/index access are rejected:
+    5-runtime-java re-renders custom templates and supports only bare fields."""
     try:
-        template.format(name="__test", val="__test", type_spec="__test", conf=0)
-    except (KeyError, IndexError) as exc:
-        raise ValueError(f"Template has invalid format placeholders: {exc}") from exc
+        parsed = list(string.Formatter().parse(template))
+    except ValueError as exc:
+        raise ValueError(f"Template has malformed braces: {exc}") from exc
+    seen = set()
+    for _literal, field, spec, conversion in parsed:
+        if field is None:
+            continue
+        if field not in _ALLOWED_FIELDS:
+            raise ValueError(f"Template has unsupported placeholder: {{{field}}}")
+        if spec or conversion:
+            raise ValueError(f"Template placeholder {{{field}}} may not use a format spec or conversion")
+        seen.add(field)
+    missing = _REQUIRED_FIELDS - seen
+    if missing:
+        raise ValueError(f"Template missing required placeholders: {', '.join('{' + m + '}' for m in sorted(missing))}")
 
 
 class SuperTranspiler:
@@ -58,6 +72,8 @@ class SuperTranspiler:
         least {name} and {val}; {type_spec} and {conf} are optional."""
         validate_template(template)
         lang_upper = language.upper()
+        if lang_upper in LANGUAGE_TEMPLATES:
+            raise ValueError(f"{lang_upper} is a built-in language and cannot be overridden")
         self._custom_languages[lang_upper] = template
         self.templates[lang_upper] = template
 

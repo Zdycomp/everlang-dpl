@@ -14,6 +14,8 @@ import java.sql.Statement;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TranspileAuditIntegrationTest {
 
@@ -69,5 +71,43 @@ class TranspileAuditIntegrationTest {
         assertEquals(2, result.total());
         assertEquals(1, result.mismatchedCount());
         assertEquals(1, result.verifiedCount());
+    }
+
+    @Test
+    void preVersioningDatabaseLoadsWithNullVersionsAndNoTemplates() throws SQLException {
+        List<TranspileRow> rows = TranspileAudit.loadTranspilations(conn);
+
+        assertNull(rows.get(0).templateVersion());
+        assertTrue(TranspileAudit.loadCustomTemplates(conn).isEmpty());
+    }
+
+    @Test
+    void versionedDatabaseAuditsRowsAgainstRetiredAndActiveVersions() throws SQLException {
+        try (Statement st = conn.createStatement()) {
+            st.execute("DELETE FROM transpilations");
+            st.execute("ALTER TABLE transpilations ADD COLUMN template_version INTEGER");
+            st.execute("""
+                    CREATE TABLE custom_template_versions (
+                        language TEXT, version INTEGER, template TEXT, active INTEGER, created_at TEXT
+                    )
+                    """);
+            st.execute("INSERT INTO custom_template_versions VALUES ('TOML', 1, '{name} = \"{val}\"', 0, '')");
+            st.execute("INSERT INTO custom_template_versions VALUES ('TOML', 2, '[{name}]\nvalue = \"{val}\"', 1, '')");
+            st.execute("""
+                    INSERT INTO transpilations (id, name, val, type_spec, confidence, target_language, rendered_code, template_version)
+                    VALUES (1, 'k', 'v', 'T', 200, 'TOML', 'k = "v"', 1),
+                           (2, 'k', 'v', 'T', 200, 'TOML', '[k]
+                    value = "v"', 2),
+                           (3, 'k', 'v', 'T', 200, 'TOML', 'k = "v"', 9)
+                    """);
+        }
+
+        TranspileAuditor.AuditResult result = TranspileAuditor.audit(
+                TranspileAudit.loadTranspilations(conn), TranspileAudit.loadCustomTemplates(conn));
+
+        assertEquals(3, result.total());
+        assertEquals(2, result.verifiedCount());
+        assertEquals(1, result.mismatchedCount());
+        assertEquals(3L, result.mismatches().get(0).id());
     }
 }

@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS transpilations (
     confidence INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 256),
     target_language TEXT NOT NULL,
     rendered_code TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    template_version INTEGER CHECK (template_version IS NULL OR template_version >= 1)
 );
 
 CREATE TABLE IF NOT EXISTS kmer_indices (
@@ -84,11 +85,20 @@ CREATE TABLE IF NOT EXISTS sequence_matches (
     FOREIGN KEY(query_id) REFERENCES sequence_queries(id)
 );
 
-CREATE TABLE IF NOT EXISTS custom_templates (
-    language TEXT PRIMARY KEY,
+-- Append-only history: a version row is never updated except to clear `active`,
+-- so every transpilations row stamped with (target_language, template_version)
+-- stays re-renderable by 5-runtime-java after the template is edited or retired.
+CREATE TABLE IF NOT EXISTS custom_template_versions (
+    language TEXT NOT NULL,
+    version INTEGER NOT NULL CHECK (version >= 1),
     template TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    active INTEGER NOT NULL CHECK (active IN (0,1)) DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (language, version)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_template_one_active
+    ON custom_template_versions(language) WHERE active = 1;
 
 CREATE INDEX IF NOT EXISTS idx_kmer_indices_shard ON kmer_indices(shard_id, shard_count);
 CREATE INDEX IF NOT EXISTS idx_sequence_queries_index ON sequence_queries(index_id);

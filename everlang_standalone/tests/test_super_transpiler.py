@@ -107,6 +107,11 @@ class TestRegisterLanguage(unittest.TestCase):
         out = self.t.transpile("x", "v", "T", 100)
         self.assertNotIn("SWIFT", out)
 
+    def test_register_builtin_name_raises(self):
+        with self.assertRaises(ValueError):
+            self.t.register_language("dpl", 'particle {name} = "{val}"')
+        self.assertEqual(self.t.templates["DPL"], LANGUAGE_TEMPLATES["DPL"])
+
     def test_unregister_builtin_returns_false(self):
         self.assertFalse(self.t.unregister_language("DPL"))
         self.assertIn("DPL", self.t.templates)
@@ -155,6 +160,33 @@ class TestValidateTemplate(unittest.TestCase):
     def test_unknown_placeholder_raises(self):
         with self.assertRaises(ValueError):
             validate_template('{name} = {val} {bogus}')
+
+    def test_format_spec_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_template('{name} = "{val}" {conf:>5}')
+
+    def test_conversion_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_template('{name!r} = "{val}"')
+
+    def test_attribute_access_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_template('{name.upper} = "{val}"')
+
+    def test_positional_field_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_template('{name} = "{val}" {}')
+
+    def test_lone_brace_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_template('{name} = "{val}" }')
+
+    def test_escaped_braces_allowed(self):
+        validate_template('{{"{name}": "{val}"}}')
+
+    def test_escaped_placeholder_does_not_count_as_required(self):
+        with self.assertRaises(ValueError):
+            validate_template('{{name}} = "{val}"')
 
 
 if __name__ == "__main__":

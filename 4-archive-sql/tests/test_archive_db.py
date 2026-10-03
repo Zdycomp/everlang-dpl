@@ -155,21 +155,34 @@ class TestSqlArchiveCustomTemplates(unittest.TestCase):
     def tearDown(self):
         self.archive.close()
 
-    def test_save_and_load_custom_template(self):
-        self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
-        templates = self.archive.load_custom_templates()
-        self.assertEqual(templates, {"SWIFT": 'let {name} = "{val}"'})
+    def test_save_returns_version_one_and_loads_it(self):
+        self.assertEqual(self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"'), 1)
+        self.assertEqual(self.archive.load_custom_templates(), {"SWIFT": (1, 'let {name} = "{val}"')})
 
-    def test_upsert_overwrites_existing(self):
+    def test_changed_template_creates_new_version_and_keeps_old(self):
         self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
-        self.archive.save_custom_template("SWIFT", 'var {name} = "{val}"')
-        templates = self.archive.load_custom_templates()
-        self.assertEqual(templates["SWIFT"], 'var {name} = "{val}"')
+        self.assertEqual(self.archive.save_custom_template("SWIFT", 'var {name} = "{val}"'), 2)
+        self.assertEqual(self.archive.load_custom_templates()["SWIFT"], (2, 'var {name} = "{val}"'))
+        self.assertEqual(self.archive.load_template_history("SWIFT"), [
+            (1, 'let {name} = "{val}"', False),
+            (2, 'var {name} = "{val}"', True),
+        ])
 
-    def test_delete_custom_template(self):
+    def test_resaving_active_template_is_noop(self):
+        self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
+        self.assertEqual(self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"'), 1)
+        self.assertEqual(len(self.archive.load_template_history("SWIFT")), 1)
+
+    def test_delete_retires_but_keeps_history(self):
         self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
         self.assertTrue(self.archive.delete_custom_template("SWIFT"))
         self.assertEqual(self.archive.load_custom_templates(), {})
+        self.assertEqual(self.archive.load_template_history("SWIFT"), [(1, 'let {name} = "{val}"', False)])
+
+    def test_reregister_after_delete_continues_numbering(self):
+        self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
+        self.archive.delete_custom_template("SWIFT")
+        self.assertEqual(self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"'), 2)
 
     def test_delete_nonexistent_returns_false(self):
         self.assertFalse(self.archive.delete_custom_template("NONEXISTENT"))
@@ -177,13 +190,49 @@ class TestSqlArchiveCustomTemplates(unittest.TestCase):
     def test_load_empty_returns_empty_dict(self):
         self.assertEqual(self.archive.load_custom_templates(), {})
 
-    def test_multiple_templates(self):
+    def test_at_most_one_active_version_per_language(self):
         self.archive.save_custom_template("SWIFT", 'let {name} = "{val}"')
-        self.archive.save_custom_template("TYPESCRIPT", 'const {name} = "{val}";')
-        templates = self.archive.load_custom_templates()
-        self.assertEqual(len(templates), 2)
-        self.assertIn("SWIFT", templates)
-        self.assertIn("TYPESCRIPT", templates)
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.archive._conn.execute(
+                "INSERT INTO custom_template_versions (language, version, template, active) "
+                "VALUES ('SWIFT', 9, 'x', 1)"
+            )
+
+    def test_transpilation_records_template_version(self):
+        row_id = self.archive.record_transpilation("x", "v", "T", 200, "SWIFT", 'let x = "v"', template_version=3)
+        builtin_id = self.archive.record_transpilation("x", "v", "T", 200, "GO", 'var x string = "v"')
+        rows = dict(self.archive._conn.execute("SELECT id, template_version FROM transpilations").fetchall())
+        self.assertEqual(rows[row_id], 3)
+        self.assertIsNone(rows[builtin_id])
+
+
+class TestSqlArchiveMigration(unittest.TestCase):
+    def test_pre_versioning_transpilations_table_gains_template_version(self):
+        db_path = os.path.join(tempfile.mkdtemp(), "old.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE transpilations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+            "val TEXT NOT NULL, type_spec TEXT NOT NULL, confidence INTEGER NOT NULL, "
+            "target_language TEXT NOT NULL, rendered_code TEXT NOT NULL, created_at TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO transpilations (name, val, type_spec, confidence, target_language, rendered_code) "
+            "VALUES ('x', 'v', 'T', 200, 'GO', 'var x string = \"v\"')"
+        )
+        conn.commit()
+        conn.close()
+
+        archive = SqlArchive(db_path)
+        self.addCleanup(archive.close)
+        cols = {r[1] for r in archive._conn.execute("PRAGMA table_info(transpilations)")}
+        self.assertIn("template_version", cols)
+        self.assertEqual(archive._conn.execute("SELECT COUNT(*) FROM transpilations").fetchone()[0], 1)
+        archive.record_transpilation("y", "v", "T", 200, "SWIFT", "let y", template_version=1)
+
+    def test_reopening_migrated_db_is_idempotent(self):
+        db_path = os.path.join(tempfile.mkdtemp(), "t.db")
+        SqlArchive(db_path).close()
+        SqlArchive(db_path).close()
 
 
 class TestSqlArchiveThreadSafety(unittest.TestCase):

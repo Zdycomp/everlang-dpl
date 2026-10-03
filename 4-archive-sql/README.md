@@ -69,8 +69,19 @@ CREATE TABLE IF NOT EXISTS transpilations (
     confidence INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 256),
     target_language TEXT NOT NULL,
     rendered_code TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    template_version INTEGER CHECK (template_version IS NULL OR template_version >= 1)
 );
+
+CREATE TABLE IF NOT EXISTS custom_template_versions (
+    language TEXT NOT NULL,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    template TEXT NOT NULL,
+    active INTEGER NOT NULL CHECK (active IN (0,1)) DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (language, version)
+);
+-- plus a partial unique index: at most one active version per language
 ```
 
 `transpilations` persists each language the SuperTranspiler
@@ -78,6 +89,14 @@ CREATE TABLE IF NOT EXISTS transpilations (
 reinforced the same way `boundary_markers`/`repairs` are — every write is
 gated by the C++ verifier first — and independently audited by
 `5-runtime-java`'s `TranspileAudit`.
+
+`custom_template_versions` is the append-only history of user-registered
+languages. Editing a template adds a version; retiring one clears `active`
+but never deletes the row. A custom-language `transpilations` row records the
+`template_version` that rendered it (`NULL` for built-in languages), so the
+auditor can re-render old rows after a template changes. `SqlArchive` adds
+`template_version` to a `transpilations` table created by an older schema
+when it opens the database.
 
 ## `SqlArchive` public API (`archive_db.py`)
 
@@ -105,8 +124,22 @@ class SqlArchive:
         """Inserts a row into rejected_writes, returns the new row id."""
 
     def record_transpilation(self, name: str, val: str, type_spec: str, confidence: int,
-                              target_language: str, rendered_code: str) -> int:
+                              target_language: str, rendered_code: str,
+                              template_version: int = None) -> int:
         """Inserts a row into transpilations, returns the new row id."""
+
+    def save_custom_template(self, language: str, template: str) -> int:
+        """Makes `template` the active version and returns its version number;
+        re-saving the active template returns the existing version."""
+
+    def delete_custom_template(self, language: str) -> bool:
+        """Retires the active version (history kept); True if one was active."""
+
+    def load_custom_templates(self) -> dict:
+        """Active templates as {language: (version, template)}."""
+
+    def load_template_history(self, language: str) -> list:
+        """Every version as [(version, template, active)], oldest first."""
 
     def close(self):
         """Closes the underlying sqlite3 connection."""

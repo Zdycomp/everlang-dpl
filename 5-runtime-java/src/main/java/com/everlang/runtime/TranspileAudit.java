@@ -38,7 +38,7 @@ public final class TranspileAudit {
         String dbPath = args[0];
         List<TranspileRow> rows;
 
-        Map<String, String> customTemplates;
+        Map<String, Map<Integer, String>> customTemplates;
 
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
             rows = loadTranspilations(conn);
@@ -67,19 +67,25 @@ public final class TranspileAudit {
     }
 
     /**
-     * Reads all custom language templates from the {@code custom_templates}
-     * table. Returns an empty map if the table does not exist (pre-upgrade DBs).
+     * Reads every version — active and retired — from
+     * {@code custom_template_versions} as language → version → template.
+     * Retired versions are required to audit rows archived before a template
+     * was edited. Returns an empty map if the table does not exist (older DBs).
      */
-    static Map<String, String> loadCustomTemplates(Connection conn) {
-        Map<String, String> templates = new HashMap<>();
+    static Map<String, Map<Integer, String>> loadCustomTemplates(Connection conn) {
+        Map<String, Map<Integer, String>> templates = new HashMap<>();
+        if (!hasTable(conn, "custom_template_versions")) {
+            return templates;
+        }
         try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT language, template FROM custom_templates");
+                "SELECT language, version, template FROM custom_template_versions");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
-                templates.put(rs.getString("language"), rs.getString("template"));
+                templates.computeIfAbsent(rs.getString("language"), k -> new HashMap<>())
+                        .put(rs.getInt("version"), rs.getString("template"));
             }
         } catch (SQLException e) {
-            // Table may not exist in older DBs — that's fine, no custom templates.
+            System.err.println("WARN: could not read custom_template_versions: " + e.getMessage());
         }
         return templates;
     }
@@ -87,14 +93,23 @@ public final class TranspileAudit {
     /**
      * Reads all rows from the {@code transpilations} table via a read-only
      * SELECT. Package-visible/static for direct unit/integration testing
-     * without going through {@code main}.
+     * without going through {@code main}. Databases created before
+     * {@code template_version} existed load with a null version.
      */
     static List<TranspileRow> loadTranspilations(Connection conn) throws SQLException {
         List<TranspileRow> rows = new ArrayList<>();
-        String sql = "SELECT id, name, val, type_spec, confidence, target_language, rendered_code FROM transpilations";
+        boolean versioned = hasColumn(conn, "transpilations", "template_version");
+        String sql = "SELECT id, name, val, type_spec, confidence, target_language, rendered_code"
+                + (versioned ? ", template_version" : "")
+                + " FROM transpilations";
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
+                Integer version = null;
+                if (versioned) {
+                    int v = rs.getInt("template_version");
+                    version = rs.wasNull() ? null : v;
+                }
                 rows.add(new TranspileRow(
                         rs.getLong("id"),
                         rs.getString("name"),
@@ -102,10 +117,34 @@ public final class TranspileAudit {
                         rs.getString("type_spec"),
                         rs.getInt("confidence"),
                         rs.getString("target_language"),
-                        rs.getString("rendered_code")
+                        rs.getString("rendered_code"),
+                        version
                 ));
             }
         }
         return rows;
+    }
+
+    private static boolean hasTable(Connection conn, String table) {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    private static boolean hasColumn(Connection conn, String table, String column) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM pragma_table_info(?) WHERE name=?")) {
+            ps.setString(1, table);
+            ps.setString(2, column);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
     }
 }

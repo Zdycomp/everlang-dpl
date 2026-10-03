@@ -1,7 +1,6 @@
 package com.everlang.runtime;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,14 +21,16 @@ import java.util.Map;
  * }
  * </pre>
  *
- * This class does not invent any additional rule: for a row whose
- * {@code targetLanguage} is one of the six above, the matching template is
- * re-rendered from the row's own {@code name}/{@code val}/{@code typeSpec}/
- * {@code confidence} and compared byte-for-byte to {@code renderedCode}; a
- * mismatch is any difference. Custom language templates loaded from the
- * {@code custom_templates} table are also verified the same way. A row whose
- * {@code targetLanguage} is neither built-in nor custom is treated as
- * automatically verified (not mismatched).
+ * For a row whose {@code targetLanguage} is one of the six above, the matching
+ * template is re-rendered from the row's own inputs and compared byte-for-byte
+ * to {@code renderedCode}; a mismatch is any difference.
+ *
+ * <p>A row stamped with a {@code templateVersion} is a custom-language row: it
+ * is re-rendered from exactly that version in {@code custom_template_versions}
+ * (keyed language → version → template). If that version is absent from the
+ * history, the row's provenance is broken and it is a mismatch. A non-built-in
+ * row with no version (written before versioning existed) is treated as
+ * verified — no rule is invented for it.
  */
 public final class TranspileAuditor {
 
@@ -40,19 +41,15 @@ public final class TranspileAuditor {
         return audit(rows, Map.of());
     }
 
-    public static AuditResult audit(List<TranspileRow> rows, Map<String, String> customTemplates) {
+    public static AuditResult audit(List<TranspileRow> rows,
+                                    Map<String, Map<Integer, String>> customTemplateVersions) {
         List<Mismatch> mismatches = new ArrayList<>();
         int verified = 0;
 
         for (TranspileRow row : rows) {
-            String expected = render(row, customTemplates);
+            String expected = expectedFor(row, customTemplateVersions);
 
-            if (expected == null) {
-                verified++;
-                continue;
-            }
-
-            if (expected.equals(row.renderedCode())) {
+            if (expected == null || expected.equals(row.renderedCode())) {
                 verified++;
             } else {
                 mismatches.add(new Mismatch(
@@ -69,10 +66,11 @@ public final class TranspileAuditor {
     }
 
     /**
-     * Renders the expected code for {@code row} per its {@code targetLanguage},
-     * or {@code null} if the language is neither a built-in nor a custom template.
+     * Returns the expected code for {@code row}, a {@code <...>} marker that can
+     * never equal real output when the custom template is missing or invalid,
+     * or {@code null} when no rule applies.
      */
-    private static String render(TranspileRow row, Map<String, String> customTemplates) {
+    private static String expectedFor(TranspileRow row, Map<String, Map<Integer, String>> customTemplateVersions) {
         String name = row.name();
         String val = row.val();
         String typeSpec = row.typeSpec();
@@ -90,23 +88,65 @@ public final class TranspileAuditor {
         if (builtin != null) {
             return builtin;
         }
-        String template = customTemplates.get(row.targetLanguage());
-        if (template == null) {
+        Integer version = row.templateVersion();
+        if (version == null) {
             return null;
         }
-        return renderTemplate(template, name, val, typeSpec, conf);
+        String template = customTemplateVersions.getOrDefault(row.targetLanguage(), Map.of()).get(version);
+        if (template == null) {
+            return "<missing custom template " + row.targetLanguage() + " v" + version + ">";
+        }
+        try {
+            return renderTemplate(template, name, val, typeSpec, conf);
+        } catch (IllegalArgumentException e) {
+            return "<invalid custom template " + row.targetLanguage() + " v" + version + ": " + e.getMessage() + ">";
+        }
     }
 
     /**
-     * Renders a custom template using the same placeholder convention as
-     * Python's str.format: {name}, {val}, {type_spec}, {conf}.
+     * Single-pass equivalent of Python's {@code template.format(name=..., val=...,
+     * type_spec=..., conf=...)} for the bare-field subset that
+     * {@code validate_template} allows: substituted values are never re-scanned,
+     * and {@code {{}} / {@code }}} unescape to literal braces.
      */
     static String renderTemplate(String template, String name, String val, String typeSpec, int conf) {
-        return template
-                .replace("{name}", name)
-                .replace("{val}", val)
-                .replace("{type_spec}", typeSpec)
-                .replace("{conf}", String.valueOf(conf));
+        StringBuilder out = new StringBuilder(template.length() + 32);
+        int i = 0;
+        int n = template.length();
+        while (i < n) {
+            char c = template.charAt(i);
+            if (c == '{') {
+                if (i + 1 < n && template.charAt(i + 1) == '{') {
+                    out.append('{');
+                    i += 2;
+                    continue;
+                }
+                int close = template.indexOf('}', i + 1);
+                if (close < 0) {
+                    throw new IllegalArgumentException("unclosed '{'");
+                }
+                String field = template.substring(i + 1, close);
+                switch (field) {
+                    case "name" -> out.append(name);
+                    case "val" -> out.append(val);
+                    case "type_spec" -> out.append(typeSpec);
+                    case "conf" -> out.append(conf);
+                    default -> throw new IllegalArgumentException("unsupported placeholder {" + field + "}");
+                }
+                i = close + 1;
+            } else if (c == '}') {
+                if (i + 1 < n && template.charAt(i + 1) == '}') {
+                    out.append('}');
+                    i += 2;
+                    continue;
+                }
+                throw new IllegalArgumentException("single '}'");
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        return out.toString();
     }
 
     public record AuditResult(

@@ -23,7 +23,17 @@ class SqlArchive:
         with open(_SCHEMA_PATH, "r") as f:
             schema_sql = f.read()
         self._conn.executescript(schema_sql)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self):
+        # CREATE TABLE IF NOT EXISTS never alters a table an older schema already created.
+        cols = {row[1] for row in self._conn.execute("PRAGMA table_info(transpilations)")}
+        if "template_version" not in cols:
+            self._conn.execute(
+                "ALTER TABLE transpilations ADD COLUMN template_version INTEGER "
+                "CHECK (template_version IS NULL OR template_version >= 1)"
+            )
 
     def record_boundary_marker(self, context: str, value, confidence: int, reason: str) -> int:
         with self._lock:
@@ -68,43 +78,78 @@ class SqlArchive:
             return cur.lastrowid
 
     def record_transpilation(self, name: str, val: str, type_spec: str, confidence: int,
-                              target_language: str, rendered_code: str) -> int:
-        """Inserts a row into transpilations, returns the new row id."""
+                              target_language: str, rendered_code: str,
+                              template_version: int = None) -> int:
+        """Inserts a row into transpilations, returns the new row id.
+        template_version is None for built-in languages."""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO transpilations (name, val, type_spec, confidence, "
-                "target_language, rendered_code) VALUES (?, ?, ?, ?, ?, ?)",
+                "target_language, rendered_code, template_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (str(name), str(val), str(type_spec), confidence, str(target_language),
-                 str(rendered_code)),
+                 str(rendered_code), template_version),
             )
             self._conn.commit()
             return cur.lastrowid
 
-    def save_custom_template(self, language: str, template: str) -> None:
-        """Upsert a custom language template."""
+    def save_custom_template(self, language: str, template: str) -> int:
+        """Makes `template` the active version for `language` and returns its
+        version number. Re-saving the current active template is a no-op that
+        returns the existing version; prior versions are kept, never overwritten."""
+        language, template = str(language), str(template)
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO custom_templates (language, template) VALUES (?, ?) "
-                "ON CONFLICT(language) DO UPDATE SET template=excluded.template",
-                (str(language), str(template)),
-            )
-            self._conn.commit()
+            with self._conn:
+                active = self._conn.execute(
+                    "SELECT version, template FROM custom_template_versions "
+                    "WHERE language=? AND active=1",
+                    (language,),
+                ).fetchone()
+                if active is not None and active[1] == template:
+                    return active[0]
+                next_version = self._conn.execute(
+                    "SELECT COALESCE(MAX(version), 0) + 1 FROM custom_template_versions "
+                    "WHERE language=?",
+                    (language,),
+                ).fetchone()[0]
+                self._conn.execute(
+                    "UPDATE custom_template_versions SET active=0 WHERE language=? AND active=1",
+                    (language,),
+                )
+                self._conn.execute(
+                    "INSERT INTO custom_template_versions (language, version, template, active) "
+                    "VALUES (?, ?, ?, 1)",
+                    (language, next_version, template),
+                )
+                return next_version
 
     def delete_custom_template(self, language: str) -> bool:
-        """Remove a custom template. Returns True if a row was deleted."""
+        """Retires the active version (history is kept so archived rows stay
+        auditable). Returns True if an active version was retired."""
         with self._lock:
-            cur = self._conn.execute(
-                "DELETE FROM custom_templates WHERE language=?",
-                (str(language),),
-            )
-            self._conn.commit()
-            return cur.rowcount > 0
+            with self._conn:
+                cur = self._conn.execute(
+                    "UPDATE custom_template_versions SET active=0 WHERE language=? AND active=1",
+                    (str(language),),
+                )
+                return cur.rowcount > 0
 
     def load_custom_templates(self):
-        """Returns all custom templates as a dict {language: template}."""
+        """Returns active templates as {language: (version, template)}."""
         with self._lock:
-            cur = self._conn.execute("SELECT language, template FROM custom_templates")
-            return {row[0]: row[1] for row in cur.fetchall()}
+            cur = self._conn.execute(
+                "SELECT language, version, template FROM custom_template_versions WHERE active=1"
+            )
+            return {row[0]: (row[1], row[2]) for row in cur.fetchall()}
+
+    def load_template_history(self, language: str):
+        """Returns every version of `language` as [(version, template, active)], oldest first."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT version, template, active FROM custom_template_versions "
+                "WHERE language=? ORDER BY version",
+                (str(language),),
+            )
+            return [(row[0], row[1], bool(row[2])) for row in cur.fetchall()]
 
     def close(self):
         self._conn.close()

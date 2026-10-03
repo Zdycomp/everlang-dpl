@@ -101,9 +101,21 @@ Templates (`{name}`/`{val}`/`{type_spec}`/`{conf}` substituted from the row):
 - `GO`: `var {name} string = "{val}"`
 - `GROOVY`: `def {name} = "{val}" as {type_spec} // confidence({conf})`
 
-A row whose `target_language` is not one of these six is treated as
-automatically verified (not mismatched) — no rule is invented for an
-unknown language. See `TranspileAuditor.java` javadoc.
+Custom languages: a row with a non-null `template_version` is re-rendered
+from exactly that version in `custom_template_versions`, read in full,
+retired versions included. If that version is missing, the row is a mismatch,
+because its provenance is broken. Rendering is a single pass equivalent to
+Python's `str.format` for the bare fields above plus `{{`/`}}` escapes, the
+only template syntax `validate_template` accepts. Substituted values are never
+re-scanned, so a value containing `{type_spec}` is not expanded. A stored
+template using anything else is reported as an invalid-template mismatch, not
+a crash.
+
+A row whose `target_language` is not built in and has no `template_version`
+(written before versioning existed) is treated as verified — no rule is
+invented for it. Databases created before `template_version` or
+`custom_template_versions` existed are read as having neither. See
+`TranspileAuditor.java` javadoc.
 
 This runtime never writes to the database — it opens a plain JDBC
 connection and issues a single `SELECT`, with no implicit write-locking
@@ -120,6 +132,15 @@ CREATE TABLE transpilations (
     confidence INTEGER, -- the only CHECK-constrained column
     target_language TEXT,
     rendered_code TEXT,
+    created_at TEXT,
+    template_version INTEGER   -- optional column
+);
+
+CREATE TABLE custom_template_versions (   -- optional table
+    language TEXT,
+    version INTEGER,
+    template TEXT,
+    active INTEGER,
     created_at TEXT
 );
 ```
