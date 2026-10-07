@@ -60,6 +60,11 @@ def main():
         else:
             print("\n=== java-runtime (5-runtime-java) ===\nSKIPPED: mvn not found")
 
+    if not skip_native and (ROOT / "ezr").is_dir():
+        results["ezr-lineage (ezr)"] = run(
+            "ezr-lineage (ezr)", [sys.executable, "tests/run_all.py"], cwd=ROOT / "ezr"
+        )
+
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)

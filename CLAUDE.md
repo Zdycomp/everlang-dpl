@@ -5,12 +5,12 @@
 ## Repo reality vs. target architecture
 | Phase | Target dir | Status in this repo |
 |---|---|---|
-| Python frontend (lexer, parser, checker, validator, evaluator) | `2-interpreter-python/` | **Not present yet.** `everlang_standalone/` (DPL v5.0 runtime: `core/`, `containers/`, `quantum/`, `biocomputing/`, `pipeline.py`) is the Python frontend's current home; `biocomputing/sequencer.py` is a lexer/parser pair (`DnaLexer`/`DnaParser`) in its own right. |
+| Python frontend (lexer, parser, checker, validator, evaluator) | `2-interpreter-python/` | **Not at the root yet.** The ExR lineage's frontend is `ezr/2-interpreter-python/`. `everlang_standalone/` (DPL v5.0 runtime: `core/`, `containers/`, `quantum/`, `biocomputing/`, `pipeline.py`) is the Python frontend's current home; `biocomputing/sequencer.py` is a lexer/parser pair (`DnaLexer`/`DnaParser`) in its own right. |
 | C++ analysis / safety verification | `1-phase-cpp/` | **Present.** `verify_particle`: a native CLI safety gate (confidence range, value-length bounds) that `ReinforcedArchive` shells out to before persisting a write. See `1-phase-cpp/README.md` for the exact CLI contract. |
 | Java execution runtime | `5-runtime-java/` | **Present, narrow scope.** `SelfHealingAudit`: a read-only JDBC auditor that re-derives expected `emulate_repair` outcomes from the documented formula and flags drift from what's persisted in `tapestry.db`. It is not (yet) a general IR execution runtime — see `5-runtime-java/README.md`. |
 | SQL archive / `tapestry.db` | `4-archive-sql/` | **Present.** `archive_db.py`'s `SqlArchive` persists boundary markers, repairs, evolved vectors, and rejected writes into SQLite per `schema.sql`. `core/archive.py`'s in-process `EArchive` is unchanged and still the only Archive everlang_standalone depends on directly; `everlang/core/reinforced_archive.py`'s `ReinforcedArchive` is the opt-in bridge that reinforces it with the C++ and SQL phases (falls back to plain `EArchive` behavior if either is unavailable). |
-| Specs | `SEMANTICS.md` | Not present — do not invent semantics; ask the user or add the file first |
-| Golden tests / `run_all.py` | `tests/golden/`, `tests/gold_suite/` | `run_all.py` **present** at repo root — runs each phase's own suite (Python, SQL, C++, Java) and gates on all of them. `tests/golden/`, `tests/gold_suite/` still not present. |
+| Specs | `ezr/SEMANTICS.md`, `ezr/CORE.md`, `ezr/ABI.md`, `ezr/PIPELINE.md` | Present under `ezr/` (ExR lineage). Do not invent semantics beyond them. |
+| Golden tests / `run_all.py` | `ezr/tests/golden/`, `ezr/tests/gold_suite/` | Present under `ezr/`. Root `run_all.py` runs each phase's suite (Python, SQL, C++, Java) and the ezr lineage's 29-suite gate (`ezr/tests/run_all.py`). |
 
 Toolchains available in the cloud env: python3.11, gcc/g++, java/javac, maven/gradle (Maven Central is reachable). Create a target directory only when the user asks for that phase.
 
