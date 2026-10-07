@@ -1,0 +1,33 @@
+ever b1 = true and false
+ever b2 = true or false
+ever b3 = not false
+ever unknown_bool = z
+ever short_and = false and unknown_bool
+ever short_or  = true or unknown_bool
+ever real_and  = true and unknown_bool
+
+let xs = [10, 20, 30]
+ever idx = xs[1]
+ever bad_idx = xs[99]
+
+let r = {a: 1, b: 2}
+ever fld = r.b
+
+ever loop1 = for i = 1 to 5 do i * i
+ever loop2 = for i = 10 to 1 by -2 do i
+ever loop3 = for x in xs do x
+ever loop4 = while false do 1
+
+show b1
+show b2
+show b3
+show short_and
+show short_or
+show real_and
+show idx
+show bad_idx
+show fld
+show loop1
+show loop2
+show loop3
+show loop4

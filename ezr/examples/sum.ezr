@@ -1,0 +1,5 @@
+# Sum a list, the recursive way.
+#   ezrun.py ../examples/sum.ezr
+
+def total(xs) = if len(xs) == 0 then 0 else head(xs) + total(tail(xs))
+def main()    = total([1, 2, 3, 4, 5])

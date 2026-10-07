@@ -1,0 +1,39 @@
+# Grade calculator — a real program a student might actually write.
+# Weighted average across assignments, letter grade, pass/fail,
+# and an honest accounting of which inputs are measured vs assumed.
+
+let hw_score    = 88
+let hw_weight   = 0.20
+
+let quiz_score  = 76
+let quiz_weight = 0.15
+
+let midterm     = 91
+let mid_weight  = 0.25
+
+let final_score = 84
+let final_weight = 0.40
+
+ever weighted = (hw_score * hw_weight) + (quiz_score * quiz_weight)
+                + (midterm * mid_weight) + (final_score * final_weight)
+
+ever passed  = if weighted >= 60 then true else false
+ever honors  = if weighted >= 90 then true else false
+
+ever letter  = if weighted >= 90 then "A"
+               else (if weighted >= 80 then "B"
+               else (if weighted >= 70 then "C"
+               else (if weighted >= 60 then "D"
+               else "F")))
+
+# attendance wasn't recorded this term — an honest unknown,
+# not a silent zero
+ever attendance_bonus = z
+ever final_with_bonus = weighted + attendance_bonus
+
+show weighted
+show letter
+show passed
+show honors
+show attendance_bonus
+show final_with_bonus

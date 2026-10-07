@@ -1,0 +1,7 @@
+let x = 7
+
+ever category = if x < 0 then "negative" else (if x == 0 then "zero" else "positive")
+ever bucket   = if x > 10 then "large" else (if x > 5 then "medium" else "small")
+
+show category
+show bucket

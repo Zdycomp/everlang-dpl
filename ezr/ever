@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""
+ever — one command, either lineage, chosen by the file you hand it.
+
+Two runners live in `2-interpreter-python/`, and neither is wrong:
+
+  ever_cli.py run    v4.10 (.ever): statements, lists-by-indexing,
+                     loops, records, externs. `let ... in` and the
+                     forge's four builtins are not this grammar.
+  ezrun.py           the confidence algebra AND the forge's core
+                     (.ezr): let..in, list literals, show/len/head/
+                     tail -- plus --example/--anchor/--call, which
+                     ever_cli.py run has no equivalent of at all.
+
+Every example file in this repo already documents, in its own header
+comment, which one it needs -- this makes that choice automatic
+instead of something a person has to open the file and read to find
+out. Dispatch is by extension first (.ever -> ever_cli.py run, .ezr
+-> ezrun.py, matching every existing example without exception), and
+falls back to the OTHER runner only when the first one exits clean
+but prints nothing: `.ever`'s one real exception is
+`examples/earned_trust.ever`, a v4.10 file with no top-level `show`
+statement at all, written to be exercised through ezrun's
+--example/--anchor flags instead -- `ever_cli.py run` on it is not
+wrong, just silent, since v4.10 has no notion of "call main() for
+me" (that convention belongs to ezrun.py alone). A program that
+truly produces no output looks the same either way; reporting
+whichever runner actually said something is strictly more useful
+than reporting silence.
+
+    ever examples/weekly_sales.ever          -> ever_cli.py run
+    ever examples/trust.ezr                  -> ezrun.py
+    ever examples/earned_trust.ever          -> falls back to ezrun.py
+    ever examples/trust.ezr --call 'main()'  -> extra args pass through
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+PY = HERE / "2-interpreter-python"
+CLI = PY / "ever_cli.py"
+EZRUN = PY / "ezrun.py"
+
+
+def _run(cmd: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        print("usage: ever FILE [args...]", file=sys.stderr)
+        print("  .ever files run through ever_cli.py run (v4.10)",
+             file=sys.stderr)
+        print("  .ezr files run through ezrun.py (the forge's core)",
+             file=sys.stderr)
+        print("  extra args pass straight through to whichever runs",
+             file=sys.stderr)
+        return 2
+
+    file = Path(argv[1])
+    rest = argv[2:]
+    if not file.exists():
+        print(f"ever: no such file: {file}", file=sys.stderr)
+        return 1
+
+    if file.suffix == ".ezr":
+        primary_cmd = [sys.executable, str(EZRUN), str(file), *rest]
+        fallback_cmd = [sys.executable, str(CLI), "run", str(file), *rest]
+    elif file.suffix == ".ever":
+        primary_cmd = [sys.executable, str(CLI), "run", str(file), *rest]
+        fallback_cmd = [sys.executable, str(EZRUN), str(file), *rest]
+    else:
+        print(f"ever: {file}: unrecognized extension {file.suffix!r} "
+             f"-- name it .ever (v4.10) or .ezr (the forge's core)",
+             file=sys.stderr)
+        return 2
+
+    primary = _run(primary_cmd)
+    if primary.stdout.strip():
+        sys.stdout.write(primary.stdout)
+        sys.stderr.write(primary.stderr)
+        return primary.returncode
+
+    # Primary said nothing (whatever its exit code). Try the other
+    # lineage's runner before reporting silence as the answer.
+    fallback = _run(fallback_cmd)
+    if fallback.stdout.strip():
+        sys.stdout.write(fallback.stdout)
+        sys.stderr.write(fallback.stderr)
+        return fallback.returncode
+
+    # Neither produced anything -- report the primary's own result,
+    # since that is the runner the file's extension actually names.
+    sys.stdout.write(primary.stdout)
+    sys.stderr.write(primary.stderr)
+    return primary.returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

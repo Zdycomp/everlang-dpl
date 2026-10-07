@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ever — Live</title>
+<!--
+  ever-live.html — Ever / Tapestry, Layer 6
+  The interpreter, running where you can watch it.
+
+  Hand written. No framework, no CDN, no build step. Works offline.
+  The interpreter below mirrors 2-interpreter-python/ever.py exactly:
+  same constants, same operators, same rules.
+
+  Codric Enterprise · Ricky (Dreid) · 2026
+-->
+<style>
+:root{
+  --panel:#d8d6c8; --panel-lip:#eae8dc; --panel-deep:#c6c4b4;
+  --ink:#14202e; --ink-soft:#58637a;
+  --brass:#8c6e3f; --brass-lite:#b39a6b;
+  --signal:#0b6e75; --signal-hi:#109aa4;
+  --alarm:#8c3a2b; --gold:#9a7b2f;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  --serif:Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--panel);color:var(--ink);
+  font-family:var(--serif);font-size:15px;line-height:1.5;
+  background-image:repeating-linear-gradient(0deg,
+    rgba(20,32,46,.022) 0 1px,transparent 1px 3px);
+}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 60px}
+.label{font-family:var(--sans);font-size:9.5px;font-weight:700;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--brass)}
+
+header{padding:28px 0 18px;border-bottom:2px solid var(--ink)}
+.wordmark{font-family:var(--sans);font-size:clamp(32px,7vw,54px);
+  font-weight:700;letter-spacing:-.045em;line-height:.9;margin:0}
+.wordmark span{font-weight:300;letter-spacing:.26em;font-size:.24em;
+  vertical-align:.9em;margin-left:.5em;color:var(--brass)}
+.tag{margin:10px 0 0;max-width:52ch;font-size:15px}
+
+/* ── controls ── */
+.deck{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin:18px 0;padding:12px;border:1.5px solid var(--ink);
+  background:var(--panel-lip)}
+button{font-family:var(--sans);font-size:10.5px;font-weight:700;
+  letter-spacing:.14em;text-transform:uppercase;padding:9px 13px;
+  border:1.5px solid var(--ink);background:var(--ink);color:var(--panel-lip);
+  cursor:pointer}
+button.ghost{background:transparent;color:var(--ink)}
+button:hover:not(:disabled){background:var(--signal);border-color:var(--signal);color:#fff}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible{outline:3px solid var(--signal);outline-offset:2px}
+select{font-family:var(--mono);font-size:11.5px;padding:9px 10px;
+  border:1.5px solid var(--ink);background:var(--panel-lip);color:var(--ink)}
+.counter{font-family:var(--mono);font-size:12px;color:var(--ink-soft);
+  margin-left:auto}
+
+/* ── layout ── */
+.bench{display:grid;grid-template-columns:minmax(0,340px) 1fr;gap:18px}
+@media(max-width:860px){.bench{grid-template-columns:1fr}}
+.station h2{font-family:var(--sans);font-size:10px;font-weight:700;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--brass);
+  margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid var(--brass-lite)}
+
+/* ── source ── */
+.src{border:1.5px solid var(--ink);background:var(--panel-lip);
+  font-family:var(--mono);font-size:12px;line-height:1.65;
+  max-height:420px;overflow:auto}
+.ln{display:flex;gap:8px;padding:1px 8px;white-space:pre;border-left:3px solid transparent}
+.ln.on{background:rgba(11,110,117,.14);border-left-color:var(--signal)}
+.ln.done{color:var(--ink-soft)}
+.ln .no{color:var(--brass-lite);min-width:20px;text-align:right;user-select:none}
+textarea{width:100%;min-height:200px;padding:12px;border:1.5px solid var(--ink);
+  background:var(--panel-lip);color:var(--ink);font-family:var(--mono);
+  font-size:12px;line-height:1.6;resize:vertical}
+textarea:focus-visible{outline:3px solid var(--signal);outline-offset:2px}
+
+/* ── threads ── */
+.thread{margin-bottom:9px;padding:7px 0 0;border-top:1px solid rgba(20,32,46,.1)}
+.thread:first-child{border-top:none}
+.th-head{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
+.th-name{font-family:var(--mono);font-size:12.5px;font-weight:600}
+.th-val{font-family:var(--mono);font-size:11.5px;color:var(--signal)}
+.th-conf{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-left:auto}
+.th-state{font-family:var(--sans);font-size:8.5px;font-weight:700;
+  letter-spacing:.13em;text-transform:uppercase;padding:2px 5px;
+  border:1px solid var(--brass);color:var(--brass)}
+.bar{position:relative;height:20px;border:1.5px solid var(--ink);
+  background:var(--panel-lip);overflow:hidden}
+.fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--signal);
+  transition:width .32s cubic-bezier(.2,.7,.3,1)}
+.fill.certain{background:var(--ink)}
+.fill.below{background:var(--brass-lite)}
+/* Z is absence. Not a colour — a hatched void, quarantined. */
+.bar.z{border-style:dashed}
+.bar.z .fill{width:100%!important;background:repeating-linear-gradient(45deg,
+  transparent 0 6px,rgba(20,32,46,.14) 6px 7px)}
+.ticks{position:absolute;inset:0;pointer-events:none}
+.tick{position:absolute;top:0;bottom:0;width:1px;background:var(--ink);opacity:.35}
+.tick.floor{opacity:.75;width:1.5px}
+.anchor{color:var(--gold);font-size:13px}
+.th-why{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);
+  margin-top:2px;font-style:italic}
+
+.scalekey{display:flex;justify-content:space-between;
+  font-family:var(--mono);font-size:10px;color:var(--ink-soft);
+  margin:2px 0 12px;padding-top:3px;border-top:1px dashed var(--brass-lite)}
+
+/* ── log ── */
+.log{border:1.5px solid var(--ink);background:var(--panel-lip);
+  max-height:200px;overflow:auto;font-family:var(--mono);font-size:11.5px}
+.ev{padding:5px 9px;border-bottom:1px solid rgba(20,32,46,.07);
+  display:flex;gap:8px}
+.ev:last-child{border-bottom:none}
+.ev .op{font-weight:700;min-width:74px;letter-spacing:.04em}
+.ev.excel .op{color:var(--signal)}
+.ev.z .op{color:var(--alarm)}
+.ev.anchor .op{color:var(--gold)}
+.ev.block .op{color:var(--alarm)}
+.ev.now{background:rgba(11,110,117,.1)}
+
+.empty{color:var(--ink-soft);font-style:italic;padding:10px;font-family:var(--serif)}
+
+/* ── legend ── */
+.legend{margin-top:26px;padding-top:16px;border-top:2px solid var(--ink);
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.legend div{font-size:13.5px}
+.legend b{font-family:var(--sans);font-size:12px;display:block;margin-bottom:2px}
+footer{margin-top:34px;font-family:var(--mono);font-size:11px;color:var(--ink-soft)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1 class="wordmark">Ever<span>live</span></h1>
+  <p class="tag">Every value carries how much it is trusted. Step through and
+    watch confidence propagate, Z spread, and anchors hold.</p>
+</header>
+
+<div class="deck">
+  <button id="reset" class="ghost">Reset</button>
+  <button id="back" class="ghost">&larr; Back</button>
+  <button id="step">Step &rarr;</button>
+  <button id="play">Run</button>
+  <select id="preset" aria-label="Load a program">
+    <option value="full">Full demo</option>
+    <option value="z">Z contagion</option>
+    <option value="anchor">Anchor vs drift</option>
+    <option value="ascend">Ascend — earning confidence</option>
+    <option value="excel">Corroboration</option>
+    <option value="learn">Auto-didact</option>
+  </select>
+  <button id="edit" class="ghost">Edit</button>
+  <span class="counter" id="counter">0 / 0</span>
+</div>
+
+<div class="bench">
+  <section class="station">
+    <h2>Source</h2>
+    <div class="src" id="src"></div>
+    <textarea id="editor" style="display:none" spellcheck="false"></textarea>
+    <div style="margin-top:8px;display:none" id="editrow">
+      <button id="load">Load program</button>
+    </div>
+
+    <h2 style="margin-top:20px">Events</h2>
+    <div class="log" id="log"><div class="empty">Press Step or Run.</div></div>
+  </section>
+
+  <section class="station">
+    <h2>The weave &mdash; every thread on the 0&ndash;256 scale</h2>
+    <div class="scalekey">
+      <span>0 &middot; Z</span><span>25 &middot; &pi;&sup2;</span>
+      <span>81 &middot; &pi;</span><span>128 &middot; execute</span>
+      <span>256 &middot; Certain</span>
+    </div>
+    <div id="threads"><div class="empty">No threads yet.</div></div>
+  </section>
+</div>
+
+<div class="legend">
+  <div><b>Z is drawn as absence</b>Hatched and dashed, never a colour.
+    Z is zero-absolute, not low confidence, and it carries the reason.</div>
+  <div><b>The bar below 128</b>Brass instead of teal. Bound, but under the
+    execute floor, so the value is withheld.</div>
+  <div><b>&#9875; means anchored</b>An identity pinned across translation.
+    Anchored threads cross languages without losing confidence.</div>
+  <div><b>Excel multiplies ignorance</b>Corroboration never creates
+    confidence. u_result = u_a &times; u_b, so it can approach 256 but
+    never reach it.</div>
+</div>
+
+<footer>
+  Ever &middot; Tapestry &middot; C &middot; C++ &middot; Python &middot;
+  Ruby &middot; SQL &middot; Java &middot; hand HTML<br>
+  Theory of Relative E &mdash; E = MC&sup2; &middot; Codric Enterprise &middot; 2026
+</footer>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════
+   The interpreter. Mirrors 2-interpreter-python/ever.py exactly.
+   ═══════════════════════════════════════════ */
+
+var CERTAIN=256, ZERO=0, FLOOR=128, PI_WARN=81, PI_SQ=25,
+    ASCEND_POINTS=3, INTAKE=120;
+
+var NOTHING=["null","nil","None","NULL","undefined","nullptr","Z"];
+
+function E(o){
+  o=o||{};
+  this.ident=o.ident||""; this.value=("value" in o)?o.value:null;
+  this.state=o.state||"Z"; this.defect=o.defect||"none";
+  this.confidence=o.confidence||0;
+  this.lo=("lo" in o)?o.lo:this.confidence;
+  this.hi=("hi" in o)?o.hi:this.confidence;
+  this.lang=o.lang||"ever"; this.anchorId=o.anchorId||0;
+  this.generation=o.generation||0; this.ascendPoints=o.ascendPoints||0;
+  this.reason=o.reason||"";
+}
+E.prototype.copy=function(ch){
+  var n=new E(this); for(var k in (ch||{})) n[k]=ch[k]; return n;
+};
+E.prototype.isZ=function(){return this.state==="Z";};
+E.prototype.cleared=function(){
+  return ["Z","EError","Absent"].indexOf(this.state)<0 && this.confidence>ZERO;
+};
+E.prototype.canExecute=function(){return this.cleared()&&this.confidence>=FLOOR;};
+E.prototype.anchored=function(){return this.anchorId!==0;};
+E.prototype.typeName=function(){
+  var v=this.value;
+  if(v===null||v===undefined) return "void";
+  if(typeof v==="boolean") return "bool";
+  if(typeof v==="number") return Number.isInteger(v)?"int":"real";
+  if(typeof v==="string") return "text";
+  return "foreign";
+};
+
+function eZ(id,why,defect){
+  return new E({ident:id,state:"Z",defect:defect||"unbound",
+                reason:why||"unverified"});
+}
+function eVal(id,v,conf,lang){
+  if(conf<=ZERO) return eZ(id,"confidence collapsed to zero");
+  if(conf>=CERTAIN)
+    return new E({ident:id,value:v,state:"Certain",confidence:CERTAIN,
+                  lang:lang||"ever"});
+  return new E({ident:id,value:v,state:"Confident",confidence:conf,
+                lang:lang||"ever"});
+}
+function eEquiv(id,lo,hi){
+  if(lo>hi){var t=lo;lo=hi;hi=t;}
+  var mid=Math.floor((lo+hi)/2);
+  return new E({ident:id,value:mid,state:"Equivalence",confidence:mid,
+                lo:lo,hi:hi});
+}
+
+/* Excel: multiplicative uncertainty. u_result = u_a * u_b.
+   A product of non-zero ignorances is never zero, so combination
+   approaches Certain without attaining it. Capped one short so the
+   language cannot manufacture Certain out of accumulated evidence. */
+function excel(a,b){
+  if(a>=CERTAIN&&b>=CERTAIN) return CERTAIN;
+  var v=a+b-Math.floor(a*b/CERTAIN);
+  return Math.max(ZERO,Math.min(CERTAIN-1,v));
+}
+
+/* ── A1 ANY ── */
+function aAny(id,lit,from){
+  var s=String(lit==null?"":lit).trim();
+  if(!s) return eZ(id,"no literal to lift");
+  if(NOTHING.indexOf(s)>=0) return eZ(id,(from||"source")+" expressed nothing");
+  if(s==="true"||s==="True")  return eVal(id,true,INTAKE,from);
+  if(s==="false"||s==="False") return eVal(id,false,INTAKE,from);
+  if(s.length>=2&&(s[0]==='"'||s[0]==="'")){
+    if(s[s.length-1]===s[0]) return eVal(id,s.slice(1,-1),INTAKE,from);
+    return eZ(id,"unterminated string literal","unbounded");
+  }
+  if(/^-?\d+$/.test(s))          return eVal(id,parseInt(s,10),INTAKE,from);
+  if(/^-?\d*\.\d+$/.test(s))     return eVal(id,parseFloat(s),INTAKE,from);
+  var p=eVal(id,s,100,from); p.reason="lifted as foreign"; return p;
+}
+
+/* ── A2 ASSIMILATE ── */
+function aAssimilate(p,to){
+  if(p.isZ()) return eZ(p.ident,"Z does not translate",p.defect);
+  if(p.lang===to) return p;
+  if(p.anchored())
+    return p.copy({lang:to,reason:"assimilated "+p.lang+" to "+to+
+                   ", anchor "+p.anchorId+" held"});
+  var c=Math.max(1,p.confidence-1);
+  return p.copy({lang:to,confidence:c,lo:c,hi:c,
+                 reason:"assimilated "+p.lang+" to "+to+
+                        ", unanchored, -1 confidence"});
+}
+
+/* ── A3 ANCHOR ── */
+var anchorSeq=1000;
+function aAnchor(p,id){
+  if(!p.cleared())
+    return eZ(p.ident,"cannot anchor an uncleared binding",p.defect);
+  id=id||(++anchorSeq);
+  return p.copy({anchorId:id,state:"Anchored",
+                 reason:"anchored "+id+" at confidence "+p.confidence});
+}
+
+/* ── A4 ASCEND ── */
+function aAscend(p,ev){
+  if(p.isZ()) return eZ(p.ident,"Z cannot ascend; it must be resolved",p.defect);
+  if(!ev.cleared()) return p;
+  var gap=Math.abs(ev.confidence-p.confidence);
+  if(gap>PI_SQ)
+    return p.copy({ascendPoints:0,
+                   reason:"evidence disagreed by "+gap+", ascent reset"});
+  var pts=p.ascendPoints+1;
+  if(pts<ASCEND_POINTS)
+    return p.copy({ascendPoints:pts,
+                   reason:"ascending: "+pts+" of "+ASCEND_POINTS+" points"});
+  var c=excel(p.confidence,ev.confidence);
+  return p.copy({confidence:c,lo:c,hi:c,ascendPoints:0,
+                 generation:p.generation+1,
+                 state:c>=CERTAIN?"Certain":"Evolved",
+                 reason:"ascended on "+ASCEND_POINTS+" aligned points to "+c+
+                        ", generation "+(p.generation+1)});
+}
+
+/* ── A6 AUTO-DIDACT ── */
+function aAutodidact(hist,about){
+  if(hist.length<ASCEND_POINTS) return eZ(about,"history too short");
+  var cl=hist.filter(function(h){return h.cleared();});
+  if(cl.length<ASCEND_POINTS) return eZ(about,"too few cleared observations");
+  var cs=cl.map(function(h){return h.confidence;});
+  var mean=Math.floor(cs.reduce(function(a,b){return a+b;},0)/cs.length);
+  var spread=Math.max.apply(null,cs)-Math.min.apply(null,cs);
+  if(spread>PI_WARN) return eZ(about,"history too scattered","unbounded");
+  var r=eVal(about,mean,spread<=PI_SQ?200:150);
+  r.lo=Math.min.apply(null,cs); r.hi=Math.max.apply(null,cs);
+  r.reason="derived from "+cl.length+" observations, mean "+mean+
+           ", spread "+spread;
+  return r;
+}
+
+/* ── arithmetic: the result is worth the weaker input ── */
+function combine(a,b,op,id){
+  if(a.isZ()) return eZ(id,"operand "+a.ident+" is Z",a.defect);
+  if(b.isZ()) return eZ(id,"operand "+b.ident+" is Z",b.defect);
+  if(typeof a.value!==typeof b.value)
+    return eZ(id,"cannot "+op+" "+a.typeName()+" with "+b.typeName(),"misbound");
+  var v;
+  if(op==="+") v=a.value+b.value;
+  else if(op==="-") v=a.value-b.value;
+  else if(op==="*") v=a.value*b.value;
+  else if(op==="/"){ if(b.value===0) return eZ(id,"division by zero","misbound");
+                     v=a.value/b.value; }
+  else return eZ(id,"unknown operator "+op,"misbound");
+  if(typeof v==="number"&&!Number.isInteger(v)) v=Math.round(v*1e6)/1e6;
+  var r=eVal(id,v,Math.min(a.confidence,b.confidence));
+  r.reason=a.ident+" "+op+" "+b.ident+", worth the weaker input";
+  return r;
+}
+
+/* ═══════════════════════════════════════════
+   Execution, recorded step by step so it can be replayed
+   ═══════════════════════════════════════════ */
+
+function Interp(){ this.threads={}; this.history={}; this.steps=[]; }
+
+Interp.prototype.snapshot=function(){
+  var o={};
+  for(var k in this.threads){
+    if(k.slice(-9)==="_evidence") continue;
+    o[k]=this.threads[k].copy({});
+  }
+  return o;
+};
+
+Interp.prototype.put=function(t){
+  this.threads[t.ident]=t;
+  (this.history[t.ident]=this.history[t.ident]||[]).push(t);
+  return t;
+};
+
+Interp.prototype.get=function(n){
+  return this.threads[n]||eZ(n,"never bound");
+};
+
+Interp.prototype.run=function(src){
+  this.threads={}; this.history={}; this.steps=[];
+  var lines=src.split("\n"), self=this;
+  lines.forEach(function(raw,i){
+    var line=raw.split("#")[0].trim();
+    if(!line) return;
+    var ev=self.exec(line);
+    self.steps.push({lineNo:i, text:line, events:ev, threads:self.snapshot()});
+  });
+  return this.steps;
+};
+
+Interp.prototype.exec=function(line){
+  var m, ev=[];
+
+  if((m=line.match(/^anchor\s+(\w+)\s*=\s*(.+)$/))){
+    var p=this.evalExpr(m[2],m[1]);
+    if(p.cleared()){ var a=aAnchor(p); this.put(a);
+      ev.push(["ANCHOR",m[1]+" pinned at "+a.confidence+"/256 \u2014 crossings now free"]);
+    } else { this.put(p); ev.push(["Z",m[1]+" \u2014 "+p.reason]); }
+    return ev;
+  }
+  if((m=line.match(/^(?:let|ever)\s+(\w+)\s*=\s*(.+)$/))){
+    var t=this.evalExpr(m[2],m[1]); this.put(t);
+    ev.push(t.isZ()?["Z",m[1]+" \u2014 "+t.reason]
+                   :["BIND",m[1]+" = "+JSON.stringify(t.value)+
+                            " at "+t.confidence+"/256"]);
+    return ev;
+  }
+  if((m=line.match(/^z\s+(\w+)\s*(?:"(.*)")?$/))){
+    this.put(eZ(m[1],m[2]||"declared unknown"));
+    ev.push(["Z",m[1]+" declared unknown \u2014 anything touching it becomes Z"]);
+    return ev;
+  }
+  if((m=line.match(/^equiv\s+(\w+)\s*=\s*(-?\d+)\s*\.\.\s*(-?\d+)$/))){
+    var e=eEquiv(m[1],+m[2],+m[3]); this.put(e);
+    var w=e.hi-e.lo;
+    ev.push(["EQUIV",m[1]+" spans "+e.lo+".."+e.hi+" (width "+w+", "+
+      (w>PI_WARN?"approaching Z":w>PI_SQ?"must enumerate":"acceptable")+")"]);
+    return ev;
+  }
+  if((m=line.match(/^ascend\s+(\w+)\s+by\s+(-?\d+)$/))){
+    var cur=this.get(m[1]);
+    var evd=eVal(m[1]+"_evidence",cur.value,+m[2]);
+    var next=aAscend(cur,evd); this.put(next);
+    if(next.confidence>cur.confidence)
+      ev.push(["ASCEND","\u2191 "+m[1]+" rose "+cur.confidence+" \u2192 "+
+               next.confidence+" on 3 aligned points"]);
+    else if(next.ascendPoints>0)
+      ev.push(["ASCEND",m[1]+": point "+next.ascendPoints+" of 3"]);
+    else
+      ev.push(["ASCEND",m[1]+": "+next.reason]);
+    return ev;
+  }
+  if((m=line.match(/^assimilate\s+(\w+)\s+to\s+(\w+)$/))){
+    var b4=this.get(m[1]); var af=aAssimilate(b4,m[2].toLowerCase());
+    this.put(af);
+    var lost=b4.confidence-af.confidence;
+    ev.push(["ASSIM",m[1]+" \u2192 "+m[2]+
+      (lost===0?"  no loss (anchored)":"  \u2212"+lost+" confidence (unanchored)")]);
+    return ev;
+  }
+  if((m=line.match(/^expect\s+(\w+)\s*>=\s*(\d+)$/))){
+    var q=this.get(m[1]), floor=+m[2];
+    if(q.confidence<floor){
+      this.put(eZ(m[1],"expected >= "+floor+", had "+q.confidence));
+      ev.push(["BLOCK",m[1]+" blocked: needed "+floor+", had "+q.confidence]);
+    } else ev.push(["EXPECT",m[1]+" passed the gate at "+q.confidence]);
+    return ev;
+  }
+  if((m=line.match(/^learn\s+(\w+)$/))){
+    var rule=aAutodidact(this.history[m[1]]||[],m[1]+"_rule");
+    this.put(rule);
+    ev.push(["LEARN",rule.isZ()?rule.reason:m[1]+"_rule \u2014 "+rule.reason]);
+    return ev;
+  }
+  if((m=line.match(/^show\s+(\w+)$/))){
+    var s=this.get(m[1]);
+    ev.push(s.isZ()?["SHOW",m[1]+" = Z  ("+s.reason+")"]
+      :!s.canExecute()?["SHOW",m[1]+" withheld: "+s.confidence+
+                        "/256 is below the execute floor of 128"]
+      :["SHOW",m[1]+" = "+JSON.stringify(s.value)+"  ["+s.confidence+"/256]"]);
+    return ev;
+  }
+  ev.push(["?","cannot parse: "+line]);
+  return ev;
+};
+
+Interp.prototype.evalExpr=function(expr,id){
+  expr=expr.trim();
+  var m=expr.match(/^(.+?)\s*([-+*\/])\s*(.+)$/);
+  if(m && expr[0]!=='"' && expr[0]!=="'"){
+    return combine(this.atom(m[1].trim(),id), this.atom(m[3].trim(),id),
+                   m[2], id);
+  }
+  return this.atom(expr,id);
+};
+
+Interp.prototype.atom=function(tok,id){
+  if(this.threads[tok]){
+    var s=this.threads[tok];
+    /* a reference never inherits an anchor; the anchor belongs to the
+       binding that earned it */
+    return s.copy({anchorId:0, state:s.state==="Anchored"?"Confident":s.state});
+  }
+  return aAny(id,tok);
+};
+
+/* ═══════════════════════════════════════════
+   Programs
+   ═══════════════════════════════════════════ */
+
+var PROGRAMS={
+full:
+"# Every value carries how much it is trusted\n"+
+"anchor total = 500\n"+
+"let    rate  = 0.08\n"+
+"ever   tax   = total * rate\n"+
+"show   tax\n"+
+"\n"+
+"# three aligned points to earn a rise\n"+
+"ascend tax by 125\n"+
+"ascend tax by 130\n"+
+"ascend tax by 128\n"+
+"show   tax\n"+
+"\n"+
+"# Z is contagious\n"+
+"z      ocr_text \"OCR has not run\"\n"+
+"ever   parsed = ocr_text + 1\n"+
+"show   parsed\n"+
+"\n"+
+"# anchored, so crossings cost nothing\n"+
+"ascend total by 130\n"+
+"ascend total by 135\n"+
+"ascend total by 132\n"+
+"assimilate total to RUST\n"+
+"assimilate total to SWIFT\n"+
+"assimilate total to GO\n"+
+"show   total",
+
+z:
+"# Z is not low confidence. It is its own state,\n"+
+"# it carries its reason, and it spreads.\n"+
+"let    price = 100\n"+
+"z      discount \"coupon service unreachable\"\n"+
+"ever   subtotal = price - discount\n"+
+"ever   tax      = subtotal + 8\n"+
+"ever   final    = tax + 5\n"+
+"show   price\n"+
+"show   subtotal\n"+
+"show   final",
+
+anchor:
+"# the same value, one pinned and one not\n"+
+"anchor pinned = 500\n"+
+"let    loose  = 500\n"+
+"ascend pinned by 130\n"+
+"ascend pinned by 135\n"+
+"ascend pinned by 132\n"+
+"ascend loose by 130\n"+
+"ascend loose by 135\n"+
+"ascend loose by 132\n"+
+"assimilate pinned to RUST\n"+
+"assimilate loose  to RUST\n"+
+"assimilate pinned to SWIFT\n"+
+"assimilate loose  to SWIFT\n"+
+"assimilate pinned to JAVA\n"+
+"assimilate loose  to JAVA\n"+
+"assimilate pinned to GO\n"+
+"assimilate loose  to GO\n"+
+"show   pinned\n"+
+"show   loose",
+
+ascend:
+"# one observation never lifts a binding. three aligned ones do.\n"+
+"let    parse = 42\n"+
+"show   parse\n"+
+"ascend parse by 125\n"+
+"ascend parse by 130\n"+
+"ascend parse by 128\n"+
+"show   parse\n"+
+"\n"+
+"# evidence that disagrees resets the count\n"+
+"ascend parse by 140\n"+
+"ascend parse by 240\n"+
+"ascend parse by 145\n"+
+"show   parse",
+
+excel:
+"# corroboration multiplies ignorance down. watch it climb\n"+
+"# in three rounds and stall one short of Certain.\n"+
+"let    witness = 42\n"+
+"show   witness\n"+
+"\n"+
+"# round one: 120 -> 191\n"+
+"ascend witness by 130\n"+
+"ascend witness by 135\n"+
+"ascend witness by 132\n"+
+"show   witness\n"+
+"\n"+
+"# round two: 191 -> 242\n"+
+"ascend witness by 200\n"+
+"ascend witness by 205\n"+
+"ascend witness by 198\n"+
+"show   witness\n"+
+"\n"+
+"# round three: 242 -> 255, and it stops there\n"+
+"ascend witness by 250\n"+
+"ascend witness by 248\n"+
+"ascend witness by 252\n"+
+"show   witness\n"+
+"\n"+
+"# demand certainty from evidence and the gate refuses.\n"+
+"# u = 0 needs a witness already at zero ignorance, and a\n"+
+"# product of non-zero terms is never zero.\n"+
+"expect witness >= 256",
+
+learn:
+"# the corpus derives a rule from its own history\n"+
+"let    conf = 170\n"+
+"ascend conf by 172\n"+
+"ascend conf by 175\n"+
+"ascend conf by 173\n"+
+"show   conf\n"+
+"learn  conf"
+};
+
+/* ═══════════════════════════════════════════
+   UI
+   ═══════════════════════════════════════════ */
+
+var $=function(id){return document.getElementById(id);};
+var interp=new Interp(), steps=[], cursor=-1, timer=null, source="";
+
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;");}
+
+function renderSource(){
+  var lines=source.split("\n"), cur=cursor>=0?steps[cursor].lineNo:-1;
+  var done={};
+  for(var i=0;i<=cursor;i++) done[steps[i].lineNo]=1;
+  $("src").innerHTML=lines.map(function(l,i){
+    var cls="ln"+(i===cur?" on":(done[i]?" done":""));
+    return '<div class="'+cls+'"><span class="no">'+(i+1)+'</span>'+
+           '<span>'+esc(l)+'</span></div>';
+  }).join("");
+  var on=$("src").querySelector(".ln.on");
+  if(on&&on.scrollIntoView) on.scrollIntoView({block:"nearest"});
+}
+
+function bar(t){
+  var pct=Math.max(0,Math.min(100,t.confidence/CERTAIN*100));
+  var cls="fill"+(t.confidence>=CERTAIN?" certain":
+                  t.confidence<FLOOR?" below":"");
+  return '<div class="bar'+(t.isZ()?" z":"")+'">'+
+    '<div class="'+cls+'" style="width:'+pct+'%"></div>'+
+    '<div class="ticks">'+
+      '<div class="tick" style="left:9.77%"></div>'+
+      '<div class="tick" style="left:31.64%"></div>'+
+      '<div class="tick floor" style="left:50%"></div>'+
+    '</div></div>';
+}
+
+function renderThreads(){
+  var box=$("threads");
+  if(cursor<0){ box.innerHTML='<div class="empty">No threads yet.</div>'; return; }
+  var th=steps[cursor].threads, keys=Object.keys(th);
+  if(!keys.length){ box.innerHTML='<div class="empty">No threads yet.</div>'; return; }
+  box.innerHTML=keys.map(function(k){
+    var t=th[k];
+    var val=t.isZ()?"\u2014":JSON.stringify(t.value);
+    return '<div class="thread">'+
+      '<div class="th-head">'+
+        '<span class="th-name">'+esc(k)+'</span>'+
+        (t.anchored()?'<span class="anchor" title="anchored">\u2693</span>':'')+
+        '<span class="th-val">'+esc(val)+'</span>'+
+        '<span class="th-state">'+esc(t.state)+'</span>'+
+        '<span class="th-conf">'+t.confidence+'/256</span>'+
+      '</div>'+ bar(t)+
+      (t.reason?'<div class="th-why">'+esc(t.reason)+'</div>':'')+
+    '</div>';
+  }).join("");
+}
+
+function renderLog(){
+  var box=$("log");
+  if(cursor<0){ box.innerHTML='<div class="empty">Press Step or Run.</div>'; return; }
+  var html="";
+  for(var i=0;i<=cursor;i++){
+    steps[i].events.forEach(function(e){
+      var op=e[0], cls="ev";
+      if(op==="Z"||op==="BLOCK") cls+=" z";
+      else if(op==="ASCEND"||op==="EXPECT") cls+=" excel";
+      else if(op==="ANCHOR"||op==="ASSIM") cls+=" anchor";
+      if(i===cursor) cls+=" now";
+      html+='<div class="'+cls+'"><span class="op">'+esc(op)+'</span>'+
+            '<span>'+esc(e[1])+'</span></div>';
+    });
+  }
+  box.innerHTML=html||'<div class="empty">No events.</div>';
+  box.scrollTop=box.scrollHeight;
+}
+
+function render(){
+  renderSource(); renderThreads(); renderLog();
+  $("counter").textContent=(cursor+1)+" / "+steps.length;
+  $("back").disabled=cursor<0;
+  $("step").disabled=cursor>=steps.length-1;
+}
+
+function load(src){
+  source=src; interp=new Interp(); anchorSeq=1000;
+  steps=interp.run(src); cursor=-1; stop(); render();
+}
+function step(){ if(cursor<steps.length-1){cursor++; render();} else stop(); }
+function back(){ if(cursor>=0){cursor--; render();} }
+function stop(){ if(timer){clearInterval(timer); timer=null;} $("play").textContent="Run"; }
+function play(){
+  if(timer){stop(); return;}
+  if(cursor>=steps.length-1) cursor=-1;
+  $("play").textContent="Pause";
+  timer=setInterval(function(){
+    if(cursor>=steps.length-1){stop(); return;}
+    step();
+  },620);
+}
+
+$("step").addEventListener("click",function(){stop(); step();});
+$("back").addEventListener("click",function(){stop(); back();});
+$("play").addEventListener("click",play);
+$("reset").addEventListener("click",function(){stop(); cursor=-1; render();});
+$("preset").addEventListener("change",function(){
+  load(PROGRAMS[this.value]||PROGRAMS.full);
+});
+$("edit").addEventListener("click",function(){
+  var ed=$("editor"), sv=$("src"), row=$("editrow");
+  if(ed.style.display==="none"){
+    ed.value=source; ed.style.display="block"; sv.style.display="none";
+    row.style.display="block"; this.textContent="View";
+  } else {
+    ed.style.display="none"; sv.style.display="block";
+    row.style.display="none"; this.textContent="Edit";
+  }
+});
+$("load").addEventListener("click",function(){
+  load($("editor").value);
+  $("editor").style.display="none"; $("src").style.display="block";
+  $("editrow").style.display="none"; $("edit").textContent="Edit";
+});
+document.addEventListener("keydown",function(e){
+  if(e.target.tagName==="TEXTAREA") return;
+  if(e.key==="ArrowRight"){e.preventDefault(); stop(); step();}
+  if(e.key==="ArrowLeft"){e.preventDefault(); stop(); back();}
+  if(e.key===" "){e.preventDefault(); play();}
+});
+
+load(PROGRAMS.full);
+</script>
+</body>
+</html>

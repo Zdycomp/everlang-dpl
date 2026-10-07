@@ -1,0 +1,3 @@
+tags=arithmetic,float
+description=Division always returns real
+exit_code=0

@@ -1,0 +1,47 @@
+# weekly_sales.ever — a total that refuses to be wrong.
+#
+# Thursday was never recorded. In most languages that becomes 0, or the
+# row is skipped, and you get a plausible weekly total that is quietly
+# missing a day. Here the unknown propagates: the total comes back `z`,
+# because a sum that is missing an input is not a smaller sum, it is an
+# unknown one.
+#
+# Put a real number in Thursday's place and the same program gives
+# 2615 at full confidence. Nothing else changes.
+#
+# Run it:   python3 2-interpreter-python/ever_cli.py run examples/weekly_sales.ever
+
+let mon = 420
+let tue = 610
+let wed = 380
+let thu = z          # never recorded
+let fri = 705
+
+let days = [mon, tue, wed, thu, fri]
+
+# `i` strictly decreases in the self-call, so the semantic pass can prove
+# this terminates. Counting UP would not be provable, and the depth
+# ceiling of floor(pi) = 3 would stop it at the third day.
+def sum_from(xs, i) = if i < 0 then 0 else xs[i] + sum_from(xs, i - 1)
+
+ever total     = sum_from(days, 4)
+
+# Comparing anything against z — even asking "is this the unknown" —
+# itself returns z, not a definite true/false. That is a characteristic
+# of == in this language, not something this program introduces.
+ever had_gap   = thu == z
+
+ever best      = if mon > tue and mon > wed then mon
+                  else (if tue > wed then tue else wed)
+
+ever third_day = days[2]
+ever missing   = days[9]        # out of bounds is z, not a crash
+
+ever last_square = for i = 1 to 5 do i * i   # a loop reports its LAST value
+
+show total
+show had_gap
+show best
+show third_day
+show missing
+show last_square

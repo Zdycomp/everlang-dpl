@@ -1,0 +1,3 @@
+AST:FnDef(fact,[n],If(...))
+SEM:recursive=True
+SEM:measure=n

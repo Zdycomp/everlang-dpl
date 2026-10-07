@@ -1,0 +1,4 @@
+AST:Num(42.0)
+AST:Str(hello)
+AST:Bool(True)
+AST:Bool(False)

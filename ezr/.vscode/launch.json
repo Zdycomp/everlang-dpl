@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "EZR: run current file (auto-detect lineage)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/ever",
+      "args": [
+        "${file}"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "// note": "subProcess follows into the dispatched runner, so breakpoints in eval_ast/runtime.py still hit.",
+      "subProcess": true,
+      "justMyCode": false
+    },
+    {
+      "name": "EZR: debug the current Python file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "// note": "cwd follows the file, because each Python layer imports its own siblings",
+      "cwd": "${fileDirname}",
+      "justMyCode": false
+    },
+    {
+      "name": "EZR: debug the forge",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/7-forge/forge.py",
+      "args": [
+        "--cycles",
+        "2",
+        "--cycle-budget",
+        "500"
+      ],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/7-forge",
+      "justMyCode": false
+    },
+    {
+      "name": "EZR: debug the interpreter pipeline",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/2-interpreter-python/syntax.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/2-interpreter-python",
+      "justMyCode": false
+    }
+  ]
+}

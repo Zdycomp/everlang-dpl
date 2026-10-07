@@ -1,0 +1,8 @@
+let a = 6
+let b = 7
+ever product = a * b
+ever sum     = a + b
+ever diff    = b - a
+show product
+show sum
+show diff

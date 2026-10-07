@@ -1,0 +1,19 @@
+{
+  "python.analysis.extraPaths": [
+    "2-interpreter-python",
+    "7-forge"
+  ],
+  "python.analysis.autoSearchPaths": true,
+  "python.terminal.activateEnvironment": false,
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/*.o": true
+  },
+  "files.associations": {
+    "*.ebnf": "plaintext",
+    "*.ezr": "plaintext"
+  },
+  "[python]": { "editor.rulers": [72] },
+  "[markdown]": { "editor.wordWrap": "bounded", "editor.wordWrapColumn": 72 }
+}
