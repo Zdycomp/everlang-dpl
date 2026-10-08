@@ -1,0 +1,6 @@
+let x = 10
+let y = 4
+ever q = x / y
+ever half = 1 / 2
+show q
+show half

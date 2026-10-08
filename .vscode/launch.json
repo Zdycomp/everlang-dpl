@@ -1,0 +1,66 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${fileDirname}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Python: everlang_standalone main.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/everlang_standalone/main.py",
+      "cwd": "${workspaceFolder}/everlang_standalone",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Python: pytest current file",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-q"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "ezr: run current .ever/.ezr file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/ezr/ever",
+      "args": ["${file}"],
+      "cwd": "${workspaceFolder}/ezr",
+      "console": "integratedTerminal",
+      "subProcess": true,
+      "justMyCode": false
+    },
+    {
+      "name": "C: debug ezr kitchen sink",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/tmp/ev_ks_dbg",
+      "cwd": "${workspaceFolder}/ezr",
+      "MIMode": "gdb",
+      "preLaunchTask": "ezr C: build kitchen sink (debug)",
+      "stopAtEntry": false,
+      "externalConsole": false
+    },
+    {
+      "name": "C++: debug verify_particle test driver",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/tmp/test_verify_particle_dbg",
+      "cwd": "${workspaceFolder}/1-phase-cpp",
+      "MIMode": "gdb",
+      "preLaunchTask": "C++: build test driver (debug)",
+      "stopAtEntry": false,
+      "externalConsole": false
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# Hello World — the simplest possible Ever program
+let greeting = "Hello, Ever!"
+show greeting

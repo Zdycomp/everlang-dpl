@@ -1,0 +1,1 @@
+AST:FnDef(double,[n],BinOp(*,Var(n),Num(2.0)))

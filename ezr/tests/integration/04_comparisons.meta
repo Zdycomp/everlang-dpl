@@ -1,0 +1,3 @@
+tags=comparison,boolean
+description=Comparison operators return BOOL
+exit_code=0
