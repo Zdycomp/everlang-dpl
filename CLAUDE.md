@@ -22,6 +22,8 @@ Toolchains available in the cloud env: python3.11, gcc/g++, java/javac, maven/gr
 
 Both the C++ and SQL legs are optional at runtime — if either is missing/unbuilt, `ReinforcedArchive` degrades to plain `EArchive` behavior rather than failing. Run `python3 run_all.py` (or `--skip-native` for Python+SQL only) to exercise all four phases together.
 
+**Real self-heal (`EArchive.heal`, per `ezr/SEMANTICS.md` §9).** `everlang/core/heal.py` runs ezr's `forgive.py` on Ever source and ezr's edapt fixers on Python, JavaScript, Go, Rust, Java and Kotlin; without `ezr/` a language is refused, never emulated. Every repair is archived as a Failure/Fixture pair charged 8 (plain) or 32 (inferred) from 256; §9.4 cases (unclosed brackets, unterminated strings) are refused as boundary markers. `repair_candidates()` and `propose_rules()` admit a rule at 128 only when 3 distinct sources agree and replay is unanimous. Vocabulary ids 1–7 in `everlang/core/vocabulary.py` must match `ezr/4-archive-sql/repair.sql` (`tests/test_heal.py` checks). `emulate_repair` is unchanged because the Java audit re-derives its formula.
+
 ## Rules (non-negotiable)
 1. **Boundary awareness.** Identify the target phase before writing code. Never bleed Python interpretation rules into C++ or vice versa; phases communicate only through the IR and documented file/CLI contracts.
 2. **Tests gate every change.** Run `python3 run_all.py` from the repo root (all suites must pass). `--skip-native` runs the Python+SQL legs only, if g++/mvn aren't available.
