@@ -40,6 +40,9 @@ class Fix:
     what: str
     became: str
     reason: str
+    form: str = ""  # SEMANTICS.md §9.5. structured edit, replayable.
+    kind: int = 1   # 0 plain, 1 inferred. SEMANTICS.md §9.2.
+    name: str = ""  # canonical repair name, same role as forgive.Correction.name.
 
     def line1(self) -> str:
         return f"line {self.line}: {self.what} → {self.became}"
@@ -146,7 +149,8 @@ def fix_python(src: str) -> FixResult:
         fixes.append(Fix(i + 1, f"'{kw}' line missing ':'",
                          "':' appended",
                          "if/elif/else/for/while/def/class/try/except/"
-                         "finally headers must end in a colon"))
+                         "finally headers must end in a colon",
+                         form="COLON_APPEND", kind=1, name="missing_colon"))
         out[i] = healed
 
     # = vs == inside an `if`/`elif`/`while` condition (never inside a
@@ -171,7 +175,9 @@ def fix_python(src: str) -> FixResult:
             fixes.append(Fix(i + 1, f"'=' in {kw} condition",
                              "'==' ",
                              "a single = inside a condition can only "
-                             "have meant the comparison =="))
+                             "have meant the comparison ==",
+                             form="EQ_TO_CMP", kind=1,
+                             name="equals_for_compare"))
             out[i] = f"{indent}{kw} {healed_expr}:{tail}"
 
     return FixResult("\n".join(out) + ("\n" if src.endswith("\n") else ""),
@@ -243,7 +249,9 @@ def _fix_cfamily_semicolons(src: str, line_comment: str,
            re.match(r'^\s*(var|let|const|val)\s+\w', s):
             fixes.append(Fix(i + 1, "missing ';'", "';' appended",
                              "this line ends a simple statement, and "
-                             "the language requires a terminator"))
+                             "the language requires a terminator",
+                             form="SEMI_APPEND", kind=1,
+                             name="missing_semicolon"))
             out[i] = raw.rstrip() + ";"
 
     return FixResult("\n".join(out) + ("\n" if src.endswith("\n") else ""),
