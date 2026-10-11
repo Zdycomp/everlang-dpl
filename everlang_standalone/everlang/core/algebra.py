@@ -9,6 +9,10 @@ from typing import NamedTuple, Optional, Tuple
 
 from .vocabulary import E_ASCEND_POINTS, E_CERTAIN, E_EXECUTE_FLOOR, E_INTAKE, KIND_COST
 
+PI_ENUMERATE = 25   # §5.2: widths up to here are acceptable as a range
+PI_WARN = 81        # §5.2: widths above here collapse to Z(unbounded)
+DEPTH_CEILING = 3   # §4.6: recursion depth limit unless anchored
+
 
 def uncertainty(c: int) -> float:
     """§1: u = (256 - c) / 256. Z (c = 0) gives 1.0; Certain gives 0.0."""
@@ -54,6 +58,20 @@ def sources_still_needed(distinct_sources: int) -> int:
     return max(0, E_ASCEND_POINTS - distinct_sources)
 
 
+def pi_collapse(width: int) -> str:
+    """§5.2: an unknown condition's range is 'accept', 'enumerate', or 'collapse' to Z."""
+    if width <= PI_ENUMERATE:
+        return "accept"
+    if width <= PI_WARN:
+        return "enumerate"
+    return "collapse"
+
+
+def depth_limit(anchored: bool, measure_defined: bool) -> Optional[int]:
+    """§4.6: the recursion limit, or None when unbounded (anchored with a measure)."""
+    return None if anchored and measure_defined else DEPTH_CEILING
+
+
 class Law(NamedTuple):
     name: str
     kind: str          # "law" (forward) or "inverse" (predictive)
@@ -70,4 +88,8 @@ ALGEBRA: Tuple[Law, ...] = (
     Law("inferred_repairs_left", "inverse", "SEMANTICS.md §9.2",
         "floor((c - 128) / 32) inferred repairs"),
     Law("sources_still_needed", "inverse", "SEMANTICS.md §9.6", "max(0, 3 - distinct sources)"),
+    Law("pi_collapse", "law", "SEMANTICS.md §5.2",
+        "width <= 25 accept; 26..81 enumerate; > 81 collapse to Z(unbounded)"),
+    Law("depth_limit", "law", "SEMANTICS.md §4.6",
+        "limit = unbounded if anchored and measure defined, else 3"),
 )

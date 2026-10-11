@@ -63,6 +63,15 @@ class TestInverses(unittest.TestCase):
         self.assertEqual(A.sources_still_needed(0), 3)
         self.assertEqual(A.sources_still_needed(3), 0)
 
+    def test_pi_collapse_boundaries(self):
+        self.assertEqual([A.pi_collapse(w) for w in (0, 25, 26, 81, 82)],
+                         ["accept", "accept", "enumerate", "enumerate", "collapse"])
+
+    def test_depth_limit(self):
+        self.assertEqual(A.depth_limit(anchored=False, measure_defined=True), 3)
+        self.assertEqual(A.depth_limit(anchored=True, measure_defined=False), 3)
+        self.assertIsNone(A.depth_limit(anchored=True, measure_defined=True))
+
 
 @unittest.skipUnless(EZR_RUNTIME.exists(), "ezr/ lineage not present")
 class TestAgainstEzr(unittest.TestCase):
