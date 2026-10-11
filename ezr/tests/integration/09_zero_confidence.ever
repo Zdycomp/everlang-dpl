@@ -1,0 +1,6 @@
+# The z keyword introduces zero confidence (unknown)
+ever unknown = z
+ever certain = 42
+
+show certain
+show unknown

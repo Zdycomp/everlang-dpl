@@ -1,0 +1,70 @@
+# readings.ezr — a summary over a list of sensor readings.
+#
+#   ezrun.py ../examples/readings.ezr
+#   5-runtime-java/ezr ../examples/readings.ezr        (agrees exactly)
+#
+# This file is written in the forge's core (CORE.md), where
+# `let x = v in body` is an expression -- not v4.10's grammar, which has
+# `let x = v` as a statement instead and has no `in`. `ezrun.py` used to
+# refuse this file at the first `let` in `biggest`, the same as `ever
+# run` still does: v4.10 was never taught the core's binding, list
+# literals, or its four builtins (show/len/head/tail). `ezrun.py`'s
+# underlying evaluator, `syntax.py`'s `eval_ast`, now implements all
+# three, so this runs there directly -- no Java build required.
+# `ever run` (the statement-based front door) still cannot: it has no
+# `let ... in`, and its own `readings.ever` reaches the same list with
+# indexing instead, by design (see that file's own comment).
+#
+# Two things worth watching.
+#
+# Every line `show` prints carries its own confidence, because in EZR
+# confidence is part of the value rather than something a logger adds.
+# The count reads 256/256 -- `len` is a builtin, and there is nothing
+# uncertain about counting. Everything after it reads 120/256, because
+# it came through `total`, `biggest` or `smallest`, and no evidence has
+# been offered for any of them. [DEF] enters a definition below the
+# execute floor: written is not verified. Supply Examples and the same
+# numbers come back worth more:
+#
+#   --call 'total([12, 7, 19])'                        38 @ 120/256
+#   ... -x 'total([]) = 0' -x 'total([5]) = 5' \
+#       -x 'total([1, 2]) = 3'                         38 @ 217/256
+#
+# Same 38. Three witnesses' worth more of it.
+#
+# (These read 256/256 when this file was written, before [APP]'s c_f
+# term was implemented. That was the defect, not the documentation.)
+#
+# And `summary` never checks for an empty list. It does not need to. The
+# lets run in order, so the mean is reached first and 0 / 0 refuses there:
+#
+#   --call 'summary([])'   Z(misbound) - division by zero     exit 1
+#   --call 'biggest([])'   Z(unbound) - tail of an empty list exit 1
+#   --call 'total([])'     0  @ 120/256                       exit 0
+#
+# Three different answers to "what about nothing", each correct. The sum
+# of no readings really is 0. The largest of none is not a number, and
+# EZR says so rather than crashing or quietly handing back a zero that
+# would then be averaged into somebody's report.
+
+def total(xs) = if len(xs) == 0 then 0
+                else head(xs) + total(tail(xs))
+
+def biggest(xs) = if len(xs) == 1 then head(xs)
+                  else let rest = biggest(tail(xs)) in
+                       if head(xs) > rest then head(xs) else rest
+
+def smallest(xs) = if len(xs) == 1 then head(xs)
+                   else let rest = smallest(tail(xs)) in
+                        if head(xs) < rest then head(xs) else rest
+
+# `let` earns its keep here: the count and the sum are each computed once
+# and then reused for the mean, rather than walking the list a third time.
+def summary(xs) = let n  = show(len(xs))      in
+                  let s  = show(total(xs))    in
+                  let m  = show(s / n)        in
+                  let hi = show(biggest(xs))  in
+                  let lo = show(smallest(xs)) in
+                  hi - lo
+
+def main() = summary([12, 7, 19, 3, 14, 8])

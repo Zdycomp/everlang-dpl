@@ -1,0 +1,9 @@
+# 07_confidence.ever
+# Confidence levels: program constants enter at CERTAIN (256).
+# The z keyword produces zero confidence.
+
+let certain = 42
+ever unknown = z
+
+show certain
+show unknown

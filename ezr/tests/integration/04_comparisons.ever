@@ -1,0 +1,12 @@
+let p = 10
+let q = 3
+ever lt = p < q
+ever gt = p > q
+ever eq = p == p
+ever ne = p != q
+ever le = q <= p
+show lt
+show gt
+show eq
+show ne
+show le

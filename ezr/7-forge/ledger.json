@@ -1,0 +1,870 @@
+{
+  "converged": true,
+  "generations": 72,
+  "pairs": 20,
+  "lexers": [
+    "L1-regex-master",
+    "L2-handrolled",
+    "L3-dfa",
+    "L4-trie"
+  ],
+  "parsers": [
+    "P1-recdescent",
+    "P2-pratt",
+    "P3-shunting",
+    "P4-earley"
+  ],
+  "programs_fuzzed": 564600,
+  "budget_reached": 25000,
+  "counterexamples_carried": 46,
+  "settled": {
+    "cmp_kind": {
+      "answer": "CMP",
+      "generation": 0,
+      "rationale": "doctrine (PIPELINE.md, section 2): compare := additive [ CMP additive ] \u2014 the published grammar names CMP as the class of the comparison operator, so a bare '<' that scans as OP cannot satisfy the rule the project already printed."
+    },
+    "unterminated_string_defect": {
+      "answer": "unbounded",
+      "generation": 0,
+      "rationale": "doctrine (PIPELINE.md and SEMANTICS.md 1): PIPELINE.md classifies running out of input ('1 +') as Z(unbounded) and an illegal character ('a $ b') as Z(misbound). A string with no closing quote ran out of input; it is not a character the language rejects."
+    },
+    "reserved_words": {
+      "answer": [
+        "def",
+        "else",
+        "false",
+        "if",
+        "in",
+        "let",
+        "then",
+        "true"
+      ],
+      "generation": 0,
+      "rationale": "doctrine (PIPELINE.md, section 2): 'This is the whole language. Anything not derivable here is outside the grammar.' The rule is that a word is reserved when the grammar reaches it, and nothing else -- the incumbent reserved nineteen against a syntax that did not exist. Six when the core was frozen; eight now that `let ... in` is in the grammar. `let` was already in the incumbent's list, among the words the forge found unreachable, so this is that reservation finally earning itself."
+    },
+    "multi_definition": {
+      "answer": true,
+      "generation": 0,
+      "rationale": "coverage gap: more than one definition in one namespace. Runtime: Lambda.globals holds ['double', 'triple'] simultaneously; double(4)=8, triple(4)=12. Syntax: no front end accepts 'def double(n) = n * 2\\ndef triple(n) = n * 3' \u2014 the published rule is program := fndef | expr, one only. SEMANTICS.md 7 lists the module system as missing and describes the namespace it is missing from as 'one flat global namespace' \u2014 a namespace the runtime already populates and the grammar cannot address."
+    },
+    "chained_comparison": {
+      "answer": false,
+      "generation": 0,
+      "rationale": "doctrine (PIPELINE.md, section 2): compare := additive [ CMP additive ] \u2014 the brackets are optional-once, not repeated, so 'a < b < c' is outside the published grammar."
+    },
+    "trailing_comma": {
+      "answer": false,
+      "generation": 0,
+      "rationale": "consensus: 16 of 16 independent witnesses, threshold pi=3 and two thirds"
+    },
+    "trailing_expression": {
+      "answer": false,
+      "generation": 0,
+      "rationale": "finding (law unambiguous): Allowing 'program := deflist [expr]' makes the grammar ambiguous. 'def f(n) = 1 - 1' has two derivations: a body of '1 - 1', or a body of '1' followed by the expression '- 1' under prefix minus. The chart parser reports overbound; the three deterministic parsers resolve it greedily and never mention it. Dropping the trailing expression removes the ambiguity and still closes the coverage gap, which was about holding several definitions in one namespace and never about a trailing expression."
+    }
+  },
+  "escalated": {},
+  "coverage_gaps": [],
+  "generations_log": [
+    {
+      "gen": 0,
+      "cases": 479,
+      "fuzzed": 400,
+      "golden_failures": 20,
+      "violations": 112,
+      "divergences": 53,
+      "ratified": [
+        "cmp_kind := 'CMP'  [doctrine]",
+        "unterminated_string_defect := 'unbounded'  [doctrine]",
+        "reserved_words := ['def', 'else', 'false', 'if', 'then', 'true']  [doctrine]",
+        "multi_definition := True  [coverage gap]",
+        "chained_comparison := False  [doctrine]",
+        "trailing_comma := False  [consensus 16/16]",
+        "trailing_expression := False  [finding/unambiguous]"
+      ],
+      "promoted": 46,
+      "seconds": 2.51
+    },
+    {
+      "gen": 1,
+      "cases": 525,
+      "fuzzed": 400,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 3.98
+    },
+    {
+      "gen": 2,
+      "cases": 925,
+      "fuzzed": 800,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 6.91
+    },
+    {
+      "gen": 3,
+      "cases": 1725,
+      "fuzzed": 1600,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 8.96
+    },
+    {
+      "gen": 4,
+      "cases": 3325,
+      "fuzzed": 3200,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 17.25
+    },
+    {
+      "gen": 5,
+      "cases": 6525,
+      "fuzzed": 6400,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 35.16
+    },
+    {
+      "gen": 6,
+      "cases": 12925,
+      "fuzzed": 12800,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 77.77
+    },
+    {
+      "gen": 7,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 153.17
+    },
+    {
+      "gen": 8,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 165.81
+    },
+    {
+      "gen": 9,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 145.06
+    },
+    {
+      "gen": 10,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 143.13
+    },
+    {
+      "gen": 11,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 149.02
+    },
+    {
+      "gen": 12,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 152.61
+    },
+    {
+      "gen": 13,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 118.73
+    },
+    {
+      "gen": 14,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 145.81
+    },
+    {
+      "gen": 15,
+      "cases": 25125,
+      "fuzzed": 25000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 169.8
+    },
+    {
+      "gen": 16,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 19.57
+    },
+    {
+      "gen": 17,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 23.06
+    },
+    {
+      "gen": 18,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 27.72
+    },
+    {
+      "gen": 19,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 32.9
+    },
+    {
+      "gen": 20,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 20.04
+    },
+    {
+      "gen": 21,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 23.12
+    },
+    {
+      "gen": 22,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 27.64
+    },
+    {
+      "gen": 23,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 32.87
+    },
+    {
+      "gen": 24,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 39.42
+    },
+    {
+      "gen": 25,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 20.36
+    },
+    {
+      "gen": 26,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 22.73
+    },
+    {
+      "gen": 27,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 28.26
+    },
+    {
+      "gen": 28,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 32.44
+    },
+    {
+      "gen": 29,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 39.02
+    },
+    {
+      "gen": 30,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 19.93
+    },
+    {
+      "gen": 31,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 23.72
+    },
+    {
+      "gen": 32,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 27.08
+    },
+    {
+      "gen": 33,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 33.22
+    },
+    {
+      "gen": 34,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 39.2
+    },
+    {
+      "gen": 35,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 20.28
+    },
+    {
+      "gen": 36,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 23.99
+    },
+    {
+      "gen": 37,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 27.55
+    },
+    {
+      "gen": 38,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 33.27
+    },
+    {
+      "gen": 39,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 40.79
+    },
+    {
+      "gen": 40,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 20.98
+    },
+    {
+      "gen": 41,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 23.93
+    },
+    {
+      "gen": 42,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 27.84
+    },
+    {
+      "gen": 43,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 34.13
+    },
+    {
+      "gen": 44,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 39.91
+    },
+    {
+      "gen": 45,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 47.09
+    },
+    {
+      "gen": 46,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 22.75
+    },
+    {
+      "gen": 47,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 27.89
+    },
+    {
+      "gen": 48,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 32.79
+    },
+    {
+      "gen": 49,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 40.08
+    },
+    {
+      "gen": 50,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 49.84
+    },
+    {
+      "gen": 51,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 23.59
+    },
+    {
+      "gen": 52,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 28.6
+    },
+    {
+      "gen": 53,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 34.09
+    },
+    {
+      "gen": 54,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 40.55
+    },
+    {
+      "gen": 55,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 48.16
+    },
+    {
+      "gen": 56,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 24.0
+    },
+    {
+      "gen": 57,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 27.4
+    },
+    {
+      "gen": 58,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 32.35
+    },
+    {
+      "gen": 59,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 37.38
+    },
+    {
+      "gen": 60,
+      "cases": 6125,
+      "fuzzed": 6000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 45.62
+    },
+    {
+      "gen": 61,
+      "cases": 4125,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 19.85
+    },
+    {
+      "gen": 62,
+      "cases": 4125,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 24.38
+    },
+    {
+      "gen": 63,
+      "cases": 4125,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 36.11
+    },
+    {
+      "gen": 64,
+      "cases": 4125,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 59.24
+    },
+    {
+      "gen": 65,
+      "cases": 4125,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 118.23
+    },
+    {
+      "gen": 66,
+      "cases": 4125,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 215.08
+    },
+    {
+      "gen": 67,
+      "cases": 4140,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 24.97
+    },
+    {
+      "gen": 68,
+      "cases": 4140,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 31.53
+    },
+    {
+      "gen": 69,
+      "cases": 4140,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 59.69
+    },
+    {
+      "gen": 70,
+      "cases": 4140,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 91.89
+    },
+    {
+      "gen": 71,
+      "cases": 4140,
+      "fuzzed": 4000,
+      "golden_failures": 0,
+      "violations": 0,
+      "divergences": 0,
+      "ratified": [],
+      "promoted": 0,
+      "seconds": 177.58
+    }
+  ]
+}

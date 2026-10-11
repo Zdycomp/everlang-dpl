@@ -1,0 +1,14 @@
+# The largest number in a list.
+#   ezrun.py ../examples/largest.ezr
+#   ezrun.py ../examples/largest.ezr --call 'largest([3, 9, 2])'
+#
+# Note what is NOT here: there is no modulo and no integer division in
+# the core, so divisibility -- and therefore FizzBuzz -- cannot be
+# written. `n / d * d == n` looks like it works and is always true,
+# because `/` is float division. See SEMANTICS.md section 7.
+
+def largest(xs) = if len(xs) == 1 then head(xs)
+                  else let rest = largest(tail(xs)) in
+                       if head(xs) > rest then head(xs) else rest
+
+def main() = largest([3, 17, 8, 42, 5])

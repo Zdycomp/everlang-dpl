@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ever \u2014 Start Here</title>
+<!--
+  ever-start.html \u2014 Ever / Tapestry
+  For somebody opening their first file.
+
+  Same engine as the rest of Ever. Same rules, same numbers. Different
+  words, and one thing at a time.
+
+  Hand written. No framework, no CDN, no install. Works offline.
+  Codric Enterprise \u00b7 Ricky (Dreid) \u00b7 2026
+-->
+<style>
+:root{
+  --paper:#f7f5ef; --card:#ffffff; --ink:#1b2430; --soft:#5f6b7a;
+  --line:#e3ded2; --go:#0d7a63; --go-soft:#e6f2ef;
+  --warn:#9a5b1e; --warn-soft:#fdf3e6; --stop:#a03828; --stop-soft:#fbecea;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:16px;line-height:1.6}
+.wrap{max-width:760px;margin:0 auto;padding:28px 20px 80px}
+header{margin-bottom:22px}
+h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+.sub{color:var(--soft);margin:0;font-size:17px}
+
+textarea{width:100%;min-height:190px;padding:14px;border:2px solid var(--line);
+  border-radius:10px;background:var(--card);color:var(--ink);
+  font-family:var(--mono);font-size:14px;line-height:1.6;resize:vertical}
+textarea:focus{outline:none;border-color:var(--go)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+button{font-family:var(--sans);font-size:15px;font-weight:600;padding:12px 22px;
+  border:2px solid var(--go);border-radius:9px;background:var(--go);color:#fff;
+  cursor:pointer}
+button.ghost{background:transparent;color:var(--go)}
+button:hover{filter:brightness(1.08)}
+button:focus-visible{outline:3px solid var(--go);outline-offset:2px}
+select{font-size:15px;padding:11px;border:2px solid var(--line);
+  border-radius:9px;background:var(--card);color:var(--ink)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:20px;margin-top:18px}
+.meter{height:14px;border-radius:99px;background:var(--line);overflow:hidden;
+  margin:10px 0 6px}
+.meter i{display:block;height:100%;width:0;background:var(--go);
+  border-radius:99px;transition:width .45s cubic-bezier(.2,.7,.3,1)}
+.headline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.headline b{font-size:20px}
+.pct{margin-left:auto;font-family:var(--mono);font-size:15px;color:var(--soft)}
+.note{color:var(--soft);margin:2px 0 0}
+
+.good{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.good p{margin:0 0 6px;font-size:13px;font-weight:700;color:var(--go);
+  text-transform:uppercase;letter-spacing:.07em}
+.good li{list-style:none;margin:3px 0;color:var(--ink)}
+.good li::before{content:"\u2713 ";color:var(--go);font-weight:700}
+
+.step{border-left:4px solid var(--go);background:var(--go-soft);
+  padding:16px 18px;border-radius:0 10px 10px 0;margin-top:16px}
+.step.safety{border-left-color:var(--stop);background:var(--stop-soft)}
+.kicker{font-size:12px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.09em;color:var(--soft);margin:0 0 6px}
+.step h3{margin:0 0 4px;font-size:19px}
+.where{font-family:var(--mono);font-size:13px;color:var(--soft);margin:0 0 10px}
+.step p{margin:0 0 10px}
+.label{font-weight:700;font-size:14px;display:block;margin-bottom:2px}
+pre{background:var(--card);border:1px solid var(--line);border-radius:8px;
+  padding:11px 13px;margin:5px 0 12px;overflow-x:auto;
+  font-family:var(--mono);font-size:13.5px;line-height:1.55}
+pre.was{border-left:3px solid var(--stop)}
+pre.now{border-left:3px solid var(--go)}
+.after{color:var(--soft);font-size:15px;margin-top:12px}
+.done{border-left-color:var(--go);background:var(--go-soft)}
+.remaining{font-size:14px;color:var(--soft);margin-top:12px}
+.copy{font-size:13px;padding:7px 13px;border-radius:7px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Paste your code. I'll help.</h1>
+  <p class="sub">One thing at a time. No jargon, no red walls.</p>
+</header>
+
+<textarea id="code" spellcheck="false" aria-label="Paste your code here"></textarea>
+
+<div class="row">
+  <button id="check">Check my code</button>
+  <button id="clear" class="ghost">Clear</button>
+  <select id="sample" aria-label="Try an example">
+    <option value="">Try an example\u2026</option>
+    <option value="c">C \u2014 a missing semicolon</option>
+    <option value="sql">SQL \u2014 something dangerous</option>
+    <option value="py">Python \u2014 a classic trap</option>
+    <option value="html">HTML \u2014 accessibility</option>
+    <option value="java">Java \u2014 the commonest crash</option>
+    <option value="good">Code with nothing wrong</option>
+  </select>
+</div>
+
+<div id="out"></div>
+</div>
+
+<script>
+"use strict";
+var E_ZERO = 0, E_CERTAIN = 256;
+var E_PI_WIDTH_WARN = 81;        // floor(256 / pi)
+var E_PI_WIDTH_ENUMERATE = 25;   // floor(256 / pi^2)
+var E_EMULATE_CEILING = 3;       // floor(pi)
+var E_EXECUTE_FLOOR = 128;
+
+function detect(code) {
+  var s = code.trim();
+  if (/^\s*<(!DOCTYPE|html|div|form|body|head|p|a|span|img)\b/im.test(s))
+    return "HTML";
+  if (/\b(SELECT|INSERT INTO|UPDATE|DELETE FROM|CREATE TABLE|ALTER TABLE|DROP TABLE)\b/i.test(s))
+    return "SQL";
+  if (s.indexOf("#include") !== -1) {
+    var cpp = ["iostream","std::","namespace","template<","class ","vector<","cout"];
+    for (var i = 0; i < cpp.length; i++)
+      if (s.indexOf(cpp[i]) !== -1) return "C++";
+    return "C";
+  }
+  if (/\b(public|private|protected)\s+(static\s+)?(class|void|int|String)\b/.test(s))
+    return "Java";
+  if (/\b(end|puts|require|attr_accessor|attr_reader)\b/.test(s) ||
+      /\bdo\s*\|/.test(s)) return "Ruby";
+  /* A bare C function with no include directive. Found by cross-checking
+     Layer 6 against Layer 2: both agreed on "Ever", and both were wrong. */
+  if (/^\s*(?:static\s+|const\s+|unsigned\s+)*(int|char|float|double|long|short|void|size_t)\s*\*?\s*\w+\s*\([^;]*\)\s*\{/m.test(s))
+    return "C";
+  if (/^\s*def\s+\w+\s*\(.*\)\s*(->.*)?:/m.test(s)) return "Python";
+  if (/^\s*(import|from)\s+\w+/m.test(s) && s.indexOf(":") !== -1)
+    return "Python";
+  return "Ever";
+}
+
+function F(kind, message, weight, fix) {
+  return { kind: kind, message: message, weight: weight, fix: fix || "" };
+}
+
+var VOID_TAGS = ["area","base","br","col","embed","hr","img","input",
+                 "link","meta","param","source","track","wbr"];
+
+/* Script, style and comment bodies are not markup. Found by running
+   Ever against its own interface: an <img> inside a JavaScript string is
+   sample data, not an image. A false positive that reaches Z is worse
+   than a missed finding, because it teaches the corpus a lie. */
+function markupOnly(code) {
+  return code
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "<scr" + "ipt><\/scr" + "ipt>")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "<style></style>");
+}
+
+function inspect(code, lang) {
+  if (lang === "HTML") code = markupOnly(code);
+  var out = [], lines = code.split("\n"), i, t, m, re;
+
+  if (lang === "C" || lang === "C++") {
+    for (i = 0; i < lines.length; i++) {
+      t = lines[i].trim();
+      if (!t || /^(\/\/|\/\*|\*|#)/.test(t)) continue;
+      if (/^\s*(int|char|float|double|long|short|void|unsigned|size_t)\b.*[^;{}\s]$/.test(t)
+          && !/[,\\)]$/.test(t))
+        out.push(F("error", "statement missing semicolon", 40, "append ;"));
+      if (/(?:\breturn\b[^;{}]*[^;{}\s]|[\w\])]\s*=[^;{}]*[^;{}\s])\s*\}/.test(t))
+        out.push(F("error", "statement missing semicolon before closing brace",
+                   40, "append ;"));
+      if ((t.split("(").length - 1) !== (t.split(")").length - 1))
+        out.push(F("error", "unbalanced parentheses", 50, "match ( with )"));
+      if (/\bgets\s*\(/.test(t))
+        out.push(F("error", "gets is unsafe, buffer overflow", 90,
+                   "use fgets with a bound"));
+    }
+    if (lang === "C" && /\bmalloc\s*\(/.test(code) && code.indexOf("free") === -1)
+      out.push(F("error", "malloc without matching free", 60,
+                 "pair every malloc with free"));
+    if (code.indexOf("#include") !== -1)
+      out.push(F("pattern", "header inclusion", 20));
+    if (/\bint\s+main\s*\(/.test(code)) {
+      out.push(F("pattern", "entry point declared", 25));
+      if (code.indexOf("return") === -1)
+        out.push(F("error", "main does not return", 30, "add return 0;"));
+    }
+    if (lang === "C++") {
+      if (/\bnew\b/.test(code) && !/\bdelete\b/.test(code) &&
+          code.indexOf("unique_ptr") === -1 && code.indexOf("shared_ptr") === -1)
+        out.push(F("error", "new without delete or smart pointer", 60,
+                   "prefer std::unique_ptr"));
+      if (code.indexOf("using namespace std") !== -1)
+        out.push(F("error", "using namespace std in header scope", 25,
+                   "qualify with std::"));
+      if (/\bclass\b/.test(code)) {
+        out.push(F("pattern", "class declared", 25));
+        if (/\bvirtual\b/.test(code) && !/virtual\s+~/.test(code))
+          out.push(F("error", "virtual method without virtual destructor",
+                     55, "declare virtual ~Class()"));
+      }
+      if (code.indexOf("unique_ptr") !== -1 || code.indexOf("shared_ptr") !== -1)
+        out.push(F("pattern", "RAII ownership", 30));
+    }
+  }
+
+  else if (lang === "Python") {
+    for (i = 0; i < lines.length; i++) {
+      t = lines[i].trim();
+      if (!t || t.charAt(0) === "#") continue;
+      if (/^\s*(def|class|if|elif|else|for|while|try|except|finally|with)\b/.test(lines[i])
+          && !/:$/.test(t) && t.indexOf("\\") === -1 && !/[,(]$/.test(t))
+        out.push(F("error", "block header missing colon", 45, "append :"));
+      if (lines[i].indexOf("\t") !== -1 && lines[i].indexOf("    ") !== -1)
+        out.push(F("error", "mixed tabs and spaces", 40, "use four spaces"));
+      if (/^\s*except\s*:\s*$/.test(lines[i]))
+        out.push(F("error", "bare except swallows everything", 50,
+                   "except SpecificError as e"));
+      if (/\beval\s*\(/.test(t))
+        out.push(F("error", "eval on untrusted input", 80,
+                   "use ast.literal_eval"));
+      if (/\bdef\s+\w+\s*\([^)]*=\s*(\[\]|\{\})/.test(t))
+        out.push(F("error", "mutable default argument", 55, "default to None"));
+    }
+    if (/^\s*def\s+/m.test(code)) out.push(F("pattern", "function defined", 20));
+    if (/->\s*\w+\s*:/.test(code))
+      out.push(F("pattern", "return type annotated", 30));
+    if (/:\s*(int|str|float|bool|List|Dict|Optional)/.test(code))
+      out.push(F("pattern", "parameters typed", 30));
+  }
+
+  else if (lang === "Ruby") {
+    var opens = (code.match(/\b(def|do|class|module|if|unless|case|begin|while)\b/g) || []).length;
+    var ends  = (code.match(/\bend\b/g) || []).length;
+    var inline = (code.match(/\S\s+(if|unless)\s+\S/g) || []).length;
+    var expected = Math.max(0, opens - inline);
+    if (ends < expected)
+      out.push(F("error", "missing end: " + expected + " opened, " + ends +
+                 " closed", 50, "add end"));
+    for (i = 0; i < lines.length; i++) {
+      t = lines[i].trim();
+      if (!t || t.charAt(0) === "#") continue;
+      if (/\beval\s*\(/.test(t))
+        out.push(F("error", "eval on untrusted input", 80, "avoid eval"));
+      if (/\brescue\s*$/.test(t))
+        out.push(F("error", "bare rescue swallows everything", 50,
+                   "rescue StandardError => e"));
+      if (/\$\w+/.test(t))
+        out.push(F("error", "global variable", 30,
+                   "prefer an instance variable"));
+    }
+    if (/\bdef\s+/.test(code)) out.push(F("pattern", "method defined", 20));
+    if (code.indexOf("attr_accessor") !== -1 || code.indexOf("attr_reader") !== -1)
+      out.push(F("pattern", "attribute accessor", 25));
+    if (/\bdo\s*\|/.test(code) || /\{\s*\|/.test(code))
+      out.push(F("pattern", "block with parameters", 25));
+    if (code.indexOf("freeze") !== -1)
+      out.push(F("pattern", "immutability asserted", 30));
+  }
+
+  else if (lang === "SQL") {
+    var up = code.toUpperCase();
+    if (/\bSELECT\s+\*/.test(up))
+      out.push(F("error", "SELECT * hides schema drift", 35,
+                 "name the columns"));
+    if (/\b(DELETE\s+FROM|UPDATE)\b/.test(up) && !/\bWHERE\b/.test(up))
+      out.push(F("error", "DELETE or UPDATE without WHERE", 95,
+                 "add a WHERE clause"));
+    if (/["']\s*\+\s*|%s\s*["']|\|\|\s*'/.test(code))
+      out.push(F("error", "string concatenation into SQL", 90,
+                 "use bound parameters"));
+    if (/\bDROP\s+TABLE\b/.test(up) && !/\bIF\s+EXISTS\b/.test(up))
+      out.push(F("error", "DROP TABLE without IF EXISTS", 60, "add IF EXISTS"));
+    if (/\bCREATE\s+TABLE\b/.test(up)) {
+      out.push(F("pattern", "table defined", 25));
+      if (!/\bPRIMARY\s+KEY\b/.test(up))
+        out.push(F("error", "table without primary key", 50,
+                   "declare a PRIMARY KEY"));
+    }
+    if (/\bJOIN\b/.test(up) && !/\bON\b/.test(up))
+      out.push(F("error", "JOIN without ON produces a cartesian product",
+                 85, "add ON"));
+    if (/\bINDEX\b/.test(up)) out.push(F("pattern", "index declared", 30));
+    if (/\bFOREIGN\s+KEY\b/.test(up))
+      out.push(F("pattern", "referential integrity", 30));
+    if (/\bTRANSACTION\b|\bBEGIN\b/.test(up))
+      out.push(F("pattern", "transactional boundary", 30));
+  }
+
+  else if (lang === "Java") {
+    for (i = 0; i < lines.length; i++) {
+      t = lines[i].trim();
+      if (!t || /^(\/\/|\*|\/\*)/.test(t)) continue;
+      if (/^[\w\s.<>\[\]]+=[^=].*[^;{}\s]$/.test(t) && !/[,(+]$/.test(t))
+        out.push(F("error", "statement missing semicolon", 40, "append ;"));
+      if (/\bcatch\s*\([^)]*\)\s*\{\s*\}/.test(t))
+        out.push(F("error", "empty catch block", 55, "log or rethrow"));
+      if (/==\s*"/.test(t) || /"\s*==/.test(t))
+        out.push(F("error", "string compared with ==", 60, "use .equals()"));
+    }
+    if (/\bnull\b/.test(code) &&
+        !/!=\s*null|==\s*null|Optional|@Nullable/.test(code))
+      out.push(F("error", "null used without a guard", 65,
+                 "check != null or use Optional"));
+    if (/\bthrows\b|\bthrow\s+new\b/.test(code) && code.indexOf("try") === -1)
+      out.push(F("error", "throw without any try boundary", 45,
+                 "wrap in try/catch"));
+    if (/\bpublic\s+class\b/.test(code))
+      out.push(F("pattern", "public class", 25));
+    if (code.indexOf("try") !== -1 && code.indexOf("catch") !== -1)
+      out.push(F("pattern", "exception handled", 30));
+    if (code.indexOf("final ") !== -1)
+      out.push(F("pattern", "immutability asserted", 25));
+    if (code.indexOf("Optional") !== -1)
+      out.push(F("pattern", "optional over null", 30));
+  }
+
+  else if (lang === "HTML") {
+    re = /<img\b[^>]*>/gi;
+    while ((m = re.exec(code)) !== null)
+      if (!/\balt\s*=/i.test(m[0]))
+        out.push(F("error", "img without alt text", 55, 'add alt=""'));
+    re = /<input\b[^>]*>/gi;
+    while ((m = re.exec(code)) !== null) {
+      if (!/\btype\s*=/i.test(m[0]))
+        out.push(F("error", "input without type", 45, 'add type="text"'));
+      if (!/\b(id|name|aria-label)\s*=/i.test(m[0]))
+        out.push(F("error", "input with no label anchor", 40,
+                   "add id and a matching label"));
+    }
+    re = /<a\b[^>]*target\s*=\s*["']_blank["'][^>]*>/gi;
+    while ((m = re.exec(code)) !== null)
+      if (m[0].indexOf("noopener") === -1)
+        out.push(F("error", "target=_blank without noopener", 50,
+                   'add rel="noopener noreferrer"'));
+    if (/<form\b/i.test(code)) {
+      out.push(F("pattern", "form element", 20));
+      if (!/\baction\s*=/i.test(code))
+        out.push(F("error", "form without action", 40, "add action="));
+    }
+    var opened = code.match(/<([a-zA-Z][a-zA-Z0-9]*)\b[^>/]*>/g) || [];
+    var closed = code.match(/<\/([a-zA-Z][a-zA-Z0-9]*)\s*>/g) || [];
+    var oc = {}, cc = {}, tag;
+    for (i = 0; i < opened.length; i++) {
+      tag = opened[i].replace(/<\s*([a-zA-Z0-9]+)[\s\S]*/, "$1").toLowerCase();
+      oc[tag] = (oc[tag] || 0) + 1;
+    }
+    for (i = 0; i < closed.length; i++) {
+      tag = closed[i].replace(/<\/\s*([a-zA-Z0-9]+)[\s\S]*/, "$1").toLowerCase();
+      cc[tag] = (cc[tag] || 0) + 1;
+    }
+    for (tag in oc) if (Object.prototype.hasOwnProperty.call(oc, tag)) {
+      if (VOID_TAGS.indexOf(tag) !== -1) continue;
+      if (oc[tag] > (cc[tag] || 0))
+        out.push(F("error", "unclosed <" + tag + ">", 50,
+                   "add </" + tag + ">"));
+    }
+    if (/<!DOCTYPE/i.test(code)) out.push(F("pattern", "doctype declared", 25));
+    if (/\blang\s*=/i.test(code))
+      out.push(F("pattern", "language declared", 25));
+    if (/\baria-\w+\s*=/i.test(code))
+      out.push(F("pattern", "aria attributes", 30));
+    if (/<(header|nav|main|footer|article|section)\b/i.test(code))
+      out.push(F("pattern", "semantic structure", 30));
+  }
+
+  return out;
+}
+
+
+/* ── the lessons, exported from teach.py so the words match exactly ── */
+var LESSONS = [{"m": "missing semicolon","t": "A line needs a semicolon at the end","w": "In this language every instruction ends with a semicolon. One of yours doesn't, so it runs into the next line and confuses the computer.","y": "The semicolon is a full stop. It's how the language knows one instruction finished and the next one began.","f": "Put a ; at the end of that line.","b": "return x + y","a": "return x + y;","s": false},{"m": "missing end","t": "Something was opened and never closed","w": "You started a block with def, do, if or class, and there's no matching end to close it.","y": "Ruby needs to know where a block stops. Without end it keeps reading and runs off the bottom of the file.","f": "Add end on its own line, lined up with the word that opened the block.","b": "def greet\n  puts \"hi\"","a": "def greet\n  puts \"hi\"\nend","s": false},{"m": "missing colon","t": "A line needs a colon at the end","w": "In Python, def, if, for and while all end with a colon before the indented block underneath.","y": "The colon is what says \"the next indented lines belong to this\". Without it Python doesn't know the block started.","f": "Add : at the end of that line.","b": "def greet(name)","a": "def greet(name):","s": false},{"m": "unclosed","t": "A tag was opened and never closed","w": "An HTML tag was opened but never closed, so everything after it gets swallowed into it.","y": "Browsers try to guess what you meant, and they often guess wrong. Closing it yourself removes the guesswork.","f": "Add the matching closing tag.","b": "<div><p>text</div>","a": "<div><p>text</p></div>","s": false},{"m": "unbalanced","t": "Brackets don't match up","w": "There are more opening brackets than closing ones, or the other way round.","y": "Every ( needs a ). The computer counts them, and if the count is off it can't tell where anything starts or stops.","f": "Count the brackets on that line and add the missing one.","b": "","a": "","s": false},{"m": "unterminated","t": "A piece of text was never closed","w": "A quote was opened and never closed, so the rest of the file is being read as text.","y": "Quotes come in pairs. Everything between them is text rather than instructions.","f": "Add the closing quote.","b": "name = \"Codric","a": "name = \"Codric\"","s": false},{"m": "without WHERE","t": "This would delete everything","w": "A DELETE or UPDATE with no WHERE line doesn't touch one row. It touches every row in the table.","y": "This is one of the most common ways real data gets destroyed, and it usually can't be undone.","f": "Add a WHERE line saying which rows you mean.","b": "DELETE FROM users","a": "DELETE FROM users WHERE id = 42","s": true},{"m": "concatenation into SQL","t": "Someone else could rewrite this query","w": "You're gluing text straight into a database command. Whatever a user types becomes part of the command.","y": "If someone types the right thing in a form, they can read or delete anything in your database. This has a name \u2014 SQL injection \u2014 and it's how a lot of real break-ins happen.","f": "Use a placeholder and pass the value separately.","b": "WHERE name = \"' + userName + '\"","a": "WHERE name = ?","s": true},{"m": "gets is unsafe","t": "This function can be used to break in","w": "gets() reads input with no limit on length. Type more than the space you set aside, and it writes straight past the end.","y": "This is a buffer overflow. It's how a lot of serious security holes work, and gets() is so unsafe it was removed from the C standard.","f": "Use fgets, which takes a size limit.","b": "gets(buf);","a": "fgets(buf, sizeof buf, stdin);","s": true},{"m": "null used without a guard","t": "This might not exist when you use it","w": "A value here can be null \u2014 meaning nothing at all \u2014 and it's being used without checking first.","y": "If it's null when you use it, the program stops immediately. This is the single most common crash in Java.","f": "Check it isn't null before you use it.","b": "return owner.equals(who);","a": "if (owner == null) return false;\nreturn owner.equals(who);","s": true},{"m": "eval","t": "This runs whatever text it's given","w": "eval takes text and runs it as code. If that text ever comes from someone else, they choose what your program does.","y": "It's the most direct way to hand control of your program to a stranger.","f": "Use a safe parser instead. For data, ast.literal_eval.","b": "eval(line)","a": "ast.literal_eval(line)","s": true},{"m": "DROP TABLE without IF EXISTS","t": "This will fail if the table is already gone","w": "DROP TABLE errors out when the table isn't there.","y": "Adding IF EXISTS makes it safe to run twice, which matters when scripts get re-run.","f": "Write DROP TABLE IF EXISTS instead.","b": "DROP TABLE audit;","a": "DROP TABLE IF EXISTS audit;","s": false},{"m": "cartesian","t": "This joins every row to every other row","w": "A JOIN without an ON line pairs every row in one table with every row in the other.","y": "Two tables of 1,000 rows become a million rows. It's slow, and the answer is wrong.","f": "Add ON saying which columns should match.","b": "FROM a JOIN b","a": "FROM a JOIN b ON a.id = b.a_id","s": false},{"m": "mutable default","t": "This list is shared between every call","w": "A list written as a default value is created once, not once per call. Every call adds to the same list.","y": "It's one of Python's genuine traps. The function works the first time and gets stranger every call after.","f": "Use None as the default and make the list inside.","b": "def collect(items=[]):","a": "def collect(items=None):\n    if items is None:\n        items = []","s": false},{"m": "compared with ==","t": "This compares locations, not words","w": "In Java, == on text asks whether they're the same object in memory, not whether they say the same thing.","y": "Two strings can read identically and still fail ==. It works in small tests and breaks in real use, which makes it hard to track down.","f": "Use .equals() to compare what they say.","b": "if (who == \"admin\")","a": "if (\"admin\".equals(who))","s": false},{"m": "bare except","t": "This hides every problem, including ones you'd want to know about","w": "A catch with no error type swallows everything, then carries on as if nothing happened.","y": "When something does go wrong you get no message and no clue where it came from.","f": "Name the error you're expecting.","b": "except:","a": "except ValueError as e:","s": false},{"m": "bare rescue","t": "This hides every problem","w": "rescue with no error type catches everything, including problems you'd want to see.","y": "Silent failure is harder to fix than a loud one.","f": "Name the error you're expecting.","b": "rescue","a": "rescue StandardError => e","s": false},{"m": "empty catch","t": "A problem is being caught and then ignored","w": "The catch block is empty, so when something fails nothing happens at all.","y": "The program keeps going in a broken state and you never find out why.","f": "At minimum, print it.","b": "catch (Exception e) {}","a": "catch (Exception e) { e.printStackTrace(); }","s": false},{"m": "without alt","t": "This image has no description","w": "An image with no alt text is invisible to screen readers and shows nothing when the image fails to load.","y": "People using screen readers get nothing at all. In many places it's also a legal requirement.","f": "Add alt with a short description.","b": "<img src=\"lock.png\">","a": "<img src=\"lock.png\" alt=\"Secure checkout\">","s": false},{"m": "input without type","t": "This box doesn't say what goes in it","w": "An input with no type is treated as plain text, so phones show the wrong keyboard and the browser can't check anything.","y": "Setting the type gets you a number pad for numbers, an email keyboard for emails, and free validation.","f": "Add type.","b": "<input placeholder=\"card number\">","a": "<input type=\"tel\" inputmode=\"numeric\" placeholder=\"card number\">","s": false},{"m": "no label anchor","t": "This box has no label","w": "There's nothing tying this input to a label, so a screen reader can't say what it's for.","y": "Placeholder text disappears the moment someone starts typing. A real label doesn't.","f": "Give the input an id and point a label at it.","b": "<input type=\"text\">","a": "<label for=\"card\">Card number</label>\n<input id=\"card\" type=\"text\">","s": false},{"m": "noopener","t": "This link gives the new page control of yours","w": "A link with target=\"_blank\" lets the page it opens reach back and change the page it came from.","y": "It can be used to swap your page for a fake one after someone clicks away. Two words close it.","f": "Add rel=\"noopener noreferrer\".","b": "<a href=\"/pay\" target=\"_blank\">","a": "<a href=\"/pay\" target=\"_blank\" rel=\"noopener noreferrer\">","s": false},{"m": "form without action","t": "This form doesn't say where it sends things","w": "A form with no action posts back to the same page, which is rarely what's meant.","y": "People fill it in, press the button, and nothing happens.","f": "Add action with the address it should send to.","b": "<form>","a": "<form action=\"/checkout\" method=\"post\">","s": false},{"m": "global variable","t": "This can be changed from anywhere","w": "A variable starting with $ is visible and changeable from every part of the program.","y": "When it holds the wrong value there's no way to narrow down which part of the code did it.","f": "Use an instance variable with @ instead.","b": "$cart_total = 0","a": "@cart_total = 0","s": false},{"m": "without delete","t": "Memory is taken and never given back","w": "Something is created with new and never released.","y": "The program uses more memory the longer it runs, until it runs out. This is a memory leak.","f": "Use a smart pointer that releases it for you.","b": "Shape* s = new Shape();","a": "auto s = std::make_unique<Shape>();","s": false},{"m": "malloc without","t": "Memory is taken and never given back","w": "malloc reserves memory and nothing ever frees it.","y": "The program grows until it runs out of memory.","f": "Call free() when you're done with it.","b": "char *p = malloc(64);","a": "char *p = malloc(64);\n/* ... */\nfree(p);","s": false},{"m": "virtual destructor","t": "Cleanup might get skipped","w": "A class with virtual methods needs a virtual destructor, or deleting through a base pointer skips the derived cleanup.","y": "Parts of the object never get tidied up and the memory leaks.","f": "Add a virtual destructor.","b": "class Shape { virtual void draw(); };","a": "class Shape {\n  virtual void draw();\n  virtual ~Shape() = default;\n};","s": false},{"m": "SELECT *","t": "This asks for every column, whatever they turn out to be","w": "SELECT * fetches all columns, so the answer changes shape whenever somebody changes the table.","y": "Code that worked yesterday breaks when a column is added, and it's slower than asking for what you need.","f": "Name the columns you want.","b": "SELECT * FROM accounts","a": "SELECT id, name FROM accounts","s": false},{"m": "without primary key","t": "This table has no way to tell rows apart","w": "There's no primary key, so two identical rows are indistinguishable.","y": "You can't reliably update or delete one row without one.","f": "Add a primary key column.","b": "CREATE TABLE t (name TEXT)","a": "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)","s": false},{"m": "mixed tabs and spaces","t": "Tabs and spaces are mixed together","w": "Some lines are indented with tabs and others with spaces. They look the same and aren't.","y": "Python decides what belongs to what by indentation, so this produces errors that are invisible on screen.","f": "Use four spaces everywhere.","b": "","a": "","s": false},{"m": "main does not return","t": "The program never says how it went","w": "main has no return, so it never reports whether it succeeded.","y": "Other programs check that number to decide what to do next.","f": "Add return 0; at the end for success.","b": "int main() { }","a": "int main() {\n    return 0;\n}","s": false},{"m": "namespace std","t": "This pulls in every standard name at once","w": "using namespace std brings in the entire standard library's names, which can collide with yours.","y": "Two things end up with the same name and the compiler picks one, sometimes the wrong one.","f": "Write std:: where you need it.","b": "using namespace std;\ncout << x;","a": "std::cout << x;","s": false}];
+
+var BANDS = [
+  [0,   "Just getting started", "There's a fair bit to fix here. Everyone starts here."],
+  [40,  "Early days",           "This needs work, but the shape of it is there."],
+  [90,  "Getting there",        "Most of it holds up. A couple of things left."],
+  [128, "This will run",        "Nothing here would stop it working."],
+  [180, "Solid",                "This is in good shape."],
+  [230, "Really solid",         "Hard to fault this."],
+  [256, "Verified",             "Tested and proven, not just written."]
+];
+
+var PRAISE = {
+  "header inclusion":"you brought in the tools you need",
+  "entry point declared":"your program has a clear starting point",
+  "function defined":"you're using functions, which keeps things tidy",
+  "method defined":"you're using methods, which keeps things tidy",
+  "return type annotated":"you said what comes back \u2014 that helps",
+  "parameters typed":"you said what goes in \u2014 that helps a lot",
+  "class declared":"you're grouping related things together",
+  "public class":"you're grouping related things together",
+  "exception handled":"you're handling things that can go wrong",
+  "immutability asserted":"you're marking things that shouldn't change",
+  "optional over null":"you're avoiding null \u2014 good instinct",
+  "RAII ownership":"cleanup is handled for you here \u2014 good choice",
+  "attribute accessor":"clean way to expose values",
+  "block with parameters":"nice use of blocks",
+  "doctype declared":"you told the browser what this is",
+  "language declared":"you set the language \u2014 screen readers need that",
+  "aria attributes":"you're thinking about accessibility",
+  "semantic structure":"your page structure is meaningful, not just boxes",
+  "form element":"you're collecting input properly",
+  "table defined":"your data has a shape",
+  "index declared":"you thought about speed",
+  "referential integrity":"your tables know how they relate",
+  "transactional boundary":"you're keeping changes together"
+};
+
+function lessonFor(msg){
+  var m = msg.toLowerCase();
+  for (var i=0;i<LESSONS.length;i++)
+    if (m.indexOf(LESSONS[i].m.toLowerCase()) >= 0) return LESSONS[i];
+  return null;
+}
+function bandFor(c){
+  var out = BANDS[0];
+  for (var i=0;i<BANDS.length;i++) if (c >= BANDS[i][0]) out = BANDS[i];
+  return out;
+}
+function praiseFor(p){
+  var k = p.toLowerCase();
+  for (var key in PRAISE) if (k.indexOf(key) >= 0) return PRAISE[key];
+  return p;
+}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+  .replace(/>/g,"&gt;");}
+
+/* Learn mode: a beginner is never shown a bare zero. If the checker
+   gave up, show the effort and say the giving-up was ours. */
+function review(code){
+  var lang = detect(code);
+  var f = inspect(code, lang);
+  var errors = [], patterns = [], i;
+  for (i=0;i<f.length;i++) (f[i].kind==="error"?errors:patterns).push(f[i]);
+
+  var base = 128, gaveUp = errors.length > E_EMULATE_CEILING;
+  for (i=0;i<patterns.length;i++) base += patterns[i].weight;
+  for (i=0;i<errors.length;i++)   base -= errors[i].weight;
+  if (gaveUp) base = Math.max(1, 128 - 20*errors.length);
+  var conf = Math.max(1, Math.min(E_CERTAIN-1, base));
+
+  var steps = errors.map(function(e){
+    var L = lessonFor(e.message);
+    return {lesson:L, msg:e.message, hint:e.fix||"", line:e.line||1,
+            weight:e.weight, safety: !!(L && L.s)};
+  });
+  /* safety first, then by cost. point them at what would hurt. */
+  steps.sort(function(a,b){
+    if (a.safety !== b.safety) return a.safety ? -1 : 1;
+    return b.weight - a.weight;
+  });
+
+  return {lang:lang, conf:conf, pct:Math.round(100*conf/E_CERTAIN),
+          steps:steps, good:patterns.map(function(p){return praiseFor(p.message);}),
+          gaveUp:gaveUp};
+}
+
+function render(r){
+  var b = bandFor(r.conf);
+  var note = r.gaveUp
+    ? "I couldn't work out part of this one. That's on me as much as you \u2014 start with the fix below."
+    : b[2];
+
+  var h = '<div class="card">';
+  h += '<div class="headline"><b>'+esc(b[1])+'</b>';
+  h += '<span class="pct">'+esc(r.lang)+' \u00b7 '+r.pct+'%</span></div>';
+  h += '<div class="meter"><i style="width:'+r.pct+'%"></i></div>';
+  h += '<p class="note">'+esc(note)+'</p>';
+
+  if (r.good.length){
+    h += '<div class="good"><p>Already working</p><ul>';
+    for (var i=0;i<Math.min(3,r.good.length);i++)
+      h += '<li>'+esc(r.good[i])+'</li>';
+    h += '</ul></div>';
+  }
+  h += '</div>';
+
+  if (!r.steps.length){
+    h += '<div class="step done"><p class="kicker">All clear</p>';
+    h += '<h3>Nothing to fix here.</h3>';
+    h += '<p>This one holds up. Try changing something and check again '
+       + 'to see what happens \u2014 breaking things on purpose is a good '
+       + 'way to learn.</p></div>';
+    return h;
+  }
+
+  var s = r.steps[0], left = r.steps.length - 1;
+  h += '<div class="step'+(s.safety?' safety':'')+'">';
+  h += '<p class="kicker">One thing at a time'
+     + (left ? ' \u00b7 '+left+' more after this' : '')+'</p>';
+  if (s.safety) h += '<p><b>\u26a0 This one matters more than the others.</b></p>';
+  h += '<h3>'+esc(s.lesson ? s.lesson.t : s.msg)+'</h3>';
+  h += '<p class="where">around line '+s.line+'</p>';
+
+  if (s.lesson){
+    h += '<p>'+esc(s.lesson.w)+'</p>';
+    h += '<p><span class="label">Why it matters</span>'+esc(s.lesson.y)+'</p>';
+    h += '<p><span class="label">What to do</span>'+esc(s.lesson.f)+'</p>';
+    if (s.lesson.b){
+      h += '<span class="label">You wrote</span>';
+      h += '<pre class="was">'+esc(s.lesson.b)+'</pre>';
+      h += '<span class="label">Change it to</span>';
+      h += '<pre class="now" id="fixnow">'+esc(s.lesson.a)+'</pre>';
+      h += '<button class="ghost copy" id="copyfix">Copy the fix</button>';
+    }
+  } else {
+    h += '<p>'+esc(s.msg)+'</p>';
+    if (s.hint) h += '<p><span class="label">Try</span>'+esc(s.hint)+'</p>';
+  }
+  h += '<p class="after">Fix that one, then press check again. '
+     + 'The rest can wait.</p></div>';
+  return h;
+}
+
+var SAMPLES = {
+  c:'int add(int x, int y) { return x + y }',
+  sql:'DELETE FROM users',
+  py:'def collect(items=[]):\n    items.append(1)\n    return items',
+  html:'<div>\n  <img src="lock.png">\n</div>',
+  java:'public class Account {\n  void show() {\n    String owner = null;\n    System.out.println(owner.length());\n  }\n}',
+  good:'def add(x: int, y: int) -> int:\n    return x + y'
+};
+
+var $ = function(i){return document.getElementById(i);};
+
+function go(){
+  var code = $("code").value.trim();
+  if (!code){ $("out").innerHTML =
+    '<div class="card"><p class="note">Paste some code above, or pick an '
+    + 'example, and press check.</p></div>'; return; }
+  $("out").innerHTML = render(review(code));
+  var btn = $("copyfix");
+  if (btn) btn.addEventListener("click", function(){
+    var t = $("fixnow").textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(t);
+    btn.textContent = "Copied";
+  });
+}
+
+$("check").addEventListener("click", go);
+$("clear").addEventListener("click", function(){
+  $("code").value = ""; $("out").innerHTML = ""; $("code").focus();
+});
+$("sample").addEventListener("change", function(){
+  if (SAMPLES[this.value]){ $("code").value = SAMPLES[this.value]; go(); }
+  this.value = "";
+});
+$("code").addEventListener("keydown", function(e){
+  if ((e.metaKey||e.ctrlKey) && e.key === "Enter") go();
+});
+</script>
+</body>
+</html>

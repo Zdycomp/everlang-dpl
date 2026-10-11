@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.debugpy",
+    "ms-vscode.cpptools",
+    "vscjava.vscode-java-pack",
+    "shopify.ruby-lsp",
+    "ms-vscode-remote.remote-containers"
+  ]
+}

@@ -1,0 +1,5 @@
+# Basic literal expressions
+42
+"hello"
+true
+false

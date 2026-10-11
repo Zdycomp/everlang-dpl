@@ -1,0 +1,3 @@
+tags=logic,loops,indexing,crossbackend
+description=Boolean short-circuit, loops, indexing/field access — the constructs just brought to full parity across all four transpiler backends
+exit_code=0

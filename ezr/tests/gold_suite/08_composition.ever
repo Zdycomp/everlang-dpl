@@ -1,0 +1,12 @@
+# 08_composition.ever
+# Composed expressions: function of function, arithmetic of calls.
+
+def inc(n)  = n + 1
+def dec(n)  = n - 1
+def twice(n) = n * 2
+
+ever pipeline = twice(inc(dec(21)))
+ever chain    = inc(inc(inc(0)))
+
+show pipeline
+show chain

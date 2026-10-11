@@ -1,0 +1,12 @@
+# 03_if_then_else.ever
+# Conditional expressions. The branch taken must agree.
+
+let n = 7
+
+ever result   = if n > 5 then 42 else 0
+ever fallback = if n > 100 then 99 else -1
+ever nested   = if n > 0 then (if n > 5 then 2 else 1) else 0
+
+show result
+show fallback
+show nested

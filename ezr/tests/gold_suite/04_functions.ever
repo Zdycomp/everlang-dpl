@@ -1,0 +1,16 @@
+# 04_functions.ever
+# Function definition and application.
+
+def double(x) = x * 2
+def square(n) = n * n
+def add(a, b) = a + b
+
+ever r1 = double(21)
+ever r2 = square(7)
+ever r3 = add(17, 25)
+ever r4 = double(square(3))
+
+show r1
+show r2
+show r3
+show r4

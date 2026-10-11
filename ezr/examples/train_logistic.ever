@@ -1,0 +1,47 @@
+# Training a real model.
+#
+# sigmoid and mse aren't decoration here — they're wired into the same
+# trust system as everything else in the language. This trains a 1D
+# logistic regression by gradient descent (anchored recursion carries
+# the weight across epochs, since a for-loop only reports its last
+# iteration's value, not a running update). Then one label is marked
+# unmeasured, and the ENTIRE trained model correctly comes back as z —
+# not a number quietly computed from the nine data points that WERE
+# there. A model can't honestly claim to have learned from data it
+# didn't have.
+
+def predict(w, x) = sigmoid(w * x)
+
+def grad_term(w, xs, ys, i) =
+    (sigmoid(w * xs[i]) - ys[i]) * sigmoid(w * xs[i]) *
+    (1 - sigmoid(w * xs[i])) * xs[i]
+
+def grad_sum(w, xs, ys, i) =
+    if i < 0 then 0 else grad_term(w, xs, ys, i) + grad_sum(w, xs, ys, i - 1)
+
+def update(w, xs, ys, lr) = w - lr * 0.5 * grad_sum(w, xs, ys, 3)
+
+def train(w, xs, ys, lr, epoch) =
+    if epoch <= 0 then w
+    else train(update(w, xs, ys, lr), xs, ys, lr, epoch - 1)
+
+let xs = [1, 2, 3, 4]
+let ys = [0, 0, 1, 1]
+
+ever trained_w = train(0.1, xs, ys, 0.5, 20)
+ever p1 = predict(trained_w, 1)
+ever p4 = predict(trained_w, 4)
+ever preds = [predict(trained_w, 1), predict(trained_w, 2),
+              predict(trained_w, 3), predict(trained_w, 4)]
+ever loss = mse(preds, ys)
+
+# same training run, one label never recorded
+let unmeasured_label = z
+let ys_gap = [0, 0, 1, unmeasured_label]
+ever trained_w_gap = train(0.1, xs, ys_gap, 0.5, 20)
+
+show trained_w
+show p1
+show p4
+show loss
+show trained_w_gap

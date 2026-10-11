@@ -1,0 +1,125 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Gate: everything (run_all.py)",
+      "detail": "All five legs: Python, SQL, C++, Java, and the ezr lineage's 29 suites. Java needs JDK 25.",
+      "type": "shell",
+      "command": "python3 run_all.py",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Gate: Python + SQL only",
+      "detail": "No g++ or Maven needed.",
+      "type": "shell",
+      "command": "python3 run_all.py --skip-native",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests: pytest (same as the Testing view)",
+      "detail": "Every unit test plus one item per gate suite.",
+      "type": "shell",
+      "command": "python3 -m pytest -q -rs",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "ezr: gate (29 suites)",
+      "type": "shell",
+      "command": "python3 tests/run_all.py",
+      "options": { "cwd": "${workspaceFolder}/ezr" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "ezr: run.sh (all layers)",
+      "type": "shell",
+      "command": "./run.sh",
+      "options": { "cwd": "${workspaceFolder}/ezr" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "ezr: algebra parity (verbose)",
+      "detail": "C, Python, Ruby and Java must agree.",
+      "type": "shell",
+      "command": "python3 tests/algebra_parity.py -v",
+      "options": { "cwd": "${workspaceFolder}/ezr" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "ezr: Java RuntimeTest",
+      "type": "shell",
+      "command": "bash build.sh && env -u JAVA_TOOL_OPTIONS java -cp out com.codric.ezr.RuntimeTest",
+      "options": { "cwd": "${workspaceFolder}/ezr/5-runtime-java" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "ezr C: kitchen sink under ASan/UBSan",
+      "detail": "Fails on any memory error, leak, or undefined behavior.",
+      "type": "shell",
+      "command": "gcc -std=c99 -g -fsanitize=address,undefined -fno-sanitize-recover=all -o /tmp/ev_ks_asan 0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && /tmp/ev_ks_asan",
+      "options": { "cwd": "${workspaceFolder}/ezr" },
+      "group": "test",
+      "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}/ezr"] }
+    },
+    {
+      "label": "ezr C: build kitchen sink (debug)",
+      "type": "shell",
+      "command": "gcc -std=c99 -g -O0 -o /tmp/ev_ks_dbg 0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm",
+      "options": { "cwd": "${workspaceFolder}/ezr" },
+      "group": "build",
+      "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}/ezr"] }
+    },
+    {
+      "label": "C++: make test",
+      "type": "shell",
+      "command": "make test",
+      "options": { "cwd": "${workspaceFolder}/1-phase-cpp" },
+      "group": "test",
+      "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}/1-phase-cpp"] }
+    },
+    {
+      "label": "C++: build test driver (debug)",
+      "detail": "Builds bin/verify_particle, then the test driver with -g -O0.",
+      "type": "shell",
+      "command": "make all && g++ -std=c++17 -g -O0 -o /tmp/test_verify_particle_dbg tests/test_verify_particle.cpp",
+      "options": { "cwd": "${workspaceFolder}/1-phase-cpp" },
+      "group": "build",
+      "problemMatcher": { "base": "$gcc", "fileLocation": ["relative", "${workspaceFolder}/1-phase-cpp"] }
+    },
+    {
+      "label": "Java: mvn test",
+      "detail": "Needs JDK 25 (the pom sets release 25).",
+      "type": "shell",
+      "command": "mvn -q -f 5-runtime-java/pom.xml test",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Python: pyflakes (everlang_standalone)",
+      "type": "shell",
+      "command": "python3 -m pyflakes everlang_standalone",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "ezr: run current .ever/.ezr file",
+      "type": "shell",
+      "command": "./ever \"${file}\"",
+      "options": { "cwd": "${workspaceFolder}/ezr" },
+      "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+      "problemMatcher": []
+    }
+  ]
+}

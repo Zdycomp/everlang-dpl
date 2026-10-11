@@ -1,0 +1,96 @@
+# earned_trust.ever — the same answer, at five different prices.
+#
+# Every value in Ever carries how far it is believed, out of 256. The
+# execute floor is 128: below it the language has given you a number but
+# not permission to act on it. This program's answer never changes. What
+# changes is what the answer is worth, and you change that by supplying
+# evidence from OUTSIDE the program — which is the whole idea. Evidence
+# is not something source code gets to assert about itself.
+#
+# Compound growth at 10% a period. `n` strictly decreases in the
+# self-call, so the semantic pass can prove this terminates — which is
+# what makes it eligible to be anchored, further down.
+
+def growth(p, n) = if n <= 0 then p else growth(p * 11 / 10, n - 1)
+
+def main() = growth(100, 3)
+
+# ── evidence earns confidence ─────────────────────────────────────────
+#
+# Every line below was run to produce the number beside it.
+#
+#   $ ezrun.py examples/earned_trust.ever --call 'growth(100, 3)'
+#   133.1  @ 120/256
+#
+# 120 is [DEF]: a definition is a claim, not a verification, and it
+# enters below the floor. Nothing has checked this code. Now supply
+# witnesses — cases you claim it already gets right:
+#
+#   ... --call 'growth(100, 3)' -x 'growth(100, 0) = 100'
+#   133.1  @ 120/256        one witness is not yet enough
+#
+#   ... -x 'growth(100, 0) = 100' -x 'growth(100, 1) = 110'
+#   133.1  @ 183/256        two hold, and 183 clears the floor
+#
+#   ... -x 'growth(100, 0) = 100' -x 'growth(100, 1) = 110' \
+#       -x 'growth(100, 2) = 121'
+#   133.1  @ 217/256        three hold
+#
+# Be wrong about one and the language notices, without being told which:
+#
+#   ... -x 'growth(100, 0) = 100' -x 'growth(100, 1) = 110' \
+#       -x 'growth(100, 2) = 999'
+#   133.1  @ 122/256        two of three held, and 122 is back below
+#
+# ── what you cannot do ────────────────────────────────────────────────
+#
+# State the same case three times and you have stated one witness three
+# times, not three witnesses. Corroboration creates nothing:
+#
+#   ... -x 'growth(100, 0) = 100' -x 'growth(100, 0) = 100' \
+#       -x 'growth(100, 0) = 100'
+#   133.1  @ 120/256
+#
+# Give one case two different answers and the evidence is refused
+# outright, because evidence that contradicts itself is not evidence:
+#
+#   ... -x 'growth(100, 0) = 100' -x 'growth(100, 0) = 999'
+#   ezrun: --example 'growth(100, 0) = 999': growth(100, 0) was already
+#          given 100 as its answer. ...                        [exit 2]
+#
+# And evidence for a callee does not launder an unverified caller. Run
+# the program through main() with growth fully evidenced and the answer
+# is still capped, because main() is the thing that produced it and
+# nobody has checked main():
+#
+#   $ ezrun.py examples/earned_trust.ever \
+#       -x 'growth(100, 0) = 100' -x 'growth(100, 1) = 110' \
+#       -x 'growth(100, 2) = 121'
+#   133.1  @ 120/256
+#
+# That is [APP] — min(c_f, c_args, c_result) — doing exactly its job.
+#
+# ── and then earn depth ───────────────────────────────────────────────
+#
+# Unanchored recursion stops at floor(pi) = 3. Twenty periods is past it:
+#
+#   $ ezrun.py examples/earned_trust.ever -d 3 --call 'growth(100, 20)'
+#   Z(unbounded) — depth ceiling 3 exceeded                    [exit 1]
+#
+# Anchoring lifts the ceiling, and is refused twice over: once if the
+# function has not cleared the execute floor, and once if no parameter
+# can be shown to decrease. Confidence proves trust, not termination —
+# a function can sit at 240/256 and still loop forever.
+#
+#   $ ezrun.py examples/earned_trust.ever -d 3 --call 'growth(100, 20)' \
+#       -x 'growth(100, 0) = 100' -x 'growth(100, 1) = 110' \
+#       -x 'growth(100, 2) = 121' -a growth
+#   672.7499949325598  @ 217/256
+#
+# ── both runners ──────────────────────────────────────────────────────
+#
+# This program sits in the subset the two lineages share, so the Java
+# runtime — a separate implementation with no shared code — agrees:
+#
+#   $ 5-runtime-java/ezr examples/earned_trust.ever
+#   133.1  @ 120/256

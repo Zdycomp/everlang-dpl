@@ -1,0 +1,126 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "EZR: run current file (auto-detect lineage)",
+      "detail": "One command for .ever or .ezr -- ./ever picks the runner by extension.",
+      "type": "shell",
+      "command": "./ever",
+      "args": [
+        "${file}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "EZR: verify everything",
+      "detail": "All twelve layers \u2014 C, C++, Python, Ruby, SQL, the forge.",
+      "type": "shell",
+      "command": "./run.sh",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "EZR: forge tests",
+      "detail": "Layer 7 only \u2014 61 assertions over all sixteen front ends.",
+      "type": "shell",
+      "command": "python3 forge_test.py",
+      "options": {
+        "cwd": "${workspaceFolder}/7-forge"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "EZR: forge \u2014 converge",
+      "detail": "Run until nothing is left to settle.",
+      "type": "shell",
+      "command": "python3 -u forge.py",
+      "options": {
+        "cwd": "${workspaceFolder}/7-forge"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "EZR: forge \u2014 exploration cycles",
+      "detail": "Run exactly N cycles at a fixed budget, rotating fuzz depth.",
+      "type": "shell",
+      "command": "python3 -u forge.py --cycles ${input:cycles} --cycle-budget ${input:budget} --depths 3,4,5,6,7 --seed ${input:seed}",
+      "options": {
+        "cwd": "${workspaceFolder}/7-forge"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "EZR: re-emit GRAMMAR.ebnf",
+      "detail": "Regenerate the grammar from the chart parser's rule table.",
+      "type": "shell",
+      "command": "python3 grammar_doc.py",
+      "options": {
+        "cwd": "${workspaceFolder}/7-forge"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "EZR: run the pipeline demo",
+      "detail": "Lexer, parser, semantic pass and execution on one program.",
+      "type": "shell",
+      "command": "python3 syntax.py",
+      "options": {
+        "cwd": "${workspaceFolder}/2-interpreter-python"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "EZR: serve the live interpreter",
+      "detail": "Then open http://localhost:8088/ezr-live.html",
+      "type": "shell",
+      "command": "python3 -m http.server 8088 --directory 6-interface-html",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "cycles",
+      "type": "promptString",
+      "description": "How many cycles?",
+      "default": "10"
+    },
+    {
+      "id": "budget",
+      "type": "promptString",
+      "description": "Programs per cycle",
+      "default": "6000"
+    },
+    {
+      "id": "seed",
+      "type": "promptString",
+      "description": "Seed base",
+      "default": "777"
+    }
+  ]
+}

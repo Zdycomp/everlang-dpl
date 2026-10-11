@@ -1,0 +1,61 @@
+# readings.ever — a summary over a list of sensor readings.
+#
+#   python3 2-interpreter-python/ever_cli.py run examples/readings.ever
+#
+# The same program as readings.ezr, in the grammar `ever run` actually
+# speaks. The two lineages still split on binding — `let x = v in body`
+# is an expression in the forge's core, `let x = v` is a statement here,
+# and `ever run` has no `in` at all — so this file still will not run
+# on `ezrun.py`, whose evaluator now speaks the CORE side of that split
+# but was never taught v4.10's statement grammar. readings.ezr, in the
+# other direction, now runs on both. See CORE.md.
+#
+# Two things worth watching.
+#
+# There is no `len`, `head` or `tail` here: v4.10's builtins are dot,
+# exp, mse and sigmoid, so walking a list means indexing it. That is a
+# real difference, not a shorthand.
+#
+# And the recursion counts DOWN, which is load bearing rather than
+# stylistic. Anchoring needs a parameter that strictly decreases in
+# every self-call; an index counting up has none, so it stays capped at
+# floor(pi) = 3 and a six-element list comes back z. Measured:
+#
+#   def up(a, i, n) = if i >= n then 0 else a[i] + up(a, i + 1, n)
+#   up(xs, 0, 6)   ->  z [0/256]        i increases; nothing decreases
+#   down(xs, 5)    ->  63 [256/256]     i decreases; anchored, runs
+#
+# The language will tell you this itself if you ask it through ezrun:
+# the refusal names the parameter that went the wrong way.
+
+let readings = [12, 7, 19, 3, 14, 8]
+
+def total(xs, i)    = if i < 0 then 0 else xs[i] + total(xs, i - 1)
+
+def biggest(xs, i)  = if i <= 0 then xs[0]
+                      else (if xs[i] > biggest(xs, i - 1)
+                            then xs[i] else biggest(xs, i - 1))
+
+def smallest(xs, i) = if i <= 0 then xs[0]
+                      else (if xs[i] < smallest(xs, i - 1)
+                            then xs[i] else smallest(xs, i - 1))
+
+ever count   = 6
+ever sum     = total(readings, 5)
+ever mean    = sum / count
+ever hi      = biggest(readings, 5)
+ever lo      = smallest(readings, 5)
+ever span    = hi - lo
+
+# Reading past the end is not an error to be caught, it is a value: z,
+# at 0/256. It can be carried, stored and compared like any other — and
+# anything computed from it stays z, which is the point.
+ever missing = readings[9]
+
+show count
+show sum
+show mean
+show hi
+show lo
+show span
+show missing
