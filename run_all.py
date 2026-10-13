@@ -8,6 +8,7 @@ phase's own test suite in its own toolchain and reports a summary.
 
 Exits non-zero if any phase fails.
 """
+import os
 import shutil
 import subprocess
 import sys
@@ -16,10 +17,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
-def run(name, cmd, cwd=None):
+def jdk25_env():
+    """5-runtime-java compiles to release 25; use a JDK 25 if one is installed."""
+    for home in sorted(Path("/usr/lib/jvm").glob("java-25-*")) + [Path("/usr/lib/jvm/jdk-25")]:
+        if (home / "bin" / "java").is_file():
+            env = dict(os.environ, JAVA_HOME=str(home))
+            env["PATH"] = f"{home / 'bin'}{os.pathsep}{env.get('PATH', '')}"
+            return env
+    return None
+
+
+def run(name, cmd, cwd=None, env=None):
     print(f"\n=== {name} ===")
     print(f"$ {' '.join(cmd)}" + (f"  (in {cwd})" if cwd else ""))
-    result = subprocess.run(cmd, cwd=cwd or ROOT)
+    result = subprocess.run(cmd, cwd=cwd or ROOT, env=env)
     ok = result.returncode == 0
     print(f"--- {name}: {'PASS' if ok else 'FAIL'} (exit {result.returncode}) ---")
     return ok
@@ -56,6 +67,7 @@ def main():
                 "java-runtime (5-runtime-java)",
                 ["mvn", "-q", "-f", "5-runtime-java/pom.xml", "test"],
                 cwd=ROOT,
+                env=jdk25_env(),
             )
         else:
             print("\n=== java-runtime (5-runtime-java) ===\nSKIPPED: mvn not found")
