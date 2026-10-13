@@ -30,6 +30,7 @@ Both the C++ and SQL legs are optional at runtime — if either is missing/unbui
 3. **TAC preservation.** Changes to `ir.py`, `tac.c`, or any optimizer must keep basic blocks well-formed (single entry, terminator-ended, valid jump targets) and evaluation frames consistent.
 4. **No invented features.** Behavior must trace to `ezr/SEMANTICS.md` or existing code/README. Memory-safety (ownership, lifetimes, bounds) must be explicit at compile time.
 5. **Stay minimal and match surrounding style.**
+6. **Terse replies.** No explanations, recaps or narration. Do the work; report the result in one line.
 
 ## Multi-agent team (`.claude/agents/`)
 Delegate to the agent that owns the phase; for cross-phase changes, start with `architect`.
