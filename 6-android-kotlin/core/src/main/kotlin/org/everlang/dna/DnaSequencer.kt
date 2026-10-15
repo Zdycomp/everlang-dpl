@@ -48,7 +48,7 @@ internal class DnaLexer(rawSequence: String) {
 
     fun errors(): List<BaseToken> = tokens.filter { !it.valid }
 
-    private fun projectChar(cp: Int): Char = if (cp <= 0xFFFF) cp.toChar() else '�'
+    private fun projectChar(cp: Int): Char = if (cp <= 0xFFFF) cp.toChar() else '\uFFFD'
 }
 
 /** Mirrors sequencer.DnaParser: pairs every token, groups triplets, keeps the trailing remainder. */
@@ -104,6 +104,9 @@ object DnaSequencer {
      *
      * gcContent is the share of G and C among the valid bases, or null when there are no valid
      * bases.
+     *
+     * Indices count code points. A valid surrogate pair is one token here, but two tokens in CPython;
+     * see [PyText] for that divergence.
      */
     fun run(raw: String): SequenceResult {
         val lexer = DnaLexer(raw)

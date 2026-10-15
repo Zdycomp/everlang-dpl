@@ -6,7 +6,8 @@ package org.everlang.dna
  *
  * The gate is stored as str.upper().strip(). The input is also str.upper().strip(), so only
  * leading and trailing whitespace is removed and interior whitespace counts as a position that
- * never matches. Lengths are counted in code points.
+ * never matches. Lengths are counted in code points, so a valid surrogate pair counts once. CPython
+ * counts the two halves of such a pair separately; see [PyText] for that divergence.
  */
 class BioPhaseEngine(targetGate: String) {
     /** The normalised gate, for example "  atcg \n" becomes "ATCG". */

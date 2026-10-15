@@ -154,20 +154,20 @@ def strand_canon(res):
 # the reference runtime rather than typed by hand.
 WS = [chr(cp) for cp in range(0x10000) if chr(cp).isspace()]
 BASES = "ATCGatcg"
-JUNK = ["X", "N", "-", "*", "#", "1", "0", "%", ".", "/", "é"]
+JUNK = ["X", "N", "-", "*", "#", "1", "0", "%", ".", "/", "\u00e9"]
 HOSTILE = [
-    "​", "﻿", "́", "ͅ", "ι", "Ａ", "ａ", "А", "а",
-    "Α", "ı", "ſ", "İ", "ŉ", "ǰ", "ß", "ẞ", "ẚ",
-    "ẗ", "ﬅ", "ﬁ", "ÿ", "µ", "\x00", "\x7f", "�", "Ⅰ",
-    "Ā", "ǅ", "\ud800", "\udfff", "\U0001f9ec", "\U00010428",
+    "\u200b", "\ufeff", "\u0301", "\u0345", "\u1fbe", "\uff21", "\uff41", "\u0410", "\u0430",
+    "\u0391", "\u0131", "\u017f", "\u0130", "\u0149", "\u01f0", "\u00df", "\u1e9e", "\u1e9a",
+    "\u1e97", "\ufb05", "\ufb01", "\u00ff", "\u00b5", "\x00", "\x7f", "\ufffd", "\u2160",
+    "\u0100", "\u01c5", "\ud800", "\udfff", "\U0001f9ec", "\U00010428",
 ]
 SPECIALS = [
-    "ß", "ßAAA", "AßT", "ﬅAAA", "AAAﬅ", "ẚAAA", "ẗAAA",
-    "AAAẗ", "ıAAA", "ſAAAA", "ͅAAA", "ﬁAAA", "ǰAAA", "ŉAAA",
-    "ιAAA", "aßt", "\U0001f9ecATCG", "ATCG\U0001f9ec", "A\U0001f9ecT", "\U00010428ACG",
+    "\u00df", "\u00dfAAA", "A\u00dfT", "\ufb05AAA", "AAA\ufb05", "\u1e9aAAA", "\u1e97AAA",
+    "AAA\u1e97", "\u0131AAA", "\u017fAAAA", "\u0345AAA", "\ufb01AAA", "\u01f0AAA", "\u0149AAA",
+    "\u1fbeAAA", "a\u00dft", "\U0001f9ecATCG", "ATCG\U0001f9ec", "A\U0001f9ecT", "\U00010428ACG",
     "\ud800", "\udfff", "A\ud800T", "\udfffACGT", "ACG\ud800", "\ud800\U0001f9ec",
-    "\U0001f9ec\udfff", "ATCG ", " ATCG", " ATCG ", "\u001cATCG\u001f",
-    "\u0085ATCG", "A\tT\nC\rG", "A\x0bT\x0cC", " ATCG ", "　ATCG ",
+    "\U0001f9ec\udfff", "ATCG\u00a0", "\u00a0ATCG", "\u2028ATCG\u2029", "\u001cATCG\u001f",
+    "\u0085ATCG", "A\tT\nC\rG", "A\x0bT\x0cC", "\u2007ATCG\u202f", "\u3000ATCG\u205f",
 ]
 
 

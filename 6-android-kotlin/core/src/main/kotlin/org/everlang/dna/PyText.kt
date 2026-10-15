@@ -13,10 +13,19 @@ package org.everlang.dna
  *  - String.toUpperCase(Locale.ROOT) agreed with CPython on every BMP code point on JDK 21. It is
  *    still not used, because Android ICU data varies by device and the tables fix the behavior.
  *
- * Supplementary code points (U+10000 and up) are left unchanged by [upper]. Nothing in the port
- * depends on that: the generator verified that no supplementary code point is whitespace, none
- * uppercases to A, T, C or G, and each uppercases to a single code point. A supplementary
- * character can never be a valid base or change a length.
+ * Supplementary code points (U+10000 and up) are uppercased from a table generated the same way,
+ * and [upper] matches CPython on every one of them. The port never classifies a supplementary code
+ * point as a base or whitespace, and no mapping changes a length: the generator verified that no
+ * supplementary code point is whitespace, none uppercases to A, T, C or G, and each uppercases to a
+ * single code point.
+ *
+ * Known divergence: surrogates. A Java String cannot tell two lone surrogates from one valid pair.
+ * Python's chr(0xD800) + chr(0xDC00) is two code points, but as a Kotlin String it is the same text
+ * as U+10000. [codePoints] reads a valid pair as one code point, so the lengths and indices of the
+ * port follow that reading. CPython gives 2 tokens for the pair, 4 tokens for "A" + pair + "T", and
+ * affinity 85 for ("TAG", "A" + pair). The port gives 1, 3 and 0. The public contract takes a String,
+ * so no input can carry the difference. Splitting a valid pair into code units would break U+10000
+ * and every other supplementary character, which CPython reads as one code point.
  */
 internal object PyText {
     private const val SUPPLEMENTARY = 0x10000
@@ -32,7 +41,10 @@ internal object PyText {
     fun appendUpper(cp: Int, out: StringBuilder) {
         when {
             cp < 0x80 -> out.append((if (cp in 0x61..0x7A) cp - 0x20 else cp).toChar())
-            cp >= SUPPLEMENTARY -> out.appendCodePoint(cp)
+            cp >= SUPPLEMENTARY -> {
+                val index = PyUnicodeTables.SUPPLEMENTARY_UPPER_KEYS.binarySearch(cp)
+                out.appendCodePoint(if (index >= 0) PyUnicodeTables.SUPPLEMENTARY_UPPER_VALUES[index] else cp)
+            }
             else -> {
                 val index = PyUnicodeTables.UPPER_KEYS.binarySearch(cp)
                 if (index >= 0) out.append(PyUnicodeTables.UPPER_VALUES[index]) else out.append(cp.toChar())

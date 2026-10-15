@@ -44,7 +44,10 @@ class BinarySequencer {
      *
      * @throws IllegalArgumentException when the strand has a character other than A, T, C, G (after
      *   case folding), or when its base count is not a multiple of 4. The Python reference raises
-     *   ValueError here. The message text is not identical to Python's repr-based message.
+     *   ValueError here. Python builds the bad-character text with repr(), which escapes control and
+     *   surrogate characters and picks the quote style. This port uses plain single quotes, so the
+     *   text can differ for those characters. The exception type and the accept/reject decision are
+     *   the parity contract, and the golden test checks only those.
      */
     fun decode(dna: String): ByteArray {
         if (PyText.removeSpace(dna).isEmpty()) return ByteArray(0)
