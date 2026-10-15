@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Everlang DNA</string>
+    <string name="input_hint">Type or paste text, or open a file</string>
+    <string name="button_sequence">Sequence</string>
+    <string name="button_predict">Predict</string>
+    <string name="button_open">Open file</string>
+    <string name="source_typed">Source: typed text (UTF-8)</string>
+    <string name="source_file">Source: %1$s (%2$d bytes)</string>
+    <string name="file_fallback_name">selected file</string>
+    <string name="output_idle">Choose Sequence to encode the source as a DNA strand, or Predict to measure an order-8 context model on it.</string>
+    <string name="working">Working...</string>
+    <string name="empty_input">The source is empty, so there is nothing to measure.</string>
+    <string name="not_available">n/a</string>
+    <string name="yes">yes</string>
+    <string name="no">no</string>
+    <string name="strand_truncated">%1$s ... (%2$d more bases not shown)</string>
+    <string name="sequence_report">Bytes: %1$d\nStrand (%2$d bases): %3$s\nGC content: %4$s\nCodons: %5$d\nRound trip: %6$s</string>
+    <string name="sequence_too_large">Sequence accepts up to %1$d KiB of input, because each base is held as an object. Predict accepts up to %2$d MiB.</string>
+    <string name="predict_report">Order 8 context model over %1$d bases, measured on this input\nBits per base: %2$s\nBaseline (uniform over A, T, C, G): %3$s bits per base\nTop-1 accuracy: %4$s, the share of bases equal to the most frequent base in their context\nThis is a measured estimate for this input, not a guarantee.</string>
+    <string name="predict_too_large">Predict accepts up to %1$d MiB of input. The source is larger than that.</string>
+    <string name="file_loaded">Loaded %1$s (%2$d bytes). Choose Sequence or Predict.</string>
+    <string name="file_too_large">Refused: the file is larger than %1$d MiB, so it was not loaded. The source is unchanged.</string>
+    <string name="file_open_failed">Could not read the selected file.</string>
+    <string name="out_of_memory">Out of memory. This input is too large to process on this device.</string>
+    <string name="failed">Failed: %1$s</string>
+    <string name="no_file_picker">No file picker is available on this device, so a file cannot be opened. Type or paste text instead.</string>
+    <string name="file_not_kept">The app was closed and restored, so the opened file %1$s was not kept. The source is the typed text. Open the file again to use it.</string>
+</resources>
