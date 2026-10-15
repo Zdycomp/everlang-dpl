@@ -47,6 +47,7 @@ const char *ev_opcode_name(EvOpcode op) {
         case OP_GET:     return "GET";
         case OP_SET:     return "SET";
         case OP_NOP:     return "NOP";
+        case OP_HEAL:    return "HEAL";
         case OP_ERR:     return "ERR";
         default:         return "?";
     }
@@ -90,15 +91,17 @@ static EvBlock *block_new(EvArena *arena, int32_t id) {
     EvBlock *b = (EvBlock*)ev_arena_alloc(arena, sizeof *b);
     if (!b) return NULL;
     b->id     = id;
-    b->cap    = 16;
+    b->cap    = 8;
     b->len    = 0;
     b->nsucc  = 0;
     b->succ[0] = b->succ[1] = -1;
     b->instrs = (EvInstr*)ev_arena_alloc(arena, b->cap * sizeof(EvInstr));
+    if (!b->instrs) return NULL;
     return b;
 }
 
 static EvInstr *block_append(EvBlock *blk, EvArena *arena) {
+    if (!blk) return NULL;
     if (blk->len >= blk->cap) {
         int32_t newcap = blk->cap * 2;
         EvInstr *nb = (EvInstr*)ev_arena_alloc(arena,
@@ -113,8 +116,9 @@ static EvInstr *block_append(EvBlock *blk, EvArena *arena) {
     ins->src0 = ev_reg_void();
     ins->src1 = ev_reg_void();
     ins->dest = ev_reg_void();
-    ins->true_label  = -1;
-    ins->false_label = -1;
+    ins->true_label    = -1;
+    ins->false_label   = -1;
+    ins->unknown_label = -1;
     return ins;
 }
 
@@ -163,7 +167,14 @@ void ev_module_free(EvModule *m) {
 EvFunc *ev_module_add_func(EvModule *m, const char *name,
                             const char **params, int32_t np) {
     if (!m) return NULL;
-    if (m->nfuncs >= m->func_cap) return NULL;
+    if (m->nfuncs >= m->func_cap) {
+        int32_t nc = m->func_cap * 2;
+        EvFunc **nf = (EvFunc**)ev_arena_alloc(m->arena, nc * sizeof(EvFunc*));
+        if (!nf) return NULL;
+        memcpy(nf, m->funcs, m->nfuncs * sizeof(EvFunc*));
+        m->funcs    = nf;
+        m->func_cap = nc;
+    }
     EvFunc *f = func_new(m->arena, name, params, np);
     if (!f) return NULL;
     m->funcs[m->nfuncs++] = f;
@@ -207,9 +218,17 @@ EvReg ev_next_reg(EvBuilder *b, int32_t type, int16_t conf) {
 
 /* ── emit helpers ── */
 
+void ev_lower_fail(EvBuilder *b, const char *msg) {
+    if (b && b->module && !b->module->lower_error)
+        b->module->lower_error = msg;
+}
+
 static EvInstr *_emit(EvBuilder *b, EvOpcode op, int32_t line) {
     EvInstr *ins = block_append(b->block, b->func->arena);
-    if (!ins) return NULL;
+    if (!ins) {
+        ev_lower_fail(b, "out of arena memory while lowering");
+        return NULL;
+    }
     ins->op   = op;
     ins->line = line;
     return ins;
@@ -295,15 +314,28 @@ void ev_emit_jump(EvBuilder *b, int32_t label_id, int32_t line) {
     b->block->nsucc    = 1;
 }
 
-void ev_emit_jump_if(EvBuilder *b, EvReg cond,
-                     int32_t true_lbl, int32_t false_lbl, int32_t line) {
+void ev_emit_jump_if(EvBuilder *b, EvReg cond, int32_t true_lbl,
+                     int32_t false_lbl, int32_t unknown_lbl, int32_t line) {
     EvInstr *ins = _emit(b, OP_JUMP_IF, line);
     if (!ins) return;
-    ins->src0        = cond;
-    ins->true_label  = true_lbl;
-    ins->false_label = false_lbl;
+    ins->src0          = cond;
+    ins->true_label    = true_lbl;
+    ins->false_label   = false_lbl;
+    ins->unknown_label = unknown_lbl;
     b->block->succ[0] = true_lbl;
     b->block->succ[1] = false_lbl;
+    b->block->nsucc   = 2;
+}
+
+void ev_emit_heal(EvBuilder *b, EvReg primary, int32_t trusted_lbl,
+                  int32_t repair_lbl, int32_t line) {
+    EvInstr *ins = _emit(b, OP_HEAL, line);
+    if (!ins) return;
+    ins->src0        = primary;
+    ins->true_label  = trusted_lbl;
+    ins->false_label = repair_lbl;
+    b->block->succ[0] = trusted_lbl;
+    b->block->succ[1] = repair_lbl;
     b->block->nsucc   = 2;
 }
 
@@ -353,6 +385,12 @@ static EvOpcode _op_from_kind(EvNodeKind k) {
     }
 }
 
+static EvBlock *new_block(EvBuilder *b) {
+    EvBlock *blk = ev_func_new_block(b->func);
+    if (!blk) ev_lower_fail(b, "out of arena memory while lowering");
+    return blk;
+}
+
 EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
     if (!n) return ev_reg_void();
 
@@ -371,6 +409,10 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             return ev_emit_const(b, ev_real(n->lit.as_real), n->line);
 
         case EV_NODE_TEXT:
+            if (n->str && strlen(n->str) >= EV_INLINE_MAX) {
+                ev_lower_fail(b, "text literal exceeds the inline TEXT capacity");
+                return ev_reg_void();
+            }
             return ev_emit_const(b, ev_text(n->str ? n->str : ""), n->line);
 
         case EV_NODE_VAR:
@@ -390,17 +432,54 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
                                  lhs, rhs, n->line);
         }
 
+        case EV_NODE_HEAL: {
+            /* The primary decides the branch. The strategy and fallback
+               are lowered into the repair path only, so an untaken repair
+               is never evaluated, as in the Python reference. */
+            if (n->child_count < 3) return ev_reg_void();
+            EvReg primary = ev_lower_node(b, n->children[0]);
+
+            EvBlock *trust_blk  = new_block(b);
+            EvBlock *repair_blk = new_block(b);
+            EvBlock *merge_blk  = new_block(b);
+            if (!trust_blk || !repair_blk || !merge_blk) return ev_reg_void();
+
+            char phi_name[32];
+            snprintf(phi_name, sizeof phi_name, "_phi_%d", b->func->reg_counter);
+
+            ev_emit_heal(b, primary, trust_blk->id, repair_blk->id, n->line);
+
+            ev_builder_switch_block(b, trust_blk);
+            ev_emit_store(b, phi_name, primary, n->line);
+            ev_emit_jump(b, merge_blk->id, n->line);
+
+            ev_builder_switch_block(b, repair_blk);
+            ev_lower_node(b, n->children[1]);
+            EvReg fallback = ev_lower_node(b, n->children[2]);
+            ev_emit_store(b, phi_name, fallback, n->line);
+            ev_emit_jump(b, merge_blk->id, n->line);
+
+            ev_builder_switch_block(b, merge_blk);
+            int16_t conf = _binconf(primary, fallback);
+            int32_t typ  = (primary.type != EV_VOID) ? primary.type : fallback.type;
+            return ev_emit_load(b, phi_name, typ, conf, n->line);
+        }
+
         case EV_NODE_IF: {
             /* Lower the condition */
             if (n->child_count < 3) return ev_reg_void();
             EvReg cond = ev_lower_node(b, n->children[0]);
 
-            /* Allocate blocks for then, else, and merge */
-            EvBlock *then_blk  = ev_func_new_block(b->func);
-            EvBlock *else_blk  = ev_func_new_block(b->func);
-            EvBlock *merge_blk = ev_func_new_block(b->func);
+            /* Blocks for then, else, unknown condition, and merge */
+            EvBlock *then_blk  = new_block(b);
+            EvBlock *else_blk  = new_block(b);
+            EvBlock *unk_blk   = new_block(b);
+            EvBlock *merge_blk = new_block(b);
+            if (!then_blk || !else_blk || !unk_blk || !merge_blk)
+                return ev_reg_void();
 
-            ev_emit_jump_if(b, cond, then_blk->id, else_blk->id, n->line);
+            ev_emit_jump_if(b, cond, then_blk->id, else_blk->id,
+                            unk_blk->id, n->line);
 
             /* Build a synthetic name for the phi slot */
             char phi_name[32];
@@ -418,18 +497,32 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             ev_emit_store(b, phi_name, else_val, n->line);
             ev_emit_jump(b, merge_blk->id, n->line);
 
+            /* Unknown condition: the result is z, not either arm */
+            ev_builder_switch_block(b, unk_blk);
+            EvReg zv = ev_emit_const(b, ev_void(), n->line);
+            ev_emit_store(b, phi_name, zv, n->line);
+            ev_emit_jump(b, merge_blk->id, n->line);
+
             /* Merge block: LOAD from the phi slot — one value regardless of branch */
             ev_builder_switch_block(b, merge_blk);
             int16_t conf = _binconf(then_val, else_val);
+            if (cond.confidence < conf) conf = cond.confidence;
             int32_t typ  = (then_val.type != EV_VOID) ? then_val.type : else_val.type;
             EvReg   result = ev_emit_load(b, phi_name, typ, conf, n->line);
             return result;
         }
 
         case EV_NODE_CALL: {
-            EvReg args[EV_INSTR_MAXARGS];
             int32_t na = n->child_count;
-            if (na > EV_INSTR_MAXARGS) na = EV_INSTR_MAXARGS;
+            EvReg *args = NULL;
+            if (na > 0) {
+                args = (EvReg*)ev_arena_alloc(b->func->arena,
+                                              (size_t)na * sizeof(EvReg));
+                if (!args) {
+                    ev_lower_fail(b, "out of arena memory while lowering");
+                    return ev_reg_void();
+                }
+            }
             for (int32_t i = 0; i < na; i++)
                 args[i] = ev_lower_node(b, n->children[i]);
             return ev_emit_call(b, n->str ? n->str : "?",
@@ -444,9 +537,23 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             return ev_reg_void();
         }
 
+        case EV_NODE_Z:
+        case EV_NODE_ERR:
+            return ev_reg_void();
+
+        case EV_NODE_LIST:
+        case EV_NODE_RECORD:
+            ev_lower_fail(b, "list and record values are not supported by the C interpreter");
+            return ev_reg_void();
+
         default:
+            ev_lower_fail(b, "node kind is not supported by the C interpreter");
             return ev_reg_void();
     }
+}
+
+static void module_fail(EvModule *m, const char *msg) {
+    if (m && !m->lower_error) m->lower_error = msg;
 }
 
 EvFunc *ev_lower_func(EvModule *m, const EvNode *fn_node) {
@@ -458,9 +565,11 @@ EvFunc *ev_lower_func(EvModule *m, const EvNode *fn_node) {
     int32_t     np      = fn_node->param_count;
 
     EvFunc  *f   = ev_module_add_func(m, name, params, np);
-    if (!f) return NULL;
-    EvBlock *blk = ev_func_new_block(f);
-    if (!blk) return NULL;
+    EvBlock *blk = f ? ev_func_new_block(f) : NULL;
+    if (!blk) {
+        module_fail(m, "out of arena memory while lowering");
+        return NULL;
+    }
 
     EvBuilder b = ev_builder(m, f, blk);
 
@@ -478,7 +587,7 @@ EvFunc *ev_lower_func(EvModule *m, const EvNode *fn_node) {
     return f;
 }
 
-EvModule *ev_lower_module(const char *name, EvNode *root, EvArena *arena) {
+EvModule *ev_lower_module(const char *name, EvNode *root) {
     /* Always create a fresh arena so ev_module_free() fully owns its memory.
      * The caller's arena (which owns 'root') remains valid throughout. */
     EvArena *ma = ev_arena_new(name ? name : "module");
@@ -487,14 +596,14 @@ EvModule *ev_lower_module(const char *name, EvNode *root, EvArena *arena) {
     if (!m || !root) { ev_arena_free(ma); return NULL; }
 
     EvBlock *gb = ev_func_new_block(m->global_body);
-    if (!gb) return m;
+    if (!gb) { ev_module_free(m); return NULL; }
 
     EvBuilder b = ev_builder(m, m->global_body, gb);
     EvReg res = ev_lower_node(&b, root);
     /* emit an explicit RETURN so the interpreter and dead-reg pass know
        this result is live — without RETURN the result looks dead */
     ev_emit_return(&b, res, root ? root->line : 1);
-    (void)arena;
+    if (m->lower_error) { ev_module_free(m); return NULL; }
     return m;
 }
 
@@ -578,8 +687,11 @@ int ev_pass_dead_regs(EvFunc *f) {
             EvInstr *ins = &blk->instrs[ii];
             if (!ev_reg_is_void(ins->src0)) uses[ins->src0.id]++;
             if (!ev_reg_is_void(ins->src1)) uses[ins->src1.id]++;
+            if (!ev_reg_is_void(ins->src2)) uses[ins->src2.id]++;
+            /* a void argument (a z value) is not a register: counting it
+               would credit register 0, the void sentinel */
             for (int32_t ai = 0; ai < ins->nargs; ai++)
-                uses[ins->args[ai].id]++;
+                if (!ev_reg_is_void(ins->args[ai])) uses[ins->args[ai].id]++;
             /* RETURN / STORE always count as a use of dest */
             if (ins->op == OP_RETURN || ins->op == OP_STORE)
                 if (!ev_reg_is_void(ins->src0)) uses[ins->src0.id]++;
@@ -604,21 +716,25 @@ int ev_pass_dead_regs(EvFunc *f) {
     return changes;
 }
 
-/* Pass 3: confidence propagation */
+/* Pass 3: confidence propagation. A computed register starts at its
+   build-time confidence and can only fall: it takes the minimum of its
+   own value and every source. */
 int ev_pass_conf_prop(EvFunc *f) {
     int32_t nregs = f->reg_counter;
     if (nregs <= 0) return 0;
     int16_t *conf = (int16_t*)calloc((size_t)nregs, sizeof(int16_t));
     if (!conf) return 0;
-    /* initialise: CONST→CERTAIN, LOAD→INTAKE, others→0 */
     for (int32_t bi = 0; bi < f->nblocks; bi++) {
         EvBlock *blk = f->blocks[bi];
         for (int32_t ii = 0; ii < blk->len; ii++) {
             EvInstr *ins = &blk->instrs[ii];
-            if (ins->op == OP_CONST && !ev_reg_is_void(ins->dest))
+            if (ev_reg_is_void(ins->dest)) continue;
+            if (ins->op == OP_CONST)
                 conf[ins->dest.id] = E_CERTAIN;
-            if (ins->op == OP_LOAD && !ev_reg_is_void(ins->dest))
+            else if (ins->op == OP_LOAD)
                 conf[ins->dest.id] = E_INTAKE;
+            else
+                conf[ins->dest.id] = ins->dest.confidence;
         }
     }
     /* propagate: two passes are enough for our depth-bounded recursion */
@@ -637,6 +753,9 @@ int ev_pass_conf_prop(EvFunc *f) {
                 if (!ev_reg_is_void(ins->src1) &&
                         conf[ins->src1.id] < newc)
                     newc = conf[ins->src1.id];
+                if (!ev_reg_is_void(ins->src2) &&
+                        conf[ins->src2.id] < newc)
+                    newc = conf[ins->src2.id];
                 for (int32_t ai = 0; ai < ins->nargs; ai++)
                     if (conf[ins->args[ai].id] < newc)
                         newc = conf[ins->args[ai].id];
@@ -668,12 +787,9 @@ int ev_optimise(EvFunc *f) {
 #define E_DEPTH_CEILING 3
 #endif
 
-#define EV_MAX_REGS   512
 #define EV_MAX_DEPTH  8
 
-#define EV_INTERP_NAMED_MAX 256
-
-typedef struct { const char *name; EValue val; } EvNamedSlot;
+typedef struct { const char *name; EValue val; int16_t conf; } EvNamedSlot;
 
 /* ─────────────────────────────────────────────
  * CALL FRAMES
@@ -695,40 +811,118 @@ typedef struct { const char *name; EValue val; } EvNamedSlot;
  * bindings do not.
  * ───────────────────────────────────────────── */
 typedef struct {
-    EValue      regs[EV_MAX_REGS];
-    int16_t     reg_conf[EV_MAX_REGS];
-    EvNamedSlot named[EV_INTERP_NAMED_MAX];
-    int         nnamed;
+    EValue      *regs;
+    int16_t     *reg_conf;
+    EvNamedSlot *named;
+    int32_t      nnamed;
+    int32_t      named_cap;
 } EvFrameSave;
 
 struct EvInterp {
-    EvModule   *module;
-    EValue      regs[EV_MAX_REGS];
-    int16_t     reg_conf[EV_MAX_REGS];
-    EvNamedSlot named[EV_INTERP_NAMED_MAX];
-    int         nnamed;
-    EvFrameSave *frames;        /* EV_MAX_DEPTH+2 save slots */
+    EvModule    *module;
+    int32_t      nregs;      /* register file size: highest reg_counter  */
+    EValue      *regs;
+    int16_t     *reg_conf;   /* runtime confidence of each register's value */
+    EvNamedSlot *named;
+    int32_t      nnamed;
+    int32_t      named_cap;
+    EvFrameSave *frames;     /* EV_MAX_DEPTH+2 save slots */
+    int16_t      ret_conf;   /* confidence of the value last returned */
+    int          failed;     /* set when the interpreter ran out of memory */
 };
 
+static int named_reserve(EvNamedSlot **buf, int32_t *cap, int32_t need) {
+    if (need <= *cap) return 1;
+    int32_t nc = (*cap > 0) ? *cap : 16;
+    while (nc < need) nc *= 2;
+    EvNamedSlot *nb = (EvNamedSlot*)realloc(*buf,
+                                            (size_t)nc * sizeof(EvNamedSlot));
+    if (!nb) return 0;
+    *buf = nb;
+    *cap = nc;
+    return 1;
+}
+
+static EValue reg_get(const EvInterp *ip, EvReg r) {
+    if (r.id < 0 || r.id >= ip->nregs) return ev_void();
+    return ip->regs[r.id];
+}
+
+static int16_t reg_conf_get(const EvInterp *ip, EvReg r) {
+    if (r.id < 0 || r.id >= ip->nregs) return 0;
+    return ip->reg_conf[r.id];
+}
+
+static EvNamedSlot *named_find(const EvInterp *ip, const char *name) {
+    for (int32_t k = 0; k < ip->nnamed; k++)
+        if (ip->named[k].name && strcmp(ip->named[k].name, name) == 0)
+            return &ip->named[k];
+    return NULL;
+}
+
+static int frame_push(EvInterp *ip, EvFrameSave *s) {
+    if (!s->regs)     s->regs     = (EValue*)calloc((size_t)ip->nregs, sizeof(EValue));
+    if (!s->reg_conf) s->reg_conf = (int16_t*)calloc((size_t)ip->nregs, sizeof(int16_t));
+    if (!s->regs || !s->reg_conf) return 0;
+    if (!named_reserve(&s->named, &s->named_cap, ip->nnamed)) return 0;
+    memcpy(s->regs,     ip->regs,     (size_t)ip->nregs * sizeof(EValue));
+    memcpy(s->reg_conf, ip->reg_conf, (size_t)ip->nregs * sizeof(int16_t));
+    if (ip->nnamed > 0)
+        memcpy(s->named, ip->named, (size_t)ip->nnamed * sizeof(EvNamedSlot));
+    s->nnamed = ip->nnamed;
+    return 1;
+}
+
+static int frame_pop(EvInterp *ip, const EvFrameSave *s) {
+    if (!named_reserve(&ip->named, &ip->named_cap, s->nnamed)) return 0;
+    memcpy(ip->regs,     s->regs,     (size_t)ip->nregs * sizeof(EValue));
+    memcpy(ip->reg_conf, s->reg_conf, (size_t)ip->nregs * sizeof(int16_t));
+    if (s->nnamed > 0)
+        memcpy(ip->named, s->named, (size_t)s->nnamed * sizeof(EvNamedSlot));
+    ip->nnamed = s->nnamed;
+    return 1;
+}
+
 EvInterp *ev_interp_new(EvModule *m) {
+    if (!m) return NULL;
     EvInterp *ip = (EvInterp*)calloc(1, sizeof *ip);
     if (!ip) return NULL;
     ip->module = m;
-    /* One save slot per reachable depth, allocated once so a call
-       never mallocs. NULL is tolerated: interp_func degrades to the
-       old frameless behaviour rather than crashing. */
-    ip->frames = (EvFrameSave*)calloc((size_t)EV_MAX_DEPTH + 2,
-                                      sizeof(EvFrameSave));
+    int32_t top = EV_REG_FIRST;
+    for (int32_t i = 0; i < m->nfuncs; i++)
+        if (m->funcs[i]->reg_counter > top) top = m->funcs[i]->reg_counter;
+    if (m->global_body && m->global_body->reg_counter > top)
+        top = m->global_body->reg_counter;
+    ip->nregs = top;
+    ip->regs     = (EValue*)calloc((size_t)top, sizeof(EValue));
+    ip->reg_conf = (int16_t*)calloc((size_t)top, sizeof(int16_t));
+    ip->frames   = (EvFrameSave*)calloc((size_t)EV_MAX_DEPTH + 2,
+                                        sizeof(EvFrameSave));
+    if (!ip->regs || !ip->reg_conf || !ip->frames) {
+        ev_interp_free(ip);
+        return NULL;
+    }
     return ip;
 }
+
 void ev_interp_free(EvInterp *ip) {
     if (!ip) return;
+    if (ip->frames) {
+        for (int d = 0; d < EV_MAX_DEPTH + 2; d++) {
+            free(ip->frames[d].regs);
+            free(ip->frames[d].reg_conf);
+            free(ip->frames[d].named);
+        }
+    }
     free(ip->frames);
+    free(ip->regs);
+    free(ip->reg_conf);
+    free(ip->named);
     free(ip);
 }
 
-static EValue interp_func(EvInterp *ip, EvFunc *f,
-                            EValue *args, int32_t nargs, int depth);
+static EValue interp_func(EvInterp *ip, EvFunc *f, EValue *args,
+                          const int16_t *arg_conf, int32_t nargs, int depth);
 
 static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                             int depth) {
@@ -740,31 +934,36 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
         for (int32_t ii = 0; ii < cur->len; ii++) {
             EvInstr *ins = &cur->instrs[ii];
             EValue res = ev_void();
+            int16_t rc = 0;
 
             switch (ins->op) {
                 case OP_NOP: break;
-                case OP_CONST: res = ins->literal; break;
+                case OP_CONST:
+                    res = ins->literal;
+                    rc  = ins->dest.confidence;
+                    break;
                 case OP_COPY:
-                    res = (!ev_reg_is_void(ins->src0))
-                          ? ip->regs[ins->src0.id] : ev_void(); break;
+                    res = reg_get(ip, ins->src0);
+                    rc  = reg_conf_get(ip, ins->src0);
+                    break;
 
                 case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV:
                 case OP_LT:  case OP_GT:  case OP_LTE: case OP_GTE:
                 case OP_EQ:  case OP_NEQ: {
-                    EValue a = ip->regs[ins->src0.id];
-                    EValue b_val = ip->regs[ins->src1.id];
+                    EValue a = reg_get(ip, ins->src0);
+                    EValue b_val = reg_get(ip, ins->src1);
                     /* Z-CONTAGION. Zero-absolute is a STATE, so it is
                        checked before arithmetic rather than folded into
                        it. Reading a void's body as a double is what
                        turns an unknown into a confident wrong number. */
                     if (a.tag == EV_VOID || b_val.tag == EV_VOID) {
                         res = ev_void();
-                        if (!ev_reg_is_void(ins->dest) &&
-                             ins->dest.id < EV_MAX_REGS) {
-                            ip->regs[ins->dest.id] = res;
-                            ip->reg_conf[ins->dest.id] = 0;
-                        }
                         break;
+                    }
+                    {
+                        int16_t ca = reg_conf_get(ip, ins->src0);
+                        int16_t cb = reg_conf_get(ip, ins->src1);
+                        rc = (ca < cb) ? ca : cb;
                     }
                     double da = (a.tag==EV_INT)  ? (double)a.body.as_int
                                                  : a.body.as_real;
@@ -780,7 +979,7 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                         case OP_MUL: res=(a.tag==EV_INT&&b_val.tag==EV_INT)
                                          ?ev_int(a.body.as_int*b_val.body.as_int)
                                          :ev_real(da*db); break;
-                        case OP_DIV: res=ev_real(db!=0.0?da/db:0.0); break;
+                        case OP_DIV: res = (db != 0.0) ? ev_real(da/db) : ev_void(); break;
                         case OP_LT:  res=ev_bool(da< db); break;
                         case OP_GT:  res=ev_bool(da> db); break;
                         case OP_LTE: res=ev_bool(da<=db); break;
@@ -793,14 +992,13 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                 }
 
                 case OP_LOAD: {
-                    res = ev_void();
                     if (ins->name) {
                         /* 1. Check named slot store (phi slots from if/else) */
-                        for (int ki=0; ki<ip->nnamed; ki++) {
-                            if (ip->named[ki].name &&
-                                strcmp(ip->named[ki].name, ins->name)==0) {
-                                res = ip->named[ki].val; goto _load_done;
-                            }
+                        EvNamedSlot *slot = named_find(ip, ins->name);
+                        if (slot) {
+                            res = slot->val;
+                            rc  = slot->conf;
+                            break;
                         }
                         /* 2. Check param bindings: scan block 0 for a LOAD
                            with same name that has been bound by interp_func */
@@ -811,35 +1009,32 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                             if (!ki_ins->name) continue;
                             if (strcmp(ki_ins->name, ins->name) != 0) continue;
                             if (ev_reg_is_void(ki_ins->dest)) continue;
-                            EValue candidate = ip->regs[ki_ins->dest.id];
+                            EValue candidate = reg_get(ip, ki_ins->dest);
                             if (candidate.tag != EV_VOID) {
-                                res = candidate; goto _load_done;
+                                res = candidate;
+                                rc  = reg_conf_get(ip, ki_ins->dest);
+                                break;
                             }
                         }
-                        _load_done:;
                     }
                     break;
                 }
 
                 case OP_STORE: {
-                    /* Save src0's current value to the named slot */
-                    EValue sv = ev_reg_is_void(ins->src0)
-                                ? ev_void()
-                                : ip->regs[ins->src0.id];
+                    /* Save src0's current value and confidence to the named slot */
                     if (ins->name) {
-                        /* update existing or append */
-                        int found = 0;
-                        for (int ki=0; ki<ip->nnamed; ki++) {
-                            if (ip->named[ki].name &&
-                                strcmp(ip->named[ki].name, ins->name)==0) {
-                                ip->named[ki].val = sv; found=1; break;
+                        EvNamedSlot *slot = named_find(ip, ins->name);
+                        if (!slot) {
+                            if (!named_reserve(&ip->named, &ip->named_cap,
+                                               ip->nnamed + 1)) {
+                                ip->failed = 1;
+                                break;
                             }
+                            slot = &ip->named[ip->nnamed++];
+                            slot->name = ins->name;
                         }
-                        if (!found && ip->nnamed < EV_INTERP_NAMED_MAX) {
-                            ip->named[ip->nnamed].name = ins->name;
-                            ip->named[ip->nnamed].val  = sv;
-                            ip->nnamed++;
-                        }
+                        slot->val  = reg_get(ip, ins->src0);
+                        slot->conf = reg_conf_get(ip, ins->src0);
                     }
                     break;
                 }
@@ -876,17 +1071,25 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                         res = ev_void(); break;
                     }
 
-                    EValue call_args[EV_INSTR_MAXARGS] = {0};
-                    for (int32_t ai = 0; ai < ins->nargs; ai++)
-                        call_args[ai] = ip->regs[ins->args[ai].id];
-                    res = interp_func(ip, callee,
-                                      call_args, ins->nargs, depth+1);
+                    int32_t na = ins->nargs;
+                    EValue  call_args[na > 0 ? na : 1];
+                    int16_t call_conf[na > 0 ? na : 1];
+                    for (int32_t ai = 0; ai < na; ai++) {
+                        call_args[ai] = reg_get(ip, ins->args[ai]);
+                        call_conf[ai] = reg_conf_get(ip, ins->args[ai]);
+                    }
+                    res = interp_func(ip, callee, call_args, call_conf, na, depth+1);
+                    rc  = ip->ret_conf;
                     break;
                 }
 
                 case OP_RETURN:
-                    if (!ev_reg_is_void(ins->src0))
-                        last = ip->regs[ins->src0.id];
+                    if (!ev_reg_is_void(ins->src0)) {
+                        last = reg_get(ip, ins->src0);
+                        ip->ret_conf = reg_conf_get(ip, ins->src0);
+                    } else {
+                        ip->ret_conf = 0;
+                    }
                     return last;
 
                 case OP_JUMP:
@@ -896,9 +1099,30 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                     goto next_block;
 
                 case OP_JUMP_IF: {
-                    EValue cond = ip->regs[ins->src0.id];
-                    int taken = (cond.tag == EV_BOOL) ? cond.body.as_bool : 0;
-                    int32_t lbl = taken ? ins->true_label : ins->false_label;
+                    /* Ever truthiness: a bool is itself, a number is
+                       non-zero, text is non-empty. A z or composite
+                       condition takes neither arm. */
+                    EValue cond = reg_get(ip, ins->src0);
+                    int32_t lbl;
+                    switch (cond.tag) {
+                        case EV_BOOL: lbl = cond.body.as_bool ? ins->true_label : ins->false_label; break;
+                        case EV_INT:  lbl = (cond.body.as_int != 0) ? ins->true_label : ins->false_label; break;
+                        case EV_REAL: lbl = (cond.body.as_real != 0.0) ? ins->true_label : ins->false_label; break;
+                        case EV_TEXT: lbl = (cond.text[0] != '\0') ? ins->true_label : ins->false_label; break;
+                        default:      lbl = ins->unknown_label; break;
+                    }
+                    if (lbl >= 0 && lbl < f->nblocks)
+                        next = f->blocks[lbl];
+                    goto next_block;
+                }
+
+                case OP_HEAL: {
+                    /* Trusted when the primary is a value (not z) and its
+                       confidence reaches the execute floor. */
+                    EValue primary = reg_get(ip, ins->src0);
+                    int trusted = primary.tag != EV_VOID &&
+                                  reg_conf_get(ip, ins->src0) >= E_EXECUTE_FLOOR;
+                    int32_t lbl = trusted ? ins->true_label : ins->false_label;
                     if (lbl >= 0 && lbl < f->nblocks)
                         next = f->blocks[lbl];
                     goto next_block;
@@ -908,9 +1132,11 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                 default: break;
             }
 
-            if (!ev_reg_is_void(ins->dest) &&
-                    ins->dest.id < EV_MAX_REGS)
-                ip->regs[ins->dest.id] = res;
+            if (res.tag == EV_VOID) rc = 0;
+            if (!ev_reg_is_void(ins->dest) && ins->dest.id < ip->nregs) {
+                ip->regs[ins->dest.id]     = res;
+                ip->reg_conf[ins->dest.id] = rc;
+            }
             last = res;
         }
         next_block:
@@ -919,8 +1145,8 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
     return last;
 }
 
-static EValue interp_func(EvInterp *ip, EvFunc *f,
-                            EValue *args, int32_t nargs, int depth) {
+static EValue interp_func(EvInterp *ip, EvFunc *f, EValue *args,
+                          const int16_t *arg_conf, int32_t nargs, int depth) {
     if (!f || f->nblocks == 0) return ev_void();
     if (depth < 0 || depth > EV_MAX_DEPTH) return ev_void();
 
@@ -928,12 +1154,10 @@ static EValue interp_func(EvInterp *ip, EvFunc *f,
      * Snapshot the caller before this frame touches anything.
      * Arguments were already evaluated in the caller's registers
      * and arrive here by value, so they survive the snapshot. */
-    EvFrameSave *save = ip->frames ? &ip->frames[depth] : NULL;
-    if (save) {
-        memcpy(save->regs,     ip->regs,     sizeof(ip->regs));
-        memcpy(save->reg_conf, ip->reg_conf, sizeof(ip->reg_conf));
-        memcpy(save->named,    ip->named,    sizeof(ip->named));
-        save->nnamed = ip->nnamed;
+    EvFrameSave *save = &ip->frames[depth];
+    if (!frame_push(ip, save)) {
+        ip->failed = 1;
+        return ev_void();
     }
 
     /* Bind params: find LOAD instrs for param names in block 0 */
@@ -944,23 +1168,21 @@ static EValue interp_func(EvInterp *ip, EvFunc *f,
         if (ins->op == OP_LOAD && ins->name &&
                 pa < f->nparam &&
                 strcmp(ins->name, f->params[pa]) == 0) {
-            if (!ev_reg_is_void(ins->dest) && ins->dest.id < EV_MAX_REGS)
-                ip->regs[ins->dest.id] = args[pa];
+            if (!ev_reg_is_void(ins->dest) && ins->dest.id < ip->nregs) {
+                ip->regs[ins->dest.id]     = args[pa];
+                ip->reg_conf[ins->dest.id] = arg_conf[pa];
+            }
             pa++;
         }
     }
 
+    ip->ret_conf = 0;
     EValue result = interp_block(ip, f, entry, depth);
 
     /* ── POP FRAME ───────────────────────────────────────────
      * result is a by-value copy taken before the restore, so the
      * return value crosses the boundary and the bindings do not. */
-    if (save) {
-        memcpy(ip->regs,     save->regs,     sizeof(ip->regs));
-        memcpy(ip->reg_conf, save->reg_conf, sizeof(ip->reg_conf));
-        memcpy(ip->named,    save->named,    sizeof(ip->named));
-        ip->nnamed = save->nnamed;
-    }
+    if (!frame_pop(ip, save)) ip->failed = 1;
     return result;
 }
 
@@ -969,13 +1191,20 @@ EValue ev_interp_call(EvInterp *ip, const char *fn_name,
     if (!ip || !fn_name) return ev_void();
     if (E_DEPTH_CEILING <= 0) return ev_void();
     for (int32_t i = 0; i < ip->module->nfuncs; i++) {
-        if (strcmp(ip->module->funcs[i]->name, fn_name) == 0)
+        if (strcmp(ip->module->funcs[i]->name, fn_name) == 0) {
             /* depth=1: matches a real top-level `fact(n)` expression,
                which enters fact's body at depth 1 (the global body's
                own OP_CALL check runs at depth 0 first). Calling this
                at depth=0 let one extra level of recursion through
-               versus every real program's actual entry path. */
-            return interp_func(ip, ip->module->funcs[i], args, nargs, 1);
+               versus every real program's actual entry path.
+               Host-supplied arguments enter at E_INTAKE. */
+            int16_t conf_in[nargs > 0 ? nargs : 1];
+            for (int32_t a = 0; a < nargs; a++) conf_in[a] = E_INTAKE;
+            ip->failed = 0;
+            EValue r = interp_func(ip, ip->module->funcs[i], args, conf_in,
+                                   nargs, 1);
+            return ip->failed ? ev_void() : r;
+        }
     }
     return ev_void();
 }
@@ -984,8 +1213,10 @@ EValue ev_interp_run(EvInterp *ip) {
     if (!ip || !ip->module->global_body ||
             ip->module->global_body->nblocks == 0)
         return ev_void();
-    return interp_block(ip, ip->module->global_body,
-                        ip->module->global_body->blocks[0], 0);
+    ip->failed = 0;
+    EValue r = interp_block(ip, ip->module->global_body,
+                            ip->module->global_body->blocks[0], 0);
+    return ip->failed ? ev_void() : r;
 }
 
 /* ─────────────────────────────────────────────
@@ -1030,6 +1261,10 @@ void ev_print_instr(const EvInstr *ins, const EvBlock *b) {
             printf("JUMP   B%d", ins->true_label); break;
         case OP_JUMP_IF:
             printf("JUMP_IF "); print_reg(ins->src0);
+            printf(" ? B%d : B%d / z B%d", ins->true_label, ins->false_label,
+                   ins->unknown_label); break;
+        case OP_HEAL:
+            printf("HEAL   "); print_reg(ins->src0);
             printf(" ? B%d : B%d", ins->true_label, ins->false_label); break;
         case OP_CALL:
             print_reg(ins->dest); printf(" = CALL %s(",

@@ -74,7 +74,8 @@ public final class EverTest {
 
         System.out.println("\nExcel arithmetic matches Layers 0 and 1");
         ok("150 x 140 excels upward", EParticle.excelFormula(150, 140) > 150);
-        ok("never exceeds 256",       EParticle.excelFormula(250, 250) <= 256);
+        ok("never reaches 256 from unverified inputs", EParticle.excelFormula(250, 250) < 256);
+        ok("both verified stay Certain", EParticle.excelFormula(256, 256) == 256);
         ok("matches core formula",
            EParticle.excelFormula(150, 140) == (150 + 140 - (150 * 140 / 256)));
 

@@ -267,7 +267,10 @@ def main():
     print(f"\n  files: {len(ever_files)}  "
           f"assertions: passed={passed} failed={failed} skipped={skipped}")
     print(f"\n=== Golden master: {passed} passed, {failed} failed ===\n")
-    return 0 if failed == 0 else 1
+    if failed:
+        return 1
+    # A file with no golden output was not checked, so it is a skip, not a pass.
+    return 77 if skipped else 0
 
 
 if __name__ == '__main__':

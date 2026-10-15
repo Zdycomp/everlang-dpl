@@ -26,6 +26,7 @@ class CorrectionStatus(str, Enum):
     BUG_DETECTED = "BUG_DETECTED"
     OPTIMIZATION_ONLY = "OPTIMIZATION_ONLY"
     STALLED = "STALLED"
+    EXHAUSTED = "EXHAUSTED"
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,21 @@ class SourceMap:
                       and m.generated_column <= generated_column]
         return max(candidates, key=lambda m: m.generated_column) if candidates else None
 
+    def remap(self, diagnostic: Diagnostic) -> Diagnostic:
+        """Map a generated diagnostic back to source and IR coordinates."""
+        mapping = self.locate(diagnostic.generated_line, diagnostic.generated_column)
+        if mapping is None:
+            return diagnostic
+        return Diagnostic(
+            level=diagnostic.level, code=diagnostic.code,
+            message=diagnostic.message,
+            generated_line=diagnostic.generated_line,
+            generated_column=diagnostic.generated_column,
+            node_id=mapping.node_id,
+            original_line=mapping.original_line,
+            original_column=mapping.original_column,
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "version": self.version,
@@ -125,14 +141,17 @@ class CorrectionCycle:
     changed: bool = False
 
 
-def _cst_from_source(source: str, error: Optional[str]) -> CSTNode:
-    return CSTNode(
-        kind="ERROR" if error else "SOURCE",
-        text=source,
-        start=0,
-        end=len(source),
-        error=error is not None,
-    )
+def _cst_from_source(source: str) -> CSTNode:
+    lines = source.splitlines(keepends=True)
+    children = []
+    offset = 0
+    for line in lines:
+        children.append(CSTNode("ERROR", line, offset, offset + len(line), error=True))
+        offset += len(line)
+    if not children:
+        children.append(CSTNode("ERROR", "", 0, 0, error=True))
+    return CSTNode("SOURCE_WITH_ERRORS", source, 0, len(source),
+                   tuple(children), error=True)
 
 
 def _ir_from_ast(node: Optional[Node], path: str = "0") -> Optional[IRNode]:
@@ -152,19 +171,19 @@ def _ir_from_ast(node: Optional[Node], path: str = "0") -> Optional[IRNode]:
                     children.append(child)
         elif not name.startswith("_"):
             fields[name] = value
-    return IRNode(type(node).__name__, type(node).__name__, fields,
+    return IRNode(f"{path}:{type(node).__name__}", type(node).__name__, fields,
                   tuple(children))
 
 
 def front_end(source: str) -> Tuple[CSTNode, Optional[Node], List[Diagnostic]]:
     tokens, lex_error = lex(source)
     if lex_error:
-        return _cst_from_source(source, str(lex_error)), None, [Diagnostic(
-            "error", "LEX", str(lex_error), node_id="0")]
+        return _cst_from_source(source), None, [Diagnostic(
+            "error", "LEX", str(lex_error))]
     ast, parse_error = parse(source)
     if parse_error:
-        return _cst_from_source(source, str(parse_error)), None, [Diagnostic(
-            "error", "PARSE", str(parse_error), node_id="0")]
+        return _cst_from_source(source), None, [Diagnostic(
+            "error", "PARSE", str(parse_error))]
     return CSTNode("SOURCE", source, 0, len(source)), ast, []
 
 
@@ -215,17 +234,17 @@ def compile_pipeline(source: str, targets: Iterable[str] = ()) -> PipelineResult
     ir = _ir_from_ast(ast)
     generated: Dict[str, str] = {}
     source_maps: Dict[str, SourceMap] = {}
-    if ast is not None:
+    if ir is not None:
         for target in targets:
             try:
                 code = emit(source, target)
             except Exception as exc:
-                diagnostics.append(Diagnostic("error", "EMIT", str(exc), node_id="0"))
+                diagnostics.append(Diagnostic("error", "EMIT", str(exc), node_id=ir.node_id))
                 continue
             generated[target] = code
             mapping = SourceMap(file=f"program.{target}", sources=["<source>"])
             for line_number, _ in enumerate(code.splitlines()):
-                mapping.add(line_number, 0, 0, 0, "0")
+                mapping.add(line_number, 0, 0, 0, ir.node_id)
             source_maps[target] = mapping
     return PipelineResult(source, cst, ir, diagnostics, generated, source_maps)
 
@@ -246,14 +265,15 @@ def correction_loop(source: str, target: str,
         if not diagnostics:
             history.append(CorrectionCycle(cycle, CorrectionStatus.CONVERGED))
             return history
-        status = CorrectionStatus.BUG_DETECTED
         replacement = refine(current, diagnostics) if refine else None
         changed = replacement is not None and replacement != current
-        history.append(CorrectionCycle(cycle, status, diagnostics, changed))
+        history.append(CorrectionCycle(cycle, CorrectionStatus.BUG_DETECTED, diagnostics, changed))
         if not changed:
             history[-1].status = CorrectionStatus.STALLED
             return history
         current = replacement
+    # The budget ran out with the last refinement never re-verified.
+    history[-1].status = CorrectionStatus.EXHAUSTED
     return history
 
 

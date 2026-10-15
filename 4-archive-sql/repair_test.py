@@ -10,11 +10,19 @@ Every `refuses(...)` case below has a matching throw in
 7-refix-node/src/archive.js.
 """
 
+import atexit
 import os
+import re
+import shutil
 import sqlite3
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "repair.db")
+# A fresh directory, never beside the source: the archive's invariant is that
+# nothing is deleted, so this suite must not depend on deleting a repo file.
+DB_DIR = tempfile.mkdtemp(prefix="repair-archive-")
+atexit.register(shutil.rmtree, DB_DIR, True)
+DB = os.path.join(DB_DIR, "repair.db")
 
 passed = failed = 0
 
@@ -37,8 +45,6 @@ def refuses(con, sql, params=()):
 
 print("\n=== Codric Layer 4 (SQL) — the repair archive ===\n")
 
-if os.path.exists(DB):
-    os.remove(DB)
 con = sqlite3.connect(DB)
 con.executescript(open(os.path.join(HERE, "archive.sql")).read())
 con.executescript(open(os.path.join(HERE, "repair.sql")).read())
@@ -76,6 +82,14 @@ ok("plain cost = 256/32",   K['E_REPAIR_PLAIN'] == 256 // 32)
 ok("inferred cost = 256/8", K['E_REPAIR_INFERRED'] == 256 // 8)
 ok("inferred costs 4x plain",
    K['E_REPAIR_INFERRED'] == 4 * K['E_REPAIR_PLAIN'])
+
+JS_CONSTANTS = os.path.join(HERE, "..", "7-refix-node", "src", "constants.js")
+with open(JS_CONSTANTS) as f:
+    JS = {n: int(v) for n, v in re.findall(r"^\s*(E_[A-Z_]+):\s*(\d+),", f.read(), re.M)}
+ok("constants.js declares the seven ReFix constants", len(JS) == 7)
+ok("every constants.js name exists in ever_constant", all(n in K for n in JS))
+ok("constants.js agrees with ever_constant on every value",
+   all(K[n] == v for n, v in JS.items() if n in K))
 
 # ─────────────────────────────────────────────
 print("\nSignatures")

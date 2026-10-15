@@ -575,7 +575,7 @@ int cfg_check_definite_assignment(Cfg *cfg) {
             int in1 = defset_has(&p1->def_out, (NameId)n);
             if (in0 == in1) continue;
             /* defined on one path only — check if it is live after the join */
-            if (defset_has(&b->live_out, (NameId)n)) {
+            if (defset_has(&b->live_in, (NameId)n)) {
                 add_error(cfg, CFG_ERR_PARTIAL_DEF, (NameId)n, i,
                           0,
                           "name '%s' defined on only one branch "

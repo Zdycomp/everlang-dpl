@@ -13,13 +13,13 @@ and derive from `E_CERTAIN = 256`.
 ## What's in and what's not
 
 **In, tonight:**
-- 10 hand-authored Gradle signatures drawn from documented AGP/Gradle errors
+- 14 hand-authored Gradle signatures drawn from documented AGP/Gradle errors
 - Failure/Fixture archive as append-only JSONL
 - Recurrence detection at `E_ASCEND_POINTS = 3` distinct sources
 - Rule proposal with replay-against-archive gate
 - Admission at `E_EXECUTE_FLOOR = 128`; rejected rules preserved forever
   with the reason
-- 15 tests, zero deps
+- 21 tests, zero deps
 
 **Not in, and not pretending to be:**
 - No trained corpus. The archive starts empty. Users build the moat.
@@ -37,6 +37,8 @@ refix candidates                    — fixtures that cleared the threshold
 refix propose                       — attempt admission; replay-gated
 refix rules                         — admitted & rejected rules
 refix archive                       — raw JSONL to stdout
+refix errors                        — unresolved and matched error catches
+refix finality <program.ever>       — signature count and archive summary for a program
 ```
 
 Archive lives at `$REFIX_HOME` or `~/.refix`.

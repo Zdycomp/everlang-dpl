@@ -29,7 +29,10 @@ Codric Enterprise · Ricky (Dreid) · 2026
 
 from __future__ import annotations
 
+import io
+import keyword
 import re
+import tokenize
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -66,10 +69,12 @@ def _mask_strings_and_comments(lines: List[str], line_comment: str,
     untouched in the mask, so positions still line up 1:1."""
     masked = []
     in_block = False
+    in_triple = None
     for line in lines:
         out = []
         i, n = 0, len(line)
-        in_str = None
+        in_str = in_triple
+        in_triple = None
         while i < n:
             ch = line[i]
             if in_block and block:
@@ -81,101 +86,114 @@ def _mask_strings_and_comments(lines: List[str], line_comment: str,
                     i = end + len(block[1]); in_block = False
                 continue
             if in_str:
-                out.append(ch)
+                if line.startswith(in_str, i):
+                    out.append(in_str); i += len(in_str); in_str = None
+                    continue
                 if ch == "\\" and i + 1 < n:
-                    out.append(line[i+1]); i += 2; continue
-                if ch == in_str:
-                    in_str = None
-                i += 1; continue
+                    out.append("xx"); i += 2; continue
+                out.append("x"); i += 1; continue
             if block and line[i:i+len(block[0])] == block[0]:
                 out.append("x" * len(block[0])); i += len(block[0])
                 in_block = True; continue
             if line[i:i+len(line_comment)] == line_comment:
                 out.append("x" * (n - i)); i = n; continue
+            if line.startswith('"""', i) or line.startswith("'''", i):
+                in_str = line[i:i+3]; out.append(in_str); i += 3; continue
             if ch in ('"', "'"):
                 in_str = ch; out.append(ch); i += 1; continue
             out.append(ch); i += 1
+        if in_str and len(in_str) == 3:
+            in_triple = in_str
         masked.append("".join(out))
     return masked
-
-
-def _bracket_balance(text: str) -> dict:
-    """Count of each bracket kind, open minus close, over CODE ONLY
-    (caller must pass masked text)."""
-    return {
-        "()": text.count("(") - text.count(")"),
-        "[]": text.count("[") - text.count("]"),
-        "{}": text.count("{") - text.count("}"),
-    }
 
 
 # ═══════════════════════════════════════════════
 # PYTHON
 # ═══════════════════════════════════════════════
 
-_PY_BLOCK_KW = re.compile(
-    r'^(\s*)(if|elif|else|for|while|def|class|try|except|finally|with)\b'
-    r'(.*?)\s*$')
+_PY_HEADERS = ("if", "elif", "else", "for", "while", "def", "class", "try",
+               "except", "finally", "with")
+_PY_CONDITIONS = ("if", "elif", "while")
+_PY_TRIVIA = (tokenize.NL, tokenize.COMMENT, tokenize.INDENT,
+              tokenize.DEDENT, tokenize.ENCODING)
+
+
+def _opens_call(prev) -> bool:
+    return prev is not None and (
+        (prev.type == tokenize.NAME and not keyword.iskeyword(prev.string))
+        or (prev.type == tokenize.OP and prev.string in (")", "]")))
+
+
+def _python_statements(src: str):
+    """Logical lines as (token, context) pairs, where context is 'stmt' at
+    the top level, 'group' inside a grouping paren and 'nest' inside a call,
+    list, dict or subscript. The tokenizer decides where a statement starts,
+    so a string, a comment or a bracketed continuation is never a header."""
+    statement, stack = [], []
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+        if tok.type == tokenize.ENDMARKER:
+            break
+        if tok.type == tokenize.NEWLINE:
+            if statement:
+                yield statement
+            statement, stack = [], []
+        elif tok.type not in _PY_TRIVIA:
+            statement.append((tok, stack[-1] if stack else "stmt"))
+            if tok.type == tokenize.OP and tok.string in ("(", "[", "{"):
+                grouping = tok.string == "(" and (
+                    len(statement) == 1 or not _opens_call(statement[-2][0]))
+                stack.append("group" if grouping else "nest")
+            elif tok.type == tokenize.OP and tok.string in (")", "]", "}"):
+                if stack:
+                    stack.pop()
+    if statement:
+        yield statement
+
 
 def fix_python(src: str) -> FixResult:
-    lines = src.splitlines()
-    masked = _mask_strings_and_comments(lines, "#")
+    try:
+        statements = list(_python_statements(src))
+    except (tokenize.TokenError, SyntaxError):
+        return FixResult(src, [])
+    lines = src.split("\n")
+    edits: List[Tuple[int, int, int, str]] = []
     fixes: List[Fix] = []
-    out = list(lines)
 
-    for i, (raw, m) in enumerate(zip(out, masked)):
-        stripped = m.rstrip()
-        mobj = _PY_BLOCK_KW.match(stripped)
-        if not mobj:
+    for statement in statements:
+        head = statement[0][0]
+        if head.type != tokenize.NAME or head.string not in _PY_HEADERS:
             continue
-        indent, kw, rest = mobj.groups()
-        # bare 'else'/'try'/'finally' already end correctly with ':'
-        # in normal code; only flag when the code line clearly lacks
-        # a trailing colon and isn't already balanced-but-continued
-        # (a line ending in an open bracket is a continuation, not a
-        # missing colon).
-        code_only = rest.rstrip()
-        if code_only.endswith(":"):
-            continue
-        if code_only.endswith(("(", "[", "{", ",", "\\")):
-            continue  # continuation line, not a finished header
-        bal = _bracket_balance(mobj.group(0))
-        if bal["()"] != 0 or bal["[]"] != 0 or bal["{}"] != 0:
-            continue  # unbalanced on this line — don't guess
-        healed = raw.rstrip() + ":"
-        fixes.append(Fix(i + 1, f"'{kw}' line missing ':'",
-                         "':' appended",
-                         "if/elif/else/for/while/def/class/try/except/"
-                         "finally headers must end in a colon"))
-        out[i] = healed
+        kw = head.string
+        header = []
+        for tok, ctx in statement:
+            if ctx == "stmt" and tok.type == tokenize.OP and tok.string == ":":
+                break
+            header.append((tok, ctx))
+        if len(header) == len(statement):
+            end_row, end_col = statement[-1][0].end
+            edits.append((end_row, end_col, 0, ":"))
+            fixes.append(Fix(end_row, f"'{kw}' line missing ':'",
+                             "':' appended",
+                             "if/elif/else/for/while/def/class/try/except/"
+                             "finally headers must end in a colon"))
+        if kw in _PY_CONDITIONS:
+            lambdas = any(tok.type == tokenize.NAME and tok.string == "lambda"
+                          for tok, _ in statement)
+            for tok, ctx in header:
+                if tok.type != tokenize.OP or tok.string != "=":
+                    continue
+                if ctx == "stmt" or (ctx == "group" and not lambdas):
+                    row, col = tok.start
+                    edits.append((row, col, 1, "=="))
+                    fixes.append(Fix(row, f"'=' in {kw} condition", "'=='",
+                                     "a single = inside a condition can only "
+                                     "have meant the comparison =="))
 
-    # = vs == inside an `if`/`elif`/`while` condition (never inside a
-    # string, and never touching '==', '!=', '<=', '>=', or a
-    # keyword-argument/default like f(x=1)).
-    # Re-mask `out`, not the original `lines` — a line can be missing
-    # BOTH the colon and have the wrong operator at once, and the
-    # colon pass above already healed it into `out`. Checking the
-    # stale, pre-colon mask would miss that shape entirely.
-    masked2 = _mask_strings_and_comments(out, "#")
-    for i, (raw, m) in enumerate(zip(out, masked2)):
-        cond = re.match(r'^(\s*)(if|elif|while)\s+(.*):(\s*)$', m)
-        if not cond:
-            continue
-        indent, kw, expr, tail = cond.groups()
-        # a bare '=' not part of ==,!=,<=,>=,:=
-        def _stray_eq(mo):
-            return "=="
-        healed_expr, n = re.subn(
-            r'(?<![=!<>:])=(?!=)', _stray_eq, expr)
-        if n:
-            fixes.append(Fix(i + 1, f"'=' in {kw} condition",
-                             "'==' ",
-                             "a single = inside a condition can only "
-                             "have meant the comparison =="))
-            out[i] = f"{indent}{kw} {healed_expr}:{tail}"
-
-    return FixResult("\n".join(out) + ("\n" if src.endswith("\n") else ""),
-                     fixes)
+    for row, col, width, text in sorted(edits, reverse=True):
+        line = lines[row - 1]
+        lines[row - 1] = line[:col] + text + line[col + width:]
+    return FixResult("\n".join(lines), sorted(fixes, key=lambda f: f.line))
 
 
 # ═══════════════════════════════════════════════
@@ -210,6 +228,21 @@ def _needs_semicolon(line: str) -> bool:
     return _STMT_END.search(s) is not None
 
 
+_CONTINUES = re.compile(
+    r'(\.|\?\.|\?|:|&&|\|\||\?\?|===?|!==?|<=?|>=?|[-+*/%&|^])')
+
+
+def _continues_below(lines: List[str], i: int) -> bool:
+    """True when the next code line carries on this expression, so a
+    semicolon here would split one statement into two."""
+    for nxt in lines[i + 1:]:
+        s = nxt.strip()
+        if not s or s.startswith("//"):
+            continue
+        return _CONTINUES.match(s) is not None
+    return False
+
+
 def _fix_cfamily_semicolons(src: str, line_comment: str,
                             block: Optional[Tuple[str, str]],
                             eligible_kw: Tuple[str, ...]) -> FixResult:
@@ -241,6 +274,8 @@ def _fix_cfamily_semicolons(src: str, line_comment: str,
            re.search(r'[=]\s*[^=]', s) or \
            re.match(r'^\s*\w[\w.]*\s*\(.*\)\s*$', s) or \
            re.match(r'^\s*(var|let|const|val)\s+\w', s):
+            if _continues_below(lines, i):
+                continue
             fixes.append(Fix(i + 1, "missing ';'", "';' appended",
                              "this line ends a simple statement, and "
                              "the language requires a terminator"))

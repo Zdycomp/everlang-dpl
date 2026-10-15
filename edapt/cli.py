@@ -47,14 +47,15 @@ def main(argv=None) -> int:
         print(f"edapt: {path} looks clean")
         return 0
 
-    if args.write or args.output:
+    applied = bool(args.write or args.output)
+    if applied:
         out = Path(args.output) if args.output else path
         out.write_text(result.code)
         print(f"\nwrote {out}")
     elif result.fixes:
         print("\n(pass --write to apply)")
 
-    return 0
+    return 1 if problems or (result.fixes and not applied) else 0
 
 
 if __name__ == "__main__":

@@ -5,11 +5,17 @@ Drives archive.sql through Python's sqlite3 so the layer verifies without
 requiring the sqlite3 CLI. The SQL under test is unchanged.
 """
 
+import atexit
 import os
+import shutil
 import sqlite3
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "tapestry.db")
+# A fresh directory, never beside the source (see repair_test.py).
+DB_DIR = tempfile.mkdtemp(prefix="tapestry-archive-")
+atexit.register(shutil.rmtree, DB_DIR, True)
+DB = os.path.join(DB_DIR, "tapestry.db")
 
 passed = failed = 0
 
@@ -32,8 +38,6 @@ def refuses(con, sql, params=()):
 
 print("\n=== Tapestry Layer 4 (SQL) — the archive ===\n")
 
-if os.path.exists(DB):
-    os.remove(DB)
 con = sqlite3.connect(DB)
 con.executescript(open(os.path.join(HERE, "archive.sql")).read())
 con.execute("PRAGMA foreign_keys = ON")

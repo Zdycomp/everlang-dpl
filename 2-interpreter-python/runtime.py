@@ -218,6 +218,10 @@ def eval_confidence(node: Optional[EvNode], scope: EvScope) -> int:
             last_conf = min(c_conf, eval_confidence(body, scope))
         return last_conf
 
+    if k in (NK.HEAL, NK.LEARN):
+        # the value carries the confidence it was given by the operator
+        return eval_node(node, scope).confidence
+
     if k == NK.CALL:
         name = node.str_val or ""
         entry = scope.lookup(name)
@@ -315,6 +319,19 @@ def _format_value(name: str, val: EValue, conf: int) -> str:
 # THE EXECUTOR
 # ─────────────────────────────────────────────
 
+def _lowering_error(node: Optional[EvNode]) -> Optional[EvNode]:
+    """The first node in the tree that failed to lower, or None."""
+    if node is None:
+        return None
+    if node.kind is NK.ERR:
+        return node
+    for ch in node.children:
+        bad = _lowering_error(ch)
+        if bad is not None:
+            return bad
+    return None
+
+
 def run_source(source: str, profiler: Optional["Profiler"] = None,
               scope: Optional[EvScope] = None) -> ProgramResult:
     """Parse and execute a full .ever source string for real: through
@@ -362,6 +379,17 @@ def run_source(source: str, profiler: Optional["Profiler"] = None,
     if not pa.clean:
         result.errors.extend(pa.errors)
         return result
+
+    # A statement that cannot be lowered to IR fails the whole program,
+    # before any statement runs, rather than executing as void.
+    for stmt in prog.statements:
+        cls = type(stmt).__name__
+        if cls in ("Show", "Extern"):
+            continue
+        bad = _lowering_error(_ast_to_ir(stmt.value if cls == "Let" else stmt))
+        if bad is not None:
+            result.errors.append(bad.error)
+            return result
 
     g = scope if scope is not None else make_global_scope()
 

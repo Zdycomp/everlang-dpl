@@ -243,6 +243,33 @@ int main(void) {
     ev_scope_free(global);
     ev_arena_free(arena);
 
+    printf("\nKey storage under update and churn\n");
+    {
+        EvArena *ka = ev_arena_new("key-test");
+        EvScope *ks = ev_scope_new(ka, NULL, "keys");
+        const char *kk = "a_reasonably_long_identifier_name_of_forty_chars";
+        int setok = 1;
+        for (int i = 0; i < 100000; i++)
+            setok &= ev_scope_set_var(ks, kk, ev_int(i), E_CERTAIN, E_LANG_EVER);
+        ok("100000 updates of one key all succeed", setok);
+        ok("updates do not consume the arena",      ka->slab_count == 1);
+        EvScopeEntry *ke = ev_scope_get(ks, kk);
+        ok("the updated value is found",            ke && ke->value.body.as_int == 99999);
+        ev_scope_free(ks);
+        ev_arena_free(ka);
+
+        EvArena *ta = ev_arena_new("churn-test");
+        EvScope *ts = ev_scope_new(ta, NULL, "churn");
+        for (int i = 0; i < 200000; i++) {
+            ev_scope_set_var(ts, "churned", ev_int(i), E_CERTAIN, E_LANG_EVER);
+            ev_scope_delete(ts, "churned");
+        }
+        ok("set/delete churn does not grow the table", ts->cap == EV_SCOPE_INIT_CAP);
+        ok("churned key is gone",                      ev_scope_get(ts, "churned") == NULL);
+        ev_scope_free(ts);
+        ev_arena_free(ta);
+    }
+
     printf("\n=== EvScope: %d passed, %d failed ===\n\n", ok_n, fail_n);
     return fail_n == 0 ? 0 : 1;
 }

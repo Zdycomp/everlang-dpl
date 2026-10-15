@@ -36,5 +36,9 @@ py-modules = [
     "profiler",
     "collider",
     "architecture",
+    "repair",
     "rag_index",
+    "language_matrix",
+    "parse_lex_executor",
+    "verification_oracle",
 ]

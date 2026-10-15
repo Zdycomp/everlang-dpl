@@ -442,7 +442,7 @@ EV_SUITE_TAGGED(tac_lower_arith, "tac", "lower") {
     EvNode *n6   = ev_node_int(a,6,1);
     EvNode *n36  = ev_node_int(a,36,1);
     EvNode *add  = ev_node_binop(a,EV_NODE_ADD,n6,n36,1);
-    EvModule *m  = ev_lower_module("arith", add, a);
+    EvModule *m  = ev_lower_module("arith", add);
     ASSERT_NOT_NULL(m);
     ASSERT_NOT_NULL(m->global_body);
     ASSERT(m->global_body->nblocks > 0);
@@ -465,7 +465,7 @@ EV_SUITE_TAGGED(tac_const_fold, "tac", "optimise") {
     EvNode *n3 = ev_node_int(a,3,1);
     EvNode *n1 = ev_node_int(a,1,1);
     EvNode *sub = ev_node_binop(a,EV_NODE_SUB,n3,n1,1);
-    EvModule *m = ev_lower_module("fold", sub, a);
+    EvModule *m = ev_lower_module("fold", sub);
     int changes = ev_pass_const_fold(m->global_body);
     ASSERT(changes > 0);
     /* The SUB instruction should now be CONST */
@@ -483,7 +483,7 @@ EV_SUITE_TAGGED(tac_const_fold, "tac", "optimise") {
 
 EV_SUITE_TAGGED(tac_conf_propagation, "tac", "confidence") {
     EvArena *a = ev_arena_new("conf");
-    const char *pn[] = {};
+    const char *pn[1] = { NULL };
     EvModule *m = ev_module_new("conf", a);
     EvFunc *f = ev_module_add_func(m,"f",pn,0);
     EvBlock *b = ev_func_new_block(f);
@@ -496,15 +496,19 @@ EV_SUITE_TAGGED(tac_conf_propagation, "tac", "confidence") {
 
     ASSERT_EQ_INT(E_CERTAIN, rc.confidence);
 
+    /* plant an over-confident ADD: the pass must bring it down to min(256, 120) */
+    for (int i=0;i<b->len;i++)
+        if (b->instrs[i].dest.id == radd.id)
+            b->instrs[i].dest.confidence = E_CERTAIN;
+
     ev_pass_conf_prop(f);
 
-    /* after propagation, ADD dest = min(256, 120) = 120 */
     int add_conf = 256;
     for (int i=0;i<b->len;i++) {
         if (b->instrs[i].dest.id == radd.id)
             add_conf = b->instrs[i].dest.confidence;
     }
-    ASSERT(add_conf <= 120);
+    ASSERT_EQ_INT(120, add_conf);
     /* ev_module_free owns the arena when created via ev_module_new(name, arena).
      * Do NOT call ev_arena_free separately — that would double-free. */
     ev_module_free(m);
@@ -533,7 +537,7 @@ EV_SUITE_TAGGED(tac_interpret, "tac", "interp") {
             (tc.op==OP_ADD ? EV_NODE_ADD :
              tc.op==OP_SUB ? EV_NODE_SUB : EV_NODE_MUL),
             na, nb, 1);
-        EvModule *mm = ev_lower_module(tc.label, op, aa);
+        EvModule *mm = ev_lower_module(tc.label, op);
         ev_optimise(mm->global_body);
         EvInterp *ip = ev_interp_new(mm);
         EValue r = ev_interp_run(ip);
@@ -554,7 +558,7 @@ EV_SUITE_TAGGED(tac_if_branch, "tac", "interp") {
     EvNode *n42 = ev_node_int(a,42,1);
     EvNode *n0  = ev_node_int(a,0,1);
     EvNode *iff = ev_node_if(a,cmp,n42,n0,1);
-    EvModule *m = ev_lower_module("if",iff,a);
+    EvModule *m = ev_lower_module("if",iff);
     EvInterp *ip = ev_interp_new(m);
     EValue r = ev_interp_run(ip);
     ASSERT_EQ_INT(EV_INT, r.tag);
@@ -569,7 +573,7 @@ EV_SUITE_TAGGED(tac_if_branch, "tac", "interp") {
         ev_node_if(a2,
             ev_node_binop(a2,EV_NODE_GT,ev_node_int(a2,1,1),ev_node_int(a2,10,1),1),
             ev_node_int(a2,42,1),
-            ev_node_int(a2,-1,1),1), a2);
+            ev_node_int(a2,-1,1),1));
     EvInterp *ip2 = ev_interp_new(m2);
     EValue r2 = ev_interp_run(ip2);
     ASSERT_EQ_INT(EV_INT, r2.tag);
@@ -587,7 +591,7 @@ EV_SUITE_TAGGED(tac_function_call, "tac", "interp") {
     EvNode *sqn2 = ev_node_var(a,"n",1);
     EvNode *sqmul = ev_node_binop(a,EV_NODE_MUL,sqn,sqn2,1);
     EvNode *sqfn  = ev_node_def(a,"square",pn,1,sqmul,1);
-    EvModule *m = ev_lower_module("sq", sqfn, a);
+    EvModule *m = ev_lower_module("sq", sqfn);
     ev_optimise(m->funcs[0]);
     EvInterp *ip = ev_interp_new(m);
     EValue arg = ev_int(7);
@@ -639,7 +643,7 @@ EV_SUITE_TAGGED(bridge_e2e, "bridge") {
     ASSERT_EQ_INT(EV_NODE_ADD, add2->kind);
 
     /* Stage 3: TAC interpreter evaluates the deserialized tree */
-    EvModule *m = ev_lower_module("bridge", add2, b);
+    EvModule *m = ev_lower_module("bridge", add2);
     ev_optimise(m->global_body);
     EvInterp *ip = ev_interp_new(m);
     EValue result = ev_interp_run(ip);

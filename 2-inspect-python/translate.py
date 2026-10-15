@@ -16,10 +16,17 @@ Theory of Relative E:  E = MC²
 """
 
 import re
+import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
+try:
+    from language_support import ExtendedLanguage, LANGUAGE_NAMES, inspect as inspect_extended
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from language_support import ExtendedLanguage, LANGUAGE_NAMES, inspect as inspect_extended
 from enum import IntEnum
-from typing import List, Optional
+from typing import List, Optional, Union
 
 
 # ─────────────────────────────────────────────
@@ -55,6 +62,12 @@ class ELang(IntEnum):
     JAVA   = 5
     HTML   = 6
     EVER   = 7
+
+
+def lang_name(lang) -> str:
+    if isinstance(lang, ExtendedLanguage):
+        return LANGUAGE_NAMES[lang]
+    return ELang(lang).name
 
 
 # ─────────────────────────────────────────────
@@ -130,7 +143,7 @@ class EParticle:
 
     def __repr__(self) -> str:
         return (f"E<{EState(self.state).name}>({self.ident} "
-                f"@ {self.confidence}/256 · {ELang(self.lang).name})")
+                f"@ {self.confidence}/256 · {lang_name(self.lang)})")
 
 
 # ── constructors ──
@@ -178,7 +191,7 @@ class Finding:
 # Language detection
 # ─────────────────────────────────────────────
 
-def detect(code: str) -> ELang:
+def detect(code: str) -> Union[ELang, ExtendedLanguage]:
     """Order matters. Most distinctive markers first."""
     s = code.strip()
 
@@ -186,8 +199,11 @@ def detect(code: str) -> ELang:
                  s, re.I | re.M):
         return ELang.HTML
 
-    if re.search(r'\b(SELECT|INSERT INTO|UPDATE|DELETE FROM|CREATE TABLE|'
-                 r'ALTER TABLE|DROP TABLE)\b', s, re.I):
+    if re.search(r'\bSELECT\s+[\w.*()]+(?:\s*,\s*[\w.*()]+)*\s+FROM\s+\w+|'
+                 r'^\s*SELECT\s[^\n]*;|'
+                 r'\bINSERT\s+INTO\s+\w+|\bUPDATE\s+\w+\s+SET\b|'
+                 r'\bDELETE\s+FROM\s+\w+|\b(?:CREATE|ALTER|DROP)\s+TABLE\s+\w+',
+                 s, re.I | re.M):
         return ELang.SQL
 
     if "#include" in s:
@@ -195,13 +211,22 @@ def detect(code: str) -> ELang:
                        "class ", "vector<", "cout")
         return ELang.CPP if any(m in s for m in cpp_markers) else ELang.C
 
+    if re.search(r'^\s*namespace\s+[\w.]+\s*[{;]|^\s*using\s+System\s*;|'
+                 r'\bConsole\.WriteLine\s*\(', s, re.M):
+        return ExtendedLanguage.CSHARP
+
     if re.search(r'\b(public|private|protected)\s+(static\s+)?'
                  r'(class|void|int|String)\b', s):
         return ELang.JAVA
 
     if re.search(r'^\s*def\s+\w+.*\|.*\|', s, re.M):     # ruby block params
         return ELang.RUBY
-    if re.search(r'\b(end|puts|require|attr_accessor|do\s*\|)\b', s):
+    if re.search(r'\b(defmodule|defp|defmacro)\b', s):
+        return ExtendedLanguage.ELIXIR
+    if re.search(r'^\s*(?:puts|require|attr_accessor)\b|\bdo\s*\|', s, re.M):
+        return ELang.RUBY
+    if re.search(r'^\s*end\s*$', s, re.M) and \
+       re.search(r'^\s*(?:def|class|module)\b', s, re.M):
         return ELang.RUBY
 
     # A bare C function with no include directive. Found by cross-checking
@@ -215,6 +240,38 @@ def detect(code: str) -> ELang:
         return ELang.PYTHON
     if re.search(r'^\s*(import|from)\s+\w+', s, re.M) and ":" in s:
         return ELang.PYTHON
+
+    if re.search(r'^FROM\s+\S+', s, re.M):
+        return ExtendedLanguage.DOCKERFILE
+    if re.search(r'\(\s*(?:defn|ns)\s|\blet\s+\[', s):
+        return ExtendedLanguage.CLOJURE
+    if re.search(r'(^|\n)\s*[-\w]+\s*\{[^}]*:[^}]*\}', s):
+        return ExtendedLanguage.CSS
+    if re.search(r'\b(?:void main\(|import [\'\"]dart:)', s):
+        return ExtendedLanguage.DART
+    if re.search(r'\(defun\s|\(setq\s', s):
+        return ExtendedLanguage.EMACS_LISP
+    if re.search(r'^\s*module\s+\w+\s+where|^\s*data\s+[A-Z]\w*\s*(?:=|$)', s, re.M):
+        return ExtendedLanguage.HASKELL
+    if re.search(r'^\s*%%', s, re.M) and re.search(r'^\s*(?:function\b|end\s*$)', s, re.M):
+        return ExtendedLanguage.MATLAB
+    if re.search(r'^\s*(?:const|var)\s+\w+\s*=[^#\n]*;|^\s*function\s+\w+\s*\(', s, re.M):
+        return ExtendedLanguage.JAVASCRIPT
+    if re.search(r'^\s*using\s+[\w.]+\s*;|^\s*fun\s+\w+\s*\(', s, re.M):
+        return ExtendedLanguage.KOTLIN
+    if re.search(r'^\s*(?:my\s+[$@%]\w|use\s+(?:strict|warnings)\b)', s, re.M):
+        return ExtendedLanguage.PERL
+    if re.search(r'\b(?:Write-Host|Get-ChildItem|Invoke-(?:Expression|WebRequest|RestMethod))\b|'
+                 r'\bparam\s*\(\s*[\[$]', s):
+        return ExtendedLanguage.POWERSHELL
+    if re.search(r'^\s*<\?|^\s*\$[A-Za-z_]\w*\s*=', s, re.M):
+        return ExtendedLanguage.PHP
+    if re.search(r'<script|<template|<style', s, re.I) and re.search(r'\bv-|:class|@click', s):
+        return ExtendedLanguage.VUE
+    if re.search(r'\bfunc\s+\w+\s*\(|\bimport\s+Foundation\b', s):
+        return ExtendedLanguage.SWIFT
+    if re.search(r'\\(documentclass|begin\{|section\{)', s):
+        return ExtendedLanguage.TEX
 
     return ELang.EVER
 
@@ -260,7 +317,7 @@ class CInspector(Inspector):
             if t.count("(") != t.count(")"):
                 out.append(Finding("error", "unbalanced parentheses",
                                    n, 50, "match ( with )"))
-            if re.search(r'\bmalloc\s*\(', t) and "free" not in code:
+            if re.search(r'\bmalloc\s*\(', t) and not re.search(r'\bfree\s*\(', code):
                 out.append(Finding("error", "malloc without matching free",
                                    n, 60, "pair every malloc with free"))
             if re.search(r'\bgets\s*\(', t):
@@ -388,7 +445,7 @@ class SqlInspector(Inspector):
         if re.search(r'\bSELECT\s+\*', up):
             out.append(Finding("error", "SELECT * hides schema drift",
                                1, 35, "name the columns"))
-        if re.search(r'\b(DELETE\s+FROM|UPDATE)\b', up) and \
+        if re.search(r'\b(DELETE\s+FROM|UPDATE\s+\w+\s+SET)\b', up) and \
            not re.search(r'\bWHERE\b', up):
             out.append(Finding("error", "DELETE or UPDATE without WHERE",
                                1, 95, "add a WHERE clause"))
@@ -509,7 +566,7 @@ class HtmlInspector(Inspector):
                                    1, 40, "add action="))
 
         # unclosed non-void tags
-        opened = re.findall(r'<([a-zA-Z][a-zA-Z0-9]*)\b[^>/]*>', code)
+        opened = re.findall(r'<([a-zA-Z][a-zA-Z0-9]*)\b(?:[^>"\'/]|/(?!>)|"[^"]*"|\'[^\']*\')*>', code)
         closed = re.findall(r'</([a-zA-Z][a-zA-Z0-9]*)\s*>', code)
         for tag in set(opened):
             low = tag.lower()
@@ -548,7 +605,7 @@ INSPECTORS = {
 @dataclass
 class Translation:
     particle: EParticle
-    lang: ELang
+    lang: Union[ELang, ExtendedLanguage]
     errors: List[Finding]
     patterns: List[Finding]
     source: str
@@ -563,7 +620,7 @@ class Translation:
 
     def report(self) -> str:
         L = []
-        L.append(f"  language   : {ELang(self.lang).name}")
+        L.append(f"  language   : {lang_name(self.lang)}")
         L.append(f"  confidence : {self.particle.confidence}/256")
         L.append(f"  state      : {EState(self.particle.state).name}")
         L.append(f"  errors     : {len(self.errors)}")
@@ -585,12 +642,19 @@ class Translator:
     """Any language in. E-particles out."""
 
     def translate(self, code: str, ident: str = "unnamed",
-                  lang: Optional[ELang] = None) -> Translation:
+                  lang: Optional[Union[ELang, ExtendedLanguage]] = None) -> Translation:
         lang = lang if lang is not None else detect(code)
-        inspector = INSPECTORS.get(lang)
 
+        if isinstance(lang, ExtendedLanguage):
+            findings = inspect_extended(code, lang)
+            errors = [f for f in findings if f.kind == "error"]
+            patterns = [f for f in findings if f.kind == "pattern"]
+            particle = self._score(ident, ELang.EVER, errors, patterns)
+            return Translation(particle, lang, errors, patterns, code)
+
+        inspector = INSPECTORS.get(lang)
         if inspector is None:
-            p = e_z(ident, f"no inspector for {ELang(lang).name}")
+            p = e_z(ident, f"no inspector for {lang_name(lang)}")
             return Translation(p, lang, [], [], code)
 
         findings = inspector.inspect(code)

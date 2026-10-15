@@ -142,7 +142,7 @@ module Ever
     end
 
     def self.deserialize(line)
-      f = line.split('|')
+      f = line.split('|', 12)
       return z('malformed', 'malformed particle line') if f.size < 12
 
       new(ident: f[10], state: STATES[f[0].to_i], lang: LANGS[f[2].to_i],
@@ -481,5 +481,8 @@ if __FILE__ == $PROGRAM_NAME
   puts "  #{line}"
   back = Ever::Particle.deserialize(line)
   puts "  round trip -> #{back}"
+  raise 'round trip lost the particle' unless back.to_s == p1.to_s && back.reason == p1.reason
+  piped = Ever::Particle.z('piped', 'reason a|b')
+  raise 'a reason containing | was cut' unless Ever::Particle.deserialize(piped.serialize).reason == 'reason a|b'
   puts
 end

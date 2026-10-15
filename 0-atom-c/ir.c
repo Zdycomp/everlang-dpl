@@ -117,6 +117,7 @@ const char *ev_node_kind_name(EvNodeKind k) {
         case EV_NODE_Z:      return "z";
         case EV_NODE_ANCHOR: return "anchor";
         case EV_NODE_ASSM:   return "assimilate";
+        case EV_NODE_HEAL:   return "heal";
         case EV_NODE_ERR:    return "error";
         default:             return "?";
     }

@@ -303,7 +303,7 @@ EV_SUITE_TAGGED(form_roundtrip, "form", "normalise") {
 static void _both_paths(EvNode *prog, EValue *node_out, EValue *form_out) {
     EvArena *na = ev_arena_new("nodepath");
     EvNode  *cp = prog;
-    EvModule *mn = ev_lower_module("N", cp, na);
+    EvModule *mn = ev_lower_module("N", cp);
     ev_optimise(mn->global_body);
     EvInterp *in = ev_interp_new(mn);
     *node_out = ev_interp_run(in);
@@ -375,7 +375,7 @@ EV_SUITE_TAGGED(form_equivalence_functions, "form", "equivalence") {
 
     /* node path */
     EvArena *na = ev_arena_new("n");
-    EvModule *mn = ev_lower_module("N", def, na);
+    EvModule *mn = ev_lower_module("N", def);
     ev_optimise(mn->funcs[0]);
     EvInterp *in = ev_interp_new(mn);
     EValue arg = ev_int(7);
@@ -568,6 +568,71 @@ EV_SUITE_TAGGED(form_ext_binding_in_block, "form", "extension") {
 
     /* ev_lower_form_module mints its own arena, so these are
        ours to release. */
+    ev_arena_free(a);
+}
+
+EV_SUITE_TAGGED(form_root_sequence_keeps_every_form, "form", "lower") {
+    /* A root SEQUENCE of 65 atoms keeps its last form. */
+    EvArena *a = ev_arena_new("form-cap");
+    EvForm  *items[65];
+    for (int i = 0; i < 65; i++) items[i] = ev_form_int(a, i + 1, 1);
+    EvForm  *root = ev_form_sequence(a, EV_ROLE_BLOCK, items, 65, 1);
+    EvModule *m = ev_lower_form_module("cap65", root, a);
+    ASSERT_NOT_NULL(m);
+    EvInterp *ip = ev_interp_new(m);
+    ASSERT_EQ_INT(65, ev_interp_run(ip).body.as_int);
+    ev_interp_free(ip);
+    ev_module_free(m);
+    ev_arena_free(a);
+}
+
+EV_SUITE_TAGGED(form_nested_let_keeps_every_binding, "form", "lower") {
+    /* 300 LET bindings in an inner SEQUENCE, then a read of the last one. */
+    enum { NLET = 300 };
+    EvArena *a = ev_arena_new("form-let");
+    char     names[NLET][16];
+    EvForm  *items[NLET];
+    for (int i = 0; i < NLET; i++) {
+        snprintf(names[i], sizeof names[i], "x%d", i);
+        items[i] = ev_form_binding(a, EV_ROLE_BIND_LET, names[i],
+                                   ev_form_int(a, i + 1, 1), 1);
+    }
+    EvForm *inner = ev_form_sequence(a, EV_ROLE_BLOCK, items, NLET, 1);
+    EvForm *read  = ev_form_ref(a, names[NLET - 1], 1);
+    EvForm *outer[2] = { inner, read };
+    EvForm *root  = ev_form_sequence(a, EV_ROLE_BLOCK, outer, 2, 1);
+    EvModule *m = ev_lower_form_module("let300", root, a);
+    ASSERT_NOT_NULL(m);
+    EvInterp *ip = ev_interp_new(m);
+    ASSERT_EQ_INT(NLET, ev_interp_run(ip).body.as_int);
+    ev_interp_free(ip);
+    ev_module_free(m);
+    ev_arena_free(a);
+}
+
+EV_SUITE_TAGGED(form_aggregate_is_refused, "form", "lower") {
+    /* The C interpreter has no list values, so lowering refuses. */
+    EvArena *a = ev_arena_new("form-agg");
+    EvForm  *items[2] = { ev_form_int(a, 1, 1), ev_form_int(a, 2, 1) };
+    EvForm  *lst = ev_form_aggregate(a, EV_ROLE_AGG_LIST, items, NULL, 2, 1);
+    EvModule *m = ev_lower_form_module("agg", lst, a);
+    ASSERT_NULL(m);
+    ev_arena_free(a);
+}
+
+EV_SUITE_TAGGED(form_call_keeps_every_argument, "form", "lower") {
+    EvArena *a = ev_arena_new("form-call");
+    EvForm  *args[17];
+    for (int i = 0; i < 17; i++) args[i] = ev_form_int(a, i + 1, 1);
+    EvForm  *call = ev_form_apply(a, EV_ROLE_CALL, "nosuch", args, 17, 1);
+    EvModule *m = ev_lower_form_module("c17", call, a);
+    ASSERT_NOT_NULL(m);
+    int32_t seen = -1;
+    EvBlock *blk = m->global_body->blocks[0];
+    for (int32_t i = 0; i < blk->len; i++)
+        if (blk->instrs[i].op == OP_CALL) seen = blk->instrs[i].nargs;
+    ASSERT_EQ_INT(17, seen);
+    ev_module_free(m);
     ev_arena_free(a);
 }
 

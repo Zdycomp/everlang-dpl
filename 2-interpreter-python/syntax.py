@@ -34,6 +34,7 @@ from ever import (
     E, State, Defect, e_z, e_val,
     E_CERTAIN, E_ZERO, E_INTAKE, E_EXECUTE_FLOOR,
 )
+from repair import get_registry, recovery_base, repair_confidence
 
 
 # ═════════════════════════════════════════════
@@ -148,6 +149,31 @@ class Node:
 
 
 @dataclass
+class Heal(Node):
+    """`heal (e) using (s) fallback (f)` — self-healing operator."""
+    primary: Node
+    strategy: Node
+    fallback: Node
+    def children(self) -> List[Node]: return [self.primary, self.strategy, self.fallback]
+    def shape(self) -> str:
+        return f"heal({self.primary.shape()} using {self.strategy.shape()} fallback {self.fallback.shape()})"
+    def __str__(self) -> str:
+        return f"heal ({self.primary}) using ({self.strategy}) fallback ({self.fallback})"
+
+
+@dataclass
+class Learn(Node):
+    """`learn (e) using (s) fix (f)` — learning operator."""
+    primary: Node
+    strategy: Node
+    fixture: Node
+    def children(self) -> List[Node]: return [self.primary, self.strategy, self.fixture]
+    def shape(self) -> str:
+        return f"learn({self.primary.shape()} using {self.strategy.shape()} fix {self.fixture.shape()})"
+    def __str__(self) -> str:
+        return f"learn ({self.primary}) using ({self.strategy}) fix ({self.fixture})"
+
+@dataclass
 class Num(Node):
     value: float          # an int for integer literals (exact), float for reals
     raw: str = ""    # the literal text: "1" vs "1.0" — drives INT vs REAL inference
@@ -179,6 +205,12 @@ class Var(Node):
     def __str__(self) -> str: return self.name
 
 
+def _operand(node: Node) -> str:
+    """Source text for an operand. A compound operand is parenthesised, so
+    the text parses back to the same tree: 2 * (3 + 4), not 2 * 3 + 4."""
+    return f"({node})" if isinstance(node, (BinOp, UnaryOp, If)) else str(node)
+
+
 @dataclass
 class BinOp(Node):
     op: str
@@ -187,7 +219,8 @@ class BinOp(Node):
     def children(self) -> List[Node]: return [self.left, self.right]
     def shape(self) -> str:
         return f"({self.left.shape()} {self.op} {self.right.shape()})"
-    def __str__(self) -> str: return f"{self.left} {self.op} {self.right}"
+    def __str__(self) -> str:
+        return f"{_operand(self.left)} {self.op} {_operand(self.right)}"
 
 
 @dataclass
@@ -257,7 +290,7 @@ class UnaryOp(Node):
     operand: Node
     def children(self) -> List[Node]: return [self.operand]
     def shape(self) -> str: return f"Unary[{self.op}]({self.operand.shape()})"
-    def __str__(self) -> str: return f"{self.op} {self.operand}"
+    def __str__(self) -> str: return f"{self.op} {_operand(self.operand)}"
 
 
 @dataclass
@@ -267,7 +300,7 @@ class Index(Node):
     key: Node
     def children(self) -> List[Node]: return [self.target, self.key]
     def shape(self) -> str: return f"Index({self.target.shape()},{self.key.shape()})"
-    def __str__(self) -> str: return f"{self.target}[{self.key}]"
+    def __str__(self) -> str: return f"{_operand(self.target)}[{self.key}]"
 
 
 @dataclass
@@ -277,7 +310,7 @@ class Field(Node):
     name: str
     def children(self) -> List[Node]: return [self.target]
     def shape(self) -> str: return f"Field({self.target.shape()},{self.name})"
-    def __str__(self) -> str: return f"{self.target}.{self.name}"
+    def __str__(self) -> str: return f"{_operand(self.target)}.{self.name}"
 
 
 @dataclass
@@ -499,6 +532,69 @@ class Parser:
                              f"at line {got.line}")
         return self.take()
 
+    def _at_word(self, text: str) -> bool:
+        """A contextual word: `using`, `fallback` and `fix` are reserved only
+        in their own positions, so they stay ordinary names everywhere else."""
+        t = self.peek()
+        return t.kind in (T.KW, T.NAME) and t.text == text
+
+    def _expect_word(self, text: str) -> Token:
+        if not self._at_word(text):
+            got = self.peek()
+            raise ParseError(f"expected {text}, "
+                             f"found {got.text or 'end of input'} "
+                             f"at line {got.line}")
+        return self.take()
+
+    def _heal_ahead(self) -> bool:
+        """`heal (` opens the heal form only when `using` follows the matching
+        `)`. Otherwise `heal` is an ordinary name."""
+        if not (self.at(T.NAME, "heal") and self.toks[self.i + 1].kind is T.LPAR):
+            return False
+        depth = 0
+        for j in range(self.i + 1, len(self.toks)):
+            kind = self.toks[j].kind
+            if kind is T.EOF:
+                return False
+            if kind is T.LPAR:
+                depth += 1
+            elif kind is T.RPAR:
+                depth -= 1
+                if depth == 0:
+                    after = self.toks[j + 1]
+                    return after.kind in (T.KW, T.NAME) and after.text == "using"
+        return False
+
+    def heal_expr(self) -> Heal:
+        self.expect(T.NAME, "heal")
+        self.expect(T.LPAR)
+        primary = self.expr()
+        self.expect(T.RPAR)
+        self._expect_word("using")
+        self.expect(T.LPAR)
+        strategy = self.expr()
+        self.expect(T.RPAR)
+        self._expect_word("fallback")
+        self.expect(T.LPAR)
+        fallback = self.expr()
+        self.expect(T.RPAR)
+        return Heal(primary, strategy, fallback)
+
+    def learn_expr(self) -> Learn:
+        self.expect(T.KW, "learn")
+        self.expect(T.LPAR)
+        primary = self.expr()
+        self.expect(T.RPAR)
+        self._expect_word("using")
+        self.expect(T.LPAR)
+        strategy = self.expr()
+        self.expect(T.RPAR)
+        self._expect_word("fix")
+        self.expect(T.LPAR)
+        fixture = self.expr()
+        self.expect(T.RPAR)
+        return Learn(primary, strategy, fixture)
+
     # ── grammar ──
     def program(self) -> Node:
         """Parse a full program: zero or more statements to EOF.
@@ -533,7 +629,7 @@ class Parser:
                 statements[0],
                 (Num, Str, Bool, Var, ZLit, BinOp, If, Call, FnDef,
                  ListLit, RecordLit, UnaryOp, Index, Field,
-                 ForRange, ForIn, While)):
+                 ForRange, ForIn, While, Heal, Learn)):
             return statements[0]
         return Program(statements)
 
@@ -648,6 +744,10 @@ class Parser:
             then = self.expr()
             self.expect(T.KW, "else")
             return If(cond, then, self.expr())
+        if self._heal_ahead():
+            return self.heal_expr()
+        if self.at(T.KW, "learn"):
+            return self.learn_expr()
         if self.at(T.KW, "for"):
             return self.forstmt()
         if self.at(T.KW, "while"):
@@ -1290,6 +1390,11 @@ class Semantic:
             self._walk(node.body, bound, a)
             return Ty.ANY
 
+        if isinstance(node, (Heal, Learn)):
+            for child in node.children():
+                self._walk(child, bound, a)
+            return Ty.ANY
+
         return Ty.ANY
 
     def _infer_param_types(self, params: List[str],
@@ -1435,6 +1540,12 @@ class Semantic:
 # 4. EXECUTION over the AST
 # ═════════════════════════════════════════════
 
+def _at_confidence(e: E, conf: int) -> E:
+    """A copy of `e` carrying `conf`. The original may be a binding in the
+    caller's env, so it is never written to."""
+    return e_val(e.ident, e.value, conf, e.lang)
+
+
 def eval_ast(node: Node, env: Dict[str, E],
              fns: Dict[str, FnDef], depth: int = 0,
              limit: int = 3) -> E:
@@ -1547,6 +1658,48 @@ def eval_ast(node: Node, env: Dict[str, E],
         r = e_equiv("if", lo, hi)
         r.confidence = min(a.confidence, b.confidence)
         return r
+
+    if isinstance(node, Heal):
+        primary = eval_ast(node.primary, env, fns, depth, limit)
+        if not primary.is_z and primary.confidence >= E_EXECUTE_FLOOR:
+            return primary
+
+        strategy = eval_ast(node.strategy, env, fns, depth, limit)
+        reason = primary.reason if primary.is_z else "low confidence"
+
+        # Query the repair registry
+        repair = get_registry().find_repair(reason, strategy)
+        if repair:
+            fixture_text, cost = repair
+            fixture_node, perr = parse(fixture_text)
+            if perr is not None or fixture_node is None:
+                detail = perr.reason if perr is not None else "no expression"
+                return e_z("heal", f"archived fixture unparsable: {detail}",
+                           Defect.MISBOUND)
+            res = eval_ast(fixture_node, env, fns, depth, limit)
+            if res.is_z:
+                return e_z("heal", "fixture failed", Defect.MISBOUND)
+            base = recovery_base(primary.is_z, primary.confidence)
+            return _at_confidence(res, repair_confidence(base, res.confidence, cost))
+
+        # Fallback
+        return eval_ast(node.fallback, env, fns, depth, limit)
+
+    if isinstance(node, Learn):
+        primary = eval_ast(node.primary, env, fns, depth, limit)
+        if not primary.is_z and primary.confidence >= E_EXECUTE_FLOOR:
+            return primary
+
+        fixture = eval_ast(node.fixture, env, fns, depth, limit)
+        if fixture.is_z:
+            return fixture
+
+        if fixture.confidence >= E_EXECUTE_FLOOR:
+            reason = primary.reason if primary.is_z else "low confidence"
+            get_registry().archive_repair(reason, str(node.fixture))
+
+        base = recovery_base(primary.is_z, primary.confidence)
+        return _at_confidence(fixture, min(base, fixture.confidence))
 
     if isinstance(node, Call):
         fn = fns.get(node.name)

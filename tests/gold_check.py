@@ -259,7 +259,7 @@ def _build_c_executor() -> Tuple[Optional[str], Optional[str]]:
                 }
 
                 /* Lower root to TAC, optimise, run */
-                EvModule  *m  = ev_lower_module(name, root, a);
+                EvModule  *m  = ev_lower_module(name, root);
                 ev_optimise(m->global_body);
                 EvInterp  *ip = ev_interp_new(m);
                 EValue     r  = ev_interp_run(ip);

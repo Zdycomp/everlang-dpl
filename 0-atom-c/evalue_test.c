@@ -245,6 +245,28 @@ int main(void) {
     ev_describe(&row,  &pool, dbuf, sizeof dbuf);
     ok("describe record", strstr(dbuf, "id") != NULL);
 
+    /* ── RECORD field names are never aliased ── */
+    printf("\nRECORD field names\n");
+    {
+        EValue lr = ev_record_new(&pool);
+        char a63[64], b63[64];
+        memset(a63, 'k', 63); a63[63] = '\0';
+        memcpy(b63, a63, sizeof b63); b63[62] = 'z';
+        ev_record_set(&lr, a63, ev_int(1), E_CERTAIN, &pool);
+        ev_record_set(&lr, b63, ev_int(2), E_CERTAIN, &pool);
+        ok("two 63-byte names stay distinct",
+           ev_record_get(&lr, a63, &pool).body.as_int == 1 &&
+           ev_record_get(&lr, b63, &pool).body.as_int == 2);
+
+        char l1[80], l2[80];
+        memset(l1, 'q', 69); l1[69] = '\0';
+        memcpy(l2, l1, sizeof l2); l2[68] = 'z';
+        ok("69-byte name is refused",               ev_record_set(&lr, l1, ev_int(3), E_CERTAIN, &pool) == 0);
+        ok("second 69-byte name is refused",        ev_record_set(&lr, l2, ev_int(4), E_CERTAIN, &pool) == 0);
+        ok("refused names are not readable",        !ev_record_has(&lr, l1, &pool) && !ev_record_has(&lr, l2, &pool));
+        ok("record keeps only the two valid fields", ev_pool_record(&pool, lr.body.pool_ref)->h.len == 2);
+    }
+
     printf("\n=== EValue: %d passed, %d failed ===\n\n", passed, failed);
     return failed == 0 ? 0 : 1;
 }

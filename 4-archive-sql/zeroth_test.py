@@ -12,11 +12,17 @@ Two jobs.
    caller can forget to call; here it is a constraint.
 """
 
+import atexit
 import os
+import shutil
 import sqlite3
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DB = os.path.join(HERE, "zeroth.db")
+# A fresh directory, never beside the source (see repair_test.py).
+DB_DIR = tempfile.mkdtemp(prefix="zeroth-archive-")
+atexit.register(shutil.rmtree, DB_DIR, True)
+DB = os.path.join(DB_DIR, "zeroth.db")
 
 passed = failed = 0
 
@@ -29,17 +35,19 @@ def ok(name, cond):
         failed += 1; print(f"  ✗ {name}")
 
 
-def refuses(con, sql, params=()):
+def refusal(con, sql, params=()):
     try:
-        con.execute(sql, params); con.commit(); return False
-    except sqlite3.DatabaseError:
-        con.rollback(); return True
+        con.execute(sql, params); con.commit(); return None
+    except sqlite3.DatabaseError as e:
+        con.rollback(); return str(e)
+
+
+def refuses(con, sql, params=()):
+    return refusal(con, sql, params) is not None
 
 
 print("\n=== 4Ever Layer 4 (SQL) — the Zeroth Law ===\n")
 
-if os.path.exists(DB):
-    os.remove(DB)
 con = sqlite3.connect(DB)
 con.executescript(open(os.path.join(HERE, "archive.sql")).read())
 con.executescript(open(os.path.join(HERE, "zeroth.sql")).read())
@@ -64,7 +72,7 @@ ok("bands end at 256",                bands[5][3] == 256)
 rows = con.execute("SELECT confidence, band_id FROM v_band").fetchall()
 ok("v_band covers all 257 values",    len(rows) == 257)
 ok("band is single-valued",
-   len({c for c, _ in rows}) == 257)
+   len(rows) == len({c for c, _ in rows}) == 257)
 
 # ─────────────────────────────────────────────
 print("\nEquilibrium is an equivalence relation, over every value")
@@ -128,6 +136,11 @@ ok("anchored crossing that changes band is REFUSED", refuses(
 ok("anchored crossing across the Certain edge is REFUSED", refuses(
     con, X, (7001, 901, 0, 5, 256, 255, 4)))
 
+# 127 to 128 gains confidence, so the older anchor trigger lets it pass.
+# Only the band law refuses it, and the message says so.
+ok("anchored crossing into the next band is refused by the band law",
+   "Zeroth Law" in (refusal(con, X, (7001, 901, 0, 5, 127, 128, 8)) or ""))
+
 ok("confidence above 256 is REFUSED", refuses(
     con, X, (7001, 901, 0, 5, 300, 300, 5)))
 
@@ -154,6 +167,18 @@ ok("DELETE on a band is refused", refuses(
     con, "DELETE FROM ever_band WHERE id = 1"))
 ok("overlapping band still refused after the attempts",
    con.execute("SELECT hi FROM ever_band WHERE id = 5").fetchone()[0] == 256)
+ok("INSERT OR REPLACE that moves a boundary is REFUSED", refuses(
+    con, "INSERT OR REPLACE INTO ever_band (id, name, lo, hi, derivation) "
+         "VALUES (5, 'Certain', 200, 256, 'x')"))
+ok("INSERT OR REPLACE that leaves a gap is REFUSED", refuses(
+    con, "INSERT OR REPLACE INTO ever_band (id, name, lo, hi, derivation) "
+         "VALUES (4, 'Executable', 128, 250, 'x')"))
+ok("a new overlapping band is REFUSED", refuses(
+    con, "INSERT INTO ever_band (id, name, lo, hi, derivation) "
+         "VALUES (9, 'Probe', 200, 230, 'x')"))
+ok("the bands still partition the scale after the attempts",
+   con.execute("SELECT COUNT(*), COUNT(DISTINCT confidence) FROM v_band"
+               ).fetchone() == (257, 257))
 
 print("\nCorrelation")
 ok("thread lands in Executable",
@@ -181,6 +206,11 @@ ok("bands survive reconnect",
    con2.execute("SELECT COUNT(*) FROM ever_band").fetchone()[0] == 6)
 ok("drift survives reconnect",
    con2.execute("SELECT COUNT(*) FROM v_band_drift").fetchone()[0] == 1)
+con2.executescript(open(os.path.join(HERE, "zeroth.sql")).read())
+ok("reloading the law keeps six bands and 257 single-valued rows",
+   con2.execute("SELECT COUNT(*) FROM ever_band").fetchone()[0] == 6
+   and con2.execute("SELECT COUNT(*), COUNT(DISTINCT confidence) FROM v_band"
+                    ).fetchone() == (257, 257))
 con2.close()
 
 print(f"\n=== Layer 4 (zeroth): {passed} passed, {failed} failed ===\n")

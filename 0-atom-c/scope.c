@@ -71,7 +71,8 @@ static int32_t find_slot(const EvScopeEntry *slots, int32_t cap,
  * ───────────────────────────────────────────── */
 
 static int grow(EvScope *scope) {
-    int32_t newcap = scope->cap * 2;
+    int32_t newcap = (scope->used * 2 >= scope->cap) ? scope->cap * 2
+                                                      : scope->cap;
     EvScopeEntry *ns = (EvScopeEntry*)calloc((size_t)newcap,
                                               sizeof(EvScopeEntry));
     if (!ns) return 0;
@@ -150,6 +151,12 @@ int ev_scope_set(EvScope *scope,
     if (s < 0) return 0;
 
     int is_new = (scope->slots[s].state != EV_SLOT_LIVE);
+    const char *stored_key = scope->slots[s].key;
+    if (is_new) {
+        stored_key = ev_arena_strdup(scope->arena, key);
+        if (!stored_key) return 0;
+        if (scope->slots[s].state == EV_SLOT_TOMB) scope->tombs--;
+    }
 
     scope->slots[s].state       = EV_SLOT_LIVE;
     scope->slots[s].kind        = (uint8_t)kind;
@@ -157,7 +164,7 @@ int ev_scope_set(EvScope *scope,
     scope->slots[s].confidence  = confidence;
     scope->slots[s].hash        = h;
     scope->slots[s].anchor_id   = 0;
-    scope->slots[s].key         = ev_arena_strdup(scope->arena, key);
+    scope->slots[s].key         = stored_key;
     scope->slots[s].value       = value;
     scope->slots[s].node        = node;
     scope->slots[s].params      = params;

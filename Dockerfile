@@ -29,7 +29,9 @@ ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
 # ── toolchains ──
-# One layer per concern — ordered least- to most-volatile
+# One layer per concern — ordered least- to most-volatile.
+# Ensure the base image itself is patched before shipping; otherwise
+# Debian slim images can carry published CVEs in its package set.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         gcc \
@@ -43,6 +45,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         default-jdk-headless \
         ca-certificates \
         diffutils \
+    && apt-get upgrade -y \
+    && (command -v node >/dev/null 2>&1 || ln -s /usr/bin/nodejs /usr/bin/node) \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /ever

@@ -18,7 +18,7 @@ Codric Enterprise · Ricky (Dreid) · 2026
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import IntEnum
 from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
@@ -28,7 +28,7 @@ from evalue import (
     serialise as ev_serialise,
     deserialise as ev_deserialise,
 )
-from ir import EvNode, NK
+from ir import EvNode, NK, E_EXECUTE_FLOOR
 
 
 # ─────────────────────────────────────────────
@@ -557,7 +557,99 @@ def eval_node(node: EvNode, scope: EvScope,
 
         return eval_node(body, call_scope, depth + 1)
 
+    if k == NK.HEAL:
+        return _eval_heal(node, scope, depth)
+
+    if k == NK.LEARN:
+        return _eval_learn(node, scope, depth)
+
     return EValue.void()
+
+
+def _trusted(value: EValue, conf: int) -> EValue:
+    """`value` carrying `conf`, or z when there is no value or no trust left."""
+    if value.ev_tag is EvType.VOID or conf <= 0:
+        return EValue.void(0)
+    return replace(value, confidence=conf)
+
+
+def _confidence_of(value: EValue, node: EvNode, scope: EvScope) -> int:
+    if value.ev_tag is EvType.VOID:
+        return 0
+    from runtime import eval_confidence
+    return eval_confidence(node, scope)
+
+
+def _failure_reason(node: EvNode, scope: EvScope) -> str:
+    """Why a void node failed, worded the way the AST evaluator words it.
+    Repairs are keyed on this text, so the two evaluators must agree."""
+    for ch in node.children:
+        if eval_node(ch, scope).ev_tag is EvType.VOID:
+            return _failure_reason(ch, scope)
+    if node.kind is NK.DIV and len(node.children) == 2:
+        d = eval_node(node.children[1], scope)
+        if (d.ev_tag is EvType.INT and d.ev_int == 0) or \
+           (d.ev_tag is EvType.REAL and d.ev_real == 0):
+            return "division by zero"
+    if node.kind is NK.VAR and scope.lookup(node.str_val or "") is None:
+        return f"{node.str_val} was never bound"
+    if node.kind is NK.Z:
+        return "declared unknown"
+    return "unverified"
+
+
+def _eval_heal(node: EvNode, scope: EvScope, depth: int) -> EValue:
+    """heal (e) using (s) fallback (f): e while it can execute, otherwise the
+    archived repair for its failure, otherwise f."""
+    from ir import _ast_to_ir
+    from repair import get_registry, recovery_base, repair_confidence
+    from syntax import parse
+
+    primary_node, strategy_node, fallback_node = node.children
+    primary = eval_node(primary_node, scope, depth)
+    p_conf = _confidence_of(primary, primary_node, scope)
+    if p_conf >= E_EXECUTE_FLOOR:
+        return _trusted(primary, p_conf)
+
+    is_z = primary.ev_tag is EvType.VOID
+    reason = _failure_reason(primary_node, scope) if is_z else "low confidence"
+    strategy = eval_node(strategy_node, scope, depth)
+    repair = get_registry().find_repair(reason, strategy)
+    if repair is not None:
+        fixture_text, cost = repair
+        fixture_ast, perr = parse(fixture_text)
+        if perr is not None or fixture_ast is None:
+            return EValue.void(0)
+        fixture_node = _ast_to_ir(fixture_ast)
+        value = eval_node(fixture_node, scope, depth)
+        if value.ev_tag is EvType.VOID:
+            return EValue.void(0)
+        base = recovery_base(is_z, p_conf)
+        conf = repair_confidence(base, _confidence_of(value, fixture_node, scope), cost)
+        return _trusted(value, conf)
+
+    fallback = eval_node(fallback_node, scope, depth)
+    return _trusted(fallback, _confidence_of(fallback, fallback_node, scope))
+
+
+def _eval_learn(node: EvNode, scope: EvScope, depth: int) -> EValue:
+    """learn (e) using (s) fix (f): e while it can execute; otherwise f, which
+    is archived as the repair for e's failure once f itself can execute."""
+    from repair import get_registry, recovery_base
+
+    primary_node, _strategy_node, fixture_node = node.children
+    primary = eval_node(primary_node, scope, depth)
+    p_conf = _confidence_of(primary, primary_node, scope)
+    if p_conf >= E_EXECUTE_FLOOR:
+        return _trusted(primary, p_conf)
+
+    is_z = primary.ev_tag is EvType.VOID
+    fixture = eval_node(fixture_node, scope, depth)
+    f_conf = _confidence_of(fixture, fixture_node, scope)
+    if f_conf >= E_EXECUTE_FLOOR:
+        reason = _failure_reason(primary_node, scope) if is_z else "low confidence"
+        get_registry().archive_repair(reason, node.str_val or "")
+    return _trusted(fixture, min(recovery_base(is_z, p_conf), f_conf))
 
 
 def _binop(k: NK, a: EValue, b: EValue) -> EValue:

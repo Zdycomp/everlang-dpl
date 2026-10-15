@@ -128,12 +128,13 @@ def main():
     for t in skipped:
         print(f"  ~ SKIP {t} ({TOOLS[t][0]} not installed)")
 
-    npass = nfail = 0
+    npass = nfail = nskip = 0
     for prog in programs:
         src = prog.read_text()
         ref = run_source(src)
         if not ref.ok:
             print(f"  ~ SKIP {prog.stem} (Ever itself errors)")
+            nskip += 1
             continue
         expected = norm(ref.format_lines())
 
@@ -142,6 +143,7 @@ def main():
                 code = emit(src, target)
             except NotImplementedError as e:
                 print(f"  ~ SKIP {prog.stem:22} {target:7} ({e})")
+                nskip += 1
                 continue
             except Exception as e:
                 print(f"  x FAIL {prog.stem:22} {target:7} emit: {e}")
@@ -202,9 +204,13 @@ def main():
 
     print(f"\n{'-'*54}")
     print(f"  {npass} passed  {nfail} failed"
-          + (f"  ({len(skipped)} target(s) skipped)" if skipped else ""))
+          + (f"  ({len(skipped)} target(s) skipped)" if skipped else "")
+          + (f"  ({nskip} comparison(s) skipped)" if nskip else ""))
     print(f"{'-'*54}\n")
-    return 0 if nfail == 0 else 1
+    if nfail:
+        return 1
+    # Skipped comparisons are never a pass. 77 tells run_all.py so.
+    return 77 if (skipped or nskip) else 0
 
 
 if __name__ == "__main__":

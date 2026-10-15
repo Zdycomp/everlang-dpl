@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+SKIP_EXIT = 77
 sys.path.insert(0, str(ROOT / "2-interpreter-python"))
 from emit import emit  # noqa: E402
 from runtime import run_source  # noqa: E402
@@ -64,11 +65,13 @@ def drive(source: str):
                 }
             except Exception as exc:
                 report["targets"][target] = {"status": "error", "error": str(exc)}
-    report["finality"] = all(
-        data.get("status") == "pass"
-        for data in report["targets"].values()
-        if data.get("status") != "unavailable"
-    )
+    statuses = [data["status"] for data in report["targets"].values()]
+    if any(status in ("fail", "error") for status in statuses):
+        report["finality"] = "fail"
+    elif statuses and all(status == "pass" for status in statuses):
+        report["finality"] = "pass"
+    else:
+        report["finality"] = "unavailable"
     return report
 
 
@@ -86,8 +89,8 @@ def main(argv=None):
         print(f"Finality reference: {'pass' if report['reference_ok'] else 'fail'}")
         for target, data in report.get("targets", {}).items():
             print(f"{target}: {data['status']}")
-        print(f"Finality: {'pass' if report.get('finality') else 'fail'}")
-    return 0 if report.get("finality", False) else 1
+        print(f"Finality: {report.get('finality', 'fail')}")
+    return {"pass": 0, "unavailable": SKIP_EXIT}.get(report.get("finality"), 1)
 
 
 if __name__ == "__main__":

@@ -191,9 +191,7 @@ def _build_c_executor() -> Tuple[Optional[str], Optional[str]]:
         static void print_val(const char *name, EValue v, int16_t conf) {
             switch (v.tag) {
                 case EV_INT:
-                    if (v.body.as_real == (long long)v.body.as_int)
-                        printf("%s = %lld [%d/256]\n",name,(long long)v.body.as_int,(int)conf);
-                    else printf("%s = %lld [%d/256]\n",name,(long long)v.body.as_int,(int)conf);
+                    printf("%s = %lld [%d/256]\n",name,(long long)v.body.as_int,(int)conf);
                     break;
                 case EV_REAL:
                     if (v.body.as_real == (long long)v.body.as_real)
@@ -226,7 +224,7 @@ def _build_c_executor() -> Tuple[Optional[str], Optional[str]]:
                 EvNode *root=ev_ir_deserialise(ibuf,ilen,&cons,a);
                 free(ibuf);
                 if (!root){printf("%s = z [0/256]\n",name);ev_arena_free(a);continue;}
-                EvModule *m=ev_lower_module(name,root,a);
+                EvModule *m=ev_lower_module(name,root);
                 ev_optimise(m->global_body);
                 EvInterp *ip=ev_interp_new(m);
                 EValue r=ev_interp_run(ip);
@@ -365,6 +363,7 @@ class IntegResult:
     b_out:      List[str] = field(default_factory=list)
     b_exit:     int = 0
     b_err:      Optional[str] = None
+    backend:    str = 'both'   # which backends actually ran for this program
 
     @property
     def a_pass(self) -> bool:
@@ -384,7 +383,11 @@ class IntegResult:
 
     @property
     def gold(self) -> bool:
-        return self.a_pass and self.b_pass
+        # Only the backends that ran are judged; a backend that was not
+        # selected cannot fail the program.
+        a_ok = self.a_pass if self.backend in ('a', 'both') else True
+        b_ok = self.b_pass if self.backend in ('b', 'both') else True
+        return a_ok and b_ok
 
 
 # ─────────────────────────────────────────────
@@ -420,6 +423,7 @@ def run_integration(suite_dir: Path, tag_filter: Optional[str],
             r.b_out, r.b_exit, r.b_err = run_backend_b(source)
             r.b_out = normalise('\n'.join(r.b_out))
 
+        r.backend = backend
         results.append(r)
     return results
 
@@ -492,6 +496,10 @@ def print_report(results: List[IntegResult], backend: str, verbose: bool) -> int
     print("─" * 62)
 
     if len(gold) == active:
+        if skipped:
+            # Skipped programs were not checked; that is a skip, never a pass.
+            print(f"  ∼  {len(skipped)} program(s) skipped, not verified\n")
+            return 77
         print("  ✓  ALL GOLD\n")
         return 0
     else:

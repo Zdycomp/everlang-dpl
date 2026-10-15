@@ -7,6 +7,8 @@ from translate import (
     E_CERTAIN, E_ZERO, E_PI_WIDTH_WARN, E_PI_WIDTH_ENUMERATE,
     E_EMULATE_CEILING,
 )
+from language_support import ExtendedLanguage
+from pathlib import Path
 
 passed = failed = 0
 
@@ -149,6 +151,101 @@ ok("confidence survives", back.confidence == 180)
 ok("ident survives", back.ident == "parsed_amount")
 ok("lang survives", back.lang == ELang.PYTHON)
 ok("state survives", back.state == EState.CONFIDENT)
+
+X = ExtendedLanguage
+
+print("\nExtended language detection")
+ok("detects bare SELECT statement", detect("SELECT NOW();") == ELang.SQL)
+ok("detects Dockerfile", detect("FROM alpine\nRUN echo hi") == X.DOCKERFILE)
+ok("detects C#", detect("using System;\npublic class P {\n  public static void Main() { Console.WriteLine(1); }\n}") == X.CSHARP)
+ok("detects Clojure", detect("(ns my.app)\n(defn f [x] x)") == X.CLOJURE)
+ok("detects CSS", detect("p { color: red !important; }") == X.CSS)
+ok("detects Dart", detect("import 'dart:async';\nFuture<void> run() async {}") == X.DART)
+ok("detects Elixir", detect("defmodule M do\n  def f, do: 1\nend") == X.ELIXIR)
+ok("detects Emacs Lisp", detect("(defun f (x) (* x 2))") == X.EMACS_LISP)
+ok("detects Haskell", detect("module Main where\nmain = print 1") == X.HASKELL)
+ok("detects JavaScript", detect("function f(x) {\n  return x;\n}") == X.JAVASCRIPT)
+ok("detects Kotlin", detect("fun main() {\n  println(1)\n}") == X.KOTLIN)
+ok("detects MATLAB", detect("%% run\nfunction y = f(x)\n  y = 2*x;\nend\n") == X.MATLAB)
+ok("detects Perl", detect("my $x = 5;\nprint $x;") == X.PERL)
+ok("detects PHP", detect("<?php\necho 1;") == X.PHP)
+ok("detects PowerShell", detect("Write-Host $name") == X.POWERSHELL)
+ok("detects Swift", detect("func f() -> Int {\n  return 1\n}") == X.SWIFT)
+ok("detects TeX", detect("\\documentclass{article}\n\\begin{document}\nHi\n\\end{document}") == X.TEX)
+ok("detects Vue", detect('<template><p v-if="ok">hi</p></template>') == X.VUE)
+
+print("\nEver source is never claimed by a foreign detector")
+EVER_PROGRAMS = [
+    "let x = 5",
+    "let x = 5;",
+    "let our = 2",
+    "let x = 5\n# my answer is 5",
+    "let nsteps = 10\nshow nsteps",
+    "let defnames = 2\nshow defnames",
+    "let ns = 3\nshow ns",
+    "let namespace = 3\nshow namespace",
+    "let total = 4\n# data rate = 5 percent",
+    "let total = 5\nshow costs $total",
+    "def param(x) = x * 2\nlet y = param(3)\nshow y",
+    "let x = 5\n# using a fixed rate;",
+    "let ADD = 2\nADD * 3",
+    "let select = 1\nshow select",
+    "let x = 5  # done; move on",
+    "let x = 5\n# const x = 1 is old",
+    "let x = 5 # the end of it",
+    "my cat is fat",
+]
+for src in EVER_PROGRAMS:
+    ok(f"stays Ever: {src[:32]!r}", detect(src) == ELang.EVER)
+
+ROOT = Path(__file__).resolve().parent.parent
+corpus = sorted(p for d in ("examples", "tests/gold_suite")
+                for p in (ROOT / d).rglob("*.ever") if "node_modules" not in p.parts)
+ok(f"corpus is present ({len(corpus)} .ever files)", len(corpus) > 0)
+stray = [p.name for p in corpus if detect(p.read_text(encoding="utf-8")) != ELang.EVER]
+ok("every shipped .ever file detects as EVER", not stray)
+
+print("\nNo inspector for Ever source")
+ever = T.translate("let x = 5", "e.ever")
+ok("Ever source is Z", ever.particle.state == EState.Z)
+ok("Ever Z names its language", "no inspector for EVER" in ever.particle.reason)
+ok("empty input is Z", T.translate("").particle.state == EState.Z)
+ok("explicit EVER is Z", T.translate("let x = 5", lang=ELang.EVER).particle.state == EState.Z)
+ok("Ever report renders", isinstance(ever.report(), str))
+
+print("\nExtended languages translate and report")
+perl = T.translate("my $x = 5;\nprint $x;", "p.pl")
+ok("Perl report names the language", "language   : Perl" in perl.report())
+ok("prose translates to Z", T.translate("my cat is fat").particle.state == EState.Z)
+ok("JavaScript eval is an error", any("eval" in e.message for e in
+   T.translate("function f(x) { return eval(x); }", lang=X.JAVASCRIPT).errors))
+ok("JavaScript eval is not executable", not T.translate(
+   "function f(x) { return eval(x); }", lang=X.JAVASCRIPT).particle.can_execute)
+ok("explicit LUA dispatch reports loadstring", any("dynamic code loading" in e.message for e in
+   T.translate("local x = 5\nloadstring(s)()", lang=X.LUA).errors))
+ok("extended particle repr renders", isinstance(repr(e_confident("x", 100, X.PERL)), str))
+
+print("\nLanguage value spaces")
+ok("ELang and ExtendedLanguage values are disjoint",
+   not ({int(m) for m in ELang} & {int(m) for m in X}))
+
+print("\nInspector regressions")
+fk = T.translate("CREATE TABLE c (id INTEGER PRIMARY KEY, p INTEGER REFERENCES parent(id) "
+                 "ON UPDATE CASCADE);", "fk.sql", ELang.SQL)
+ok("ON UPDATE CASCADE is not an UPDATE without WHERE", not any("without WHERE" in e.message for e in fk.errors))
+ok("real UPDATE without WHERE is flagged", any("without WHERE" in e.message for e in
+   T.translate("UPDATE t SET x = 1", "u.sql", ELang.SQL).errors))
+leak = T.translate('#include <stdlib.h>\nint main(void) {\n  char *p = malloc(4);\n'
+                   '  return 0;\n} // free later\n', "leak.c", ELang.C)
+ok("free in a comment does not hide a leak", any("malloc" in e.message for e in leak.errors))
+paired = T.translate('#include <stdlib.h>\nint main(void) {\n  char *p = malloc(4);\n'
+                     '  free(p);\n  return 0;\n}', "paired.c", ELang.C)
+ok("paired free clears the leak check", not any("malloc" in e.message for e in paired.errors))
+html_slash = T.translate("<div class='a/b'>hello", "s.html", ELang.HTML)
+ok("slash inside an attribute still reports unclosed tag", any("unclosed <div>" in e.message
+   for e in html_slash.errors))
+html_br = T.translate("<p>one<br />two</p>", "b.html", ELang.HTML)
+ok("self-closing br is not unclosed", not any("unclosed" in e.message for e in html_br.errors))
 
 print(f"\n=== Layer 2: {passed} passed, {failed} failed ===\n")
 raise SystemExit(0 if failed == 0 else 1)

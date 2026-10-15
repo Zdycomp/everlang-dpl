@@ -19,6 +19,37 @@ static void _ok(const char *n, int c){
 }
 #define ok(n,c) _ok(n,c)
 
+/* Lower an EvNode program through ev_lower_module and run it on the real
+   path. *lowered reports whether lowering accepted the program. */
+static EValue run_node(EvArena *a, EvNode *n, int optimise, int *lowered) {
+    EvModule *m = ev_lower_module("t", n);
+    if (lowered) *lowered = (m != NULL);
+    if (!m) return ev_void();
+    if (optimise) ev_optimise(m->global_body);
+    EvInterp *ip = ev_interp_new(m);
+    EValue r = ev_interp_run(ip);
+    ev_interp_free(ip);
+    ev_module_free(m);
+    return r;
+}
+
+static EvNode *heal_node(EvArena *a, EvNode *primary, EvNode *fallback) {
+    EvNode *h = ev_node_new(a, EV_NODE_HEAL, 1);
+    ev_node_add_child(h, primary);
+    ev_node_add_child(h, ev_node_text(a, "strategy", 1));
+    ev_node_add_child(h, fallback);
+    return h;
+}
+
+static EvNode *sum_node(EvArena *a, EvNode *l, EvNode *r) {
+    return ev_node_binop(a, EV_NODE_ADD, l, r, 1);
+}
+
+static EvNode *if_term(EvArena *a) {
+    return ev_node_if(a, ev_node_bool(a, 1, 1), ev_node_int(a, 1, 1),
+                      ev_node_int(a, 0, 1), 1);
+}
+
 int main(void){
     printf("\n=== Ever \u2014 Three-Address IR (EvTAC) ===\n\n");
 
@@ -81,10 +112,11 @@ int main(void){
     EvBlock *b3 = ev_func_new_block(f);
     ev_builder_switch_block(&bld, b2);
     EvReg cond_r = ev_emit_const(&bld, ev_bool(1), 1);
-    ev_emit_jump_if(&bld, cond_r, b3->id, b0->id, 1);
+    ev_emit_jump_if(&bld, cond_r, b3->id, b0->id, b3->id, 1);
     ok("JUMP_IF nsucc=2",     b2->nsucc == 2);
     ok("JUMP_IF true=b3",     b2->succ[0] == b3->id);
     ok("JUMP_IF false=b0",    b2->succ[1] == b0->id);
+    ok("JUMP_IF unknown=b3",  b2->instrs[b2->len-1].unknown_label == b3->id);
 
     /* ── Lowering: EvNode → TAC ── */
     printf("\nLowering: EvNode \u2192 TAC\n");
@@ -95,7 +127,7 @@ int main(void){
     EvNode *n6   = ev_node_int(la,6,1);
     EvNode *n36  = ev_node_int(la,36,1);
     EvNode *nadd = ev_node_binop(la,EV_NODE_ADD,n6,n36,1);
-    EvModule *am = ev_lower_module("add-test",nadd,la);
+    EvModule *am = ev_lower_module("add-test",nadd);
     ok("add module created",  am != NULL);
     ok("global body has blk", am->global_body->nblocks > 0);
     EvBlock *gb = am->global_body->blocks[0];
@@ -151,7 +183,7 @@ int main(void){
     printf("\nPass 1 — constant folding\n");
     EvArena *ca = ev_arena_new("cfold");
     EvModule *cm = ev_module_new("cfold",ca);
-    const char *nop[] = {};
+    const char *nop[1] = { NULL };
     EvFunc *cf = ev_module_add_func(cm,"cf",nop,0);
     EvBlock *cb = ev_func_new_block(cf);
     EvBuilder cb_bld = ev_builder(cm,cf,cb);
@@ -232,7 +264,7 @@ int main(void){
     EvNode *iadd = ev_node_binop(ia,EV_NODE_ADD,
                                  ev_node_int(ia,6,1),
                                  ev_node_int(ia,36,1),1);
-    EvModule *im = ev_lower_module("interp",iadd,ia);
+    EvModule *im = ev_lower_module("interp",iadd);
     ev_optimise(im->global_body);
     EvInterp *ip = ev_interp_new(im);
     EValue result = ev_interp_run(ip);
@@ -245,7 +277,7 @@ int main(void){
     EvNode *sqn2 = ev_node_var(sa,"n",1);
     EvNode *sqmul= ev_node_binop(sa,EV_NODE_MUL,sqn,sqn2,1);
     EvNode *sqfn = ev_node_def(sa,"square",pn,1,sqmul,1);
-    EvModule *sm  = ev_lower_module("sq",sqfn,sa);
+    EvModule *sm  = ev_lower_module("sq",sqfn);
     ev_optimise(sm->funcs[0]);
     EvInterp *sip = ev_interp_new(sm);
     EValue sarg = ev_int(7);
@@ -261,7 +293,7 @@ int main(void){
     EvNode *i42 = ev_node_int(ia2,42,1);
     EvNode *i0  = ev_node_int(ia2,0,1);
     EvNode *iiff= ev_node_if(ia2,igt,i42,i0,1);
-    EvModule *im2 = ev_lower_module("if",iiff,ia2);
+    EvModule *im2 = ev_lower_module("if",iiff);
     EvInterp *ip2 = ev_interp_new(im2);
     EValue if_res = ev_interp_run(ip2);
     ok("if 10>5 then 42",      if_res.tag==EV_INT && if_res.body.as_int==42);
@@ -275,6 +307,171 @@ int main(void){
     ev_module_free(am); ev_module_free(fm); ev_module_free(cm);
     ev_module_free(dm); ev_module_free(pm); ev_module_free(sm);
     ev_module_free(im); ev_module_free(im2); ev_module_free(lm);
+
+
+    /* ── HEAL on the real path ── */
+    printf("\nHEAL\n");
+    {
+        int lw = 0;
+        EvArena *ha = ev_arena_new("heal-test");
+
+        EValue r1 = run_node(ha, heal_node(ha, ev_node_int(ha, 10, 1),
+                                           ev_node_int(ha, 1, 1)), 0, &lw);
+        ok("heal(10) lowers",                    lw);
+        ok("heal(10) takes the primary (10)",    r1.tag == EV_INT && r1.body.as_int == 10);
+
+        EValue r2 = run_node(ha, heal_node(ha, ev_node_var(ha, "x_undef", 1),
+                                           ev_node_int(ha, 42, 1)), 0, &lw);
+        ok("heal(z) takes the fallback (42)",    r2.tag == EV_INT && r2.body.as_int == 42);
+
+        EValue r3 = run_node(ha, heal_node(ha, ev_node_var(ha, "x_undef", 1),
+                                           sum_node(ha, ev_node_int(ha, 2, 1),
+                                                    ev_node_int(ha, 3, 1))), 1, &lw);
+        ok("heal(z) fallback 2+3 optimised -> 5", r3.tag == EV_INT && r3.body.as_int == 5);
+
+        EValue r4 = run_node(ha, heal_node(ha, ev_node_int(ha, 10, 1),
+                                           sum_node(ha, ev_node_int(ha, 2, 1),
+                                                    ev_node_int(ha, 3, 1))), 1, &lw);
+        ok("heal(10) fallback 2+3 optimised -> 10", r4.tag == EV_INT && r4.body.as_int == 10);
+
+        /* the fallback is lowered only on the repair path */
+        EvModule *lm = ev_lower_module("lazy", heal_node(ha, ev_node_int(ha, 10, 1),
+                                        ev_node_var(ha, "fb_undef", 1)));
+        int heal_in_entry = 0, fb_in_entry = 0;
+        if (lm) {
+            EvBlock *eb = lm->global_body->blocks[0];
+            for (int32_t i = 0; i < eb->len; i++) {
+                if (eb->instrs[i].op == OP_HEAL) heal_in_entry = 1;
+                if (eb->instrs[i].op == OP_LOAD && eb->instrs[i].name &&
+                        strcmp(eb->instrs[i].name, "fb_undef") == 0)
+                    fb_in_entry = 1;
+            }
+            ev_module_free(lm);
+        }
+        ok("heal ends the entry block",          heal_in_entry);
+        ok("fallback not lowered on trusted path", !fb_in_entry);
+
+        /* the merged result is no more certain than its weaker arm */
+        EvModule *cm = ev_lower_module("conf", heal_node(ha, ev_node_var(ha, "x_undef", 1),
+                                        ev_node_int(ha, 42, 1)));
+        int16_t mconf = -1;
+        if (cm) {
+            EvBlock *mb = cm->global_body->blocks[cm->global_body->nblocks - 1];
+            for (int32_t i = 0; i < mb->len; i++)
+                if (mb->instrs[i].op == OP_LOAD) mconf = mb->instrs[i].dest.confidence;
+            ev_module_free(cm);
+        }
+        ok("heal result takes the lower arm confidence", mconf == E_INTAKE);
+        ev_arena_free(ha);
+    }
+
+    /* ── IF on unknown and non-bool conditions ── */
+    printf("\nIF conditions\n");
+    {
+        int lw = 0;
+        EvArena *ia = ev_arena_new("if-test");
+        EValue z1 = run_node(ia, ev_node_if(ia, ev_node_var(ia, "x_undef", 1),
+                                            ev_node_int(ia, 1, 1), ev_node_int(ia, 2, 1), 1), 0, &lw);
+        ok("if (z) is z, not an arm",            lw && z1.tag == EV_VOID);
+        EValue t5 = run_node(ia, ev_node_if(ia, ev_node_int(ia, 5, 1),
+                                            ev_node_int(ia, 1, 1), ev_node_int(ia, 2, 1), 1), 0, &lw);
+        ok("if (5) takes the then arm",          t5.tag == EV_INT && t5.body.as_int == 1);
+        EValue f0 = run_node(ia, ev_node_if(ia, ev_node_int(ia, 0, 1),
+                                            ev_node_int(ia, 1, 1), ev_node_int(ia, 2, 1), 1), 0, &lw);
+        ok("if (0) takes the else arm",          f0.tag == EV_INT && f0.body.as_int == 2);
+        EValue te = run_node(ia, ev_node_if(ia, ev_node_text(ia, "", 1),
+                                            ev_node_int(ia, 1, 1), ev_node_int(ia, 2, 1), 1), 0, &lw);
+        ok("if (\"\") takes the else arm",         te.tag == EV_INT && te.body.as_int == 2);
+        EValue dz = run_node(ia, ev_node_binop(ia, EV_NODE_DIV, ev_node_int(ia, 1, 1),
+                                               ev_node_int(ia, 0, 1), 1), 0, &lw);
+        ok("1/0 is z, not a number",             dz.tag == EV_VOID);
+        ev_arena_free(ia);
+    }
+
+    /* ── Lowering refuses what the C interpreter cannot represent ── */
+    printf("\nLowering refusals\n");
+    {
+        int lw = 1;
+        EvArena *ra = ev_arena_new("refuse-test");
+        EvNode *lst = ev_node_new(ra, EV_NODE_LIST, 1);
+        ev_node_add_child(lst, ev_node_int(ra, 1, 1));
+        ev_node_add_child(lst, ev_node_int(ra, 2, 1));
+        run_node(ra, lst, 0, &lw);
+        ok("list literal is refused",            lw == 0);
+
+        char longtxt[300];
+        memset(longtxt, 'a', 299); longtxt[299] = '\0';
+        run_node(ra, ev_node_text(ra, longtxt, 1), 0, &lw);
+        ok("300-byte text literal is refused",   lw == 0);
+
+        char fit[192];
+        memset(fit, 'b', 191); fit[191] = '\0';
+        EValue ft = run_node(ra, ev_node_text(ra, fit, 1), 0, &lw);
+        ok("191-byte text literal lowers whole", lw && ft.tag == EV_TEXT && strlen(ft.text) == 191);
+
+        run_node(ra, ev_node_new(ra, EV_NODE_ANCHOR, 1), 0, &lw);
+        ok("anchor node is refused",             lw == 0);
+
+        EValue zz = run_node(ra, ev_node_new(ra, EV_NODE_Z, 1), 0, &lw);
+        ok("explicit z lowers to z",             lw && zz.tag == EV_VOID);
+        ev_arena_free(ra);
+    }
+
+    /* ── Large programs keep every term, or refuse ── */
+    printf("\nLarge programs\n");
+    {
+        int lw = 0;
+        EvArena *sa = ev_arena_new("scale-test");
+        EvNode *acc = if_term(sa);
+        for (int i = 1; i < 120; i++) acc = sum_node(sa, acc, if_term(sa));
+        EValue s120 = run_node(sa, acc, 0, &lw);
+        ok("120 IF terms sum to 120",            lw && s120.tag == EV_INT && s120.body.as_int == 120);
+        ev_arena_free(sa);
+
+        EvArena *ba = ev_arena_new("big-test");
+        EvNode *big = if_term(ba);
+        for (int i = 1; i < 400; i++) big = sum_node(ba, big, if_term(ba));
+        EValue s400 = run_node(ba, big, 0, &lw);
+        ok("400 IF terms are refused or sum to 400",
+           !lw || (s400.tag == EV_INT && s400.body.as_int == 400));
+        ev_arena_free(ba);
+    }
+
+    /* ── Function table and call arity ── */
+    printf("\nFunction table and call arity\n");
+    {
+        int lw = 0;
+        EvArena *fa = ev_arena_new("func-test");
+        EvNode *fargs[17];
+        char names[17][8];
+        for (int i = 0; i < 17; i++) {
+            snprintf(names[i], sizeof names[i], "f%d", i);
+            fargs[i] = ev_node_def(fa, names[i], NULL, 0, ev_node_int(fa, i, 1), 1);
+        }
+        EvModule *fm = ev_lower_module("many", ev_node_call(fa, "holder", fargs, 17, 1));
+        ok("17 definitions are all registered",  fm && fm->nfuncs == 17);
+        if (fm) {
+            EvInterp *fip = ev_interp_new(fm);
+            EValue v16 = ev_interp_call(fip, "f16", NULL, 0);
+            ok("the 17th function is callable",  v16.tag == EV_INT && v16.body.as_int == 16);
+            ev_interp_free(fip);
+            ev_module_free(fm);
+        }
+
+        EvNode *cargs[17];
+        for (int i = 0; i < 17; i++) cargs[i] = ev_node_int(fa, i + 1, 1);
+        EvModule *cm = ev_lower_module("c17", ev_node_call(fa, "nosuch", cargs, 17, 1));
+        int nargs_seen = -1;
+        if (cm) {
+            EvBlock *cb = cm->global_body->blocks[0];
+            for (int32_t i = 0; i < cb->len; i++)
+                if (cb->instrs[i].op == OP_CALL) nargs_seen = cb->instrs[i].nargs;
+            ev_module_free(cm);
+        }
+        ok("a 17-argument call keeps all 17",    nargs_seen == 17);
+        (void)lw;
+        ev_arena_free(fa);
+    }
 
     printf("\n=== EvTAC: %d passed, %d failed ===\n\n", ok_n, fail_n);
     return fail_n==0 ? 0 : 1;

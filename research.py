@@ -147,15 +147,6 @@ LAYERS = [
     ("4-archive-sql/archive_test.py",    ELang.PYTHON, "archive test"),
 ]
 
-# Assertions actually executed and passing, by layer.
-TEST_RESULTS = {
-    "atom (C)":         (88, 0),
-    "phase (C++)":      (49, 0),
-    "interpreter (Py)": (81, 0),
-    "archive (SQL)":    (56, 0),
-}
-
-
 @dataclass
 class Observation:
     layer: str
@@ -172,7 +163,7 @@ def gather() -> List[Observation]:
     for rel, lang, label in LAYERS:
         path = os.path.join(HERE, rel)
         if not os.path.exists(path):
-            continue
+            raise FileNotFoundError(f"research corpus layer missing: {rel}")
         tr = t.translate(open(path).read(), ident=label, lang=lang)
         out.append(Observation(
             layer=label, lang=ELang(lang).name,
@@ -280,11 +271,6 @@ def main() -> int:
     # ── RATIO ──
     print("\n\u25b8 RATIO — the corpus weighed against phi\n")
 
-    tests_pass = sum(p for p, _ in TEST_RESULTS.values())
-    tests_fail = sum(f for _, f in TEST_RESULTS.values())
-
-    print(f"  executed assertions      : {tests_pass} passing, "
-          f"{tests_fail} failing")
     print(f"  static findings          : {total_pat} patterns, "
           f"{total_err} errors")
 
@@ -342,7 +328,6 @@ def main() -> int:
           f"({hits}/{total})")
     print("    \u2022 Z-contagion is a consequence of that algebra, not a rule")
     print("    \u2022 Certain is unreachable by combination at any strength")
-    print(f"    \u2022 {tests_pass} assertions execute and pass across 4 layers")
     print(f"    \u2022 every finding classifies into the five binding defects")
     print()
     print("  NOT supported by the numbers:")

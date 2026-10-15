@@ -91,6 +91,7 @@ class _UnknownType:
     def __truediv__(self, other):  return self._as_c() / other
     def __rtruediv__(self, other): return self._as_c().__rtruediv__(other)
     def __pow__(self, other):  return self._as_c() ** other
+    def __rpow__(self, other): return self._as_c().__rpow__(other)
     def __neg__(self):         return self._as_c()
 
 
@@ -170,7 +171,7 @@ class C:
             return C(None, confidence=0)
         try:
             v = fn(self.value, o.value)
-        except (TypeError, ZeroDivisionError):
+        except ZeroDivisionError:
             return C(None, confidence=0)
         return C(v, confidence=min(self.confidence, o.confidence))
 
@@ -185,6 +186,7 @@ class C:
     def __rtruediv__(self, other):
         return _coerce(other).__truediv__(self)
     def __pow__(self, other):  return self._binop(other, lambda a, b: a ** b)
+    def __rpow__(self, other): return _coerce(other).__pow__(self)
 
     def __neg__(self) -> "C":
         if self.is_unknown:

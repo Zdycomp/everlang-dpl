@@ -67,8 +67,9 @@ pipelines don't need a posterior distribution. They need to stop lying when some
 pip install everconf
 ```
 
-No dependencies. Every claim in this README is checked by the test suite — `pytest tests/` — and every code block above
-is a real doctest, run and verified before each release, not typed from memory.
+No dependencies. The results shown in this README are asserted in `tests/test_everconf.py`, and the examples in the
+module docstring run as doctests in the same suite (`pytest tests/`). The `risky_computation()` snippet is an
+illustration and is not executed.
 
 ## Where this comes from
 

@@ -40,6 +40,12 @@
  *   RULE 1: Every allocation goes through ev_arena_alloc().
  *           malloc/calloc/new are not called directly by parser or execution
  *           code. Only the arena implementation calls them.
+ *           Named exceptions, each freed by its owner, none crossing the ABI:
+ *             evalue.c  pool composites (blob, list, record storage; RULE 5)
+ *             scope.c   scope slot tables
+ *             tac.c     interpreter state and frames, pass scratch, named slots
+ *           tests/test_invariants.py pins the count per file: a new raw
+ *           allocation fails until it is reviewed and listed here.
  *
  *   RULE 2: The arena owns its memory. Callers may READ arena memory as
  *           long as the arena is alive. They may not FREE it.
@@ -142,6 +148,7 @@ typedef enum {
     EV_NODE_Z      = 50,   /* explicit unknown */
     EV_NODE_ANCHOR = 51,   /* anchor a binding */
     EV_NODE_ASSM   = 52,   /* assimilate to another language */
+    EV_NODE_HEAL   = 80,   /* self-healing operator */
 
     EV_NODE_ERR    = 99,   /* parse/semantic error node */
 } EvNodeKind;

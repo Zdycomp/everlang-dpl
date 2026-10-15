@@ -60,6 +60,7 @@ class NK(IntEnum):
     AND    = 60; OR = 61; NOT = 62
     FOR_RANGE = 70; FOR_IN = 71; WHILE = 72
     Z      = 50; ANCHOR = 51; ASSM = 52
+    HEAL   = 80; LEARN = 81
     ERR    = 99
 
 
@@ -212,7 +213,7 @@ def serialise(n: EvNode) -> bytes:
         out += struct.pack("<q", n.lit_int)
     elif n.kind == NK.REAL:
         out += struct.pack("<d", n.lit_real)
-    elif n.kind in (NK.TEXT, NK.VAR, NK.CALL, NK.ANCHOR, NK.ASSM):
+    elif n.kind in (NK.TEXT, NK.VAR, NK.CALL, NK.ANCHOR, NK.ASSM, NK.LEARN):
         s = (n.str_val or "").encode("utf-8")
         out += struct.pack("<H", len(s)) + s
     elif n.kind == NK.ERR:
@@ -245,7 +246,7 @@ def deserialise(buf: bytes, pos: int = 0) -> Tuple[EvNode, int]:
         n.lit_int = struct.unpack_from("<q", buf, pos)[0]; pos += 8
     elif kind == NK.REAL:
         n.lit_real = struct.unpack_from("<d", buf, pos)[0]; pos += 8
-    elif kind in (NK.TEXT, NK.VAR, NK.CALL, NK.ANCHOR, NK.ASSM):
+    elif kind in (NK.TEXT, NK.VAR, NK.CALL, NK.ANCHOR, NK.ASSM, NK.LEARN):
         slen = struct.unpack_from("<H", buf, pos)[0]; pos += 2
         n.str_val = buf[pos:pos+slen].decode("utf-8", errors="replace"); pos += slen
     elif kind == NK.ERR:
@@ -350,6 +351,20 @@ def _ast_to_ir(ast_node) -> Optional[EvNode]:
         return None
 
     t = type(ast_node).__name__
+
+    if t == "Heal":
+        n = EvNode(kind=NK.HEAL)
+        n.children = [_ast_to_ir(ast_node.primary),
+                      _ast_to_ir(ast_node.strategy),
+                      _ast_to_ir(ast_node.fallback)]
+        return n
+
+    if t == "Learn":
+        n = EvNode(kind=NK.LEARN, str_val=str(ast_node.fixture))
+        n.children = [_ast_to_ir(ast_node.primary),
+                      _ast_to_ir(ast_node.strategy),
+                      _ast_to_ir(ast_node.fixture)]
+        return n
 
     if t == "Num":
         v = ast_node.value

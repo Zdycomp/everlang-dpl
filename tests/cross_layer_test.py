@@ -7,10 +7,13 @@ the browser disagree, the instrument is lying to somebody, and it does
 not matter which one is right.
 """
 
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)          # tests/ lives one level under the repo root
@@ -39,8 +42,8 @@ let js = html.slice(html.indexOf('<script>') + 8,
                     html.lastIndexOf('</script>'));
 js = js.slice(0, js.indexOf('/* \u2500\u2500 rendering \u2500\u2500 */'));
 js += '\nmodule.exports = { detect, inspect, score };\n';
-fs.writeFileSync('/tmp/ever_x.js', js);
-const L6 = require('/tmp/ever_x.js');
+fs.writeFileSync(process.argv[4], js);
+const L6 = require(process.argv[4]);
 const cases = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 const out = cases.map(c => {
   const lang = L6.detect(c);
@@ -69,15 +72,20 @@ def ok(name, cond):
 
 print("\n=== Ever — cross-layer agreement ===\n")
 
-with open("/tmp/ever_cases.json", "w") as fh:
+WORK = tempfile.mkdtemp(prefix="ever-cross-")
+atexit.register(shutil.rmtree, WORK, True)
+CASES_PATH = os.path.join(WORK, "ever_cases.json")
+DRIVER_PATH = os.path.join(WORK, "ever_driver.js")
+X_PATH = os.path.join(WORK, "ever_x.js")
+with open(CASES_PATH, "w") as fh:
     json.dump(CASES, fh)
-with open("/tmp/ever_driver.js", "w") as fh:
+with open(DRIVER_PATH, "w") as fh:
     fh.write(DRIVER)
 
 proc = subprocess.run(
-    ["node", "/tmp/ever_driver.js",
+    ["node", DRIVER_PATH,
      os.path.join(ROOT, "6-interface-html", "inspector.html"),
-     "/tmp/ever_cases.json"],
+     CASES_PATH, X_PATH],
     capture_output=True, text=True)
 
 if proc.returncode != 0:

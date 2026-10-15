@@ -175,6 +175,22 @@ SELECT RAISE(ABORT,
     'band boundaries are derived from the scale and are not editable');
 END;
 
+-- INSERT OR REPLACE is a delete followed by an insert, so the two guards
+-- above never see it. A row may enter only if it overlaps no other band
+-- and does not redefine an existing one; an identical re-seed passes.
+CREATE TRIGGER IF NOT EXISTS trg_zeroth_bands_insert_closed
+BEFORE INSERT ON ever_band FOR EACH ROW
+WHEN EXISTS (SELECT 1 FROM ever_band o
+              WHERE o.id <> NEW.id AND o.lo <= NEW.hi AND NEW.lo <= o.hi)
+  OR EXISTS (SELECT 1 FROM ever_band o
+              WHERE o.id = NEW.id
+                AND (o.name <> NEW.name OR o.lo <> NEW.lo
+                     OR o.hi <> NEW.hi OR o.derivation <> NEW.derivation))
+BEGIN
+SELECT RAISE(ABORT,
+    'bands may not overlap, and an existing band may not be redefined');
+END;
+
 CREATE TRIGGER IF NOT EXISTS trg_zeroth_no_delete_band
 BEFORE DELETE ON ever_band FOR EACH ROW
 BEGIN

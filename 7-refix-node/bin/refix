@@ -50,6 +50,7 @@ signatures: ${SIGS}
 
 function cmdScan(logPath) {
   const stderr = fs.readFileSync(logPath, 'utf8');
+  if (!stderr.trim()) { console.log('empty build log: nothing to match or archive.'); return; }
   const sigs   = loadSignatures(SIGS);
   const hits   = scan(stderr, sigs);
   const arch   = new Archive(HOME);
@@ -154,7 +155,7 @@ function cmdErrors() {
   if (!errors.length) { console.log('no error catches yet.'); return; }
   for (const e of errors) {
     console.log(`${e.status.padEnd(10)} ${e.source_ident} ${e.fingerprint}`);
-    console.log(`  ${e.message.replace(/\\n.*$/s, ' …')}`);
+    console.log(`  ${e.message.replace(/\n.*$/s, ' …')}`);
   }
 }
 

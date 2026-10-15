@@ -69,6 +69,21 @@ static int16_t _min_conf(int16_t a, int16_t b) { return a < b ? a : b; }
  * THE ELEVEN CASES
  * ───────────────────────────────────────────── */
 
+static EvBlock *lower_block(EvBuilder *b) {
+    EvBlock *blk = ev_func_new_block(b->func);
+    if (!blk) ev_lower_fail(b, "out of arena memory while lowering");
+    return blk;
+}
+
+/* An unknown selector yields z: store void into the phi slot and merge. */
+static void lower_unknown_arm(EvBuilder *b, EvBlock *unk, const char *phi,
+                              EvBlock *merge, int32_t line) {
+    ev_builder_switch_block(b, unk);
+    EvReg zv = ev_emit_const(b, ev_void(), line);
+    ev_emit_store(b, phi, zv, line);
+    ev_emit_jump(b, merge->id, line);
+}
+
 EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
     if (!f) return ev_reg_void();
 
@@ -107,8 +122,15 @@ EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
             return ev_emit_binop(b, op, l, r, f->line);
         }
         /* CALL / BUILTIN — same shape, lowered the same way */
-        EvReg argv[16];
-        int32_t n = f->part_count < 16 ? f->part_count : 16;
+        int32_t n = f->part_count;
+        EvReg  *argv = NULL;
+        if (n > 0) {
+            argv = (EvReg*)ev_arena_alloc(b->func->arena, (size_t)n * sizeof(EvReg));
+            if (!argv) {
+                ev_lower_fail(b, "out of arena memory while lowering");
+                return ev_reg_void();
+            }
+        }
         for (int32_t i = 0; i < n; i++)
             argv[i] = ev_lower_form(b, f->parts[i]);
         return ev_emit_call(b, f->symbol, argv, n, f->line);
@@ -121,7 +143,9 @@ EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
      *
      * Every arm STOREs into a shared phi slot; the merge block
      * LOADs it. That is the fix that made the two-arm case correct;
-     * generalising it to N costs nothing extra. */
+     * generalising it to N costs nothing extra.
+     *
+     * A selector that is z takes no arm: the result is z. */
     case EV_FORM_BRANCH: {
         int32_t narms = ev_form_arm_count(f);
         if (narms < 1) return ev_reg_void();
@@ -129,14 +153,16 @@ EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
         char phi[32];
         snprintf(phi, sizeof phi, "_phi_%d", b->func->reg_counter);
 
-        EvBlock *merge = ev_func_new_block(b->func);
+        EvBlock *merge = lower_block(b);
+        if (!merge) return ev_reg_void();
 
         /* Single-arm guard: run arm if selector true, else void */
         if (narms == 1) {
             EvReg sel = ev_lower_form(b, ev_form_selector(f));
-            EvBlock *then_b = ev_func_new_block(b->func);
-            EvBlock *else_b = ev_func_new_block(b->func);
-            ev_emit_jump_if(b, sel, then_b->id, else_b->id, f->line);
+            EvBlock *then_b = lower_block(b);
+            EvBlock *else_b = lower_block(b);
+            if (!then_b || !else_b) return ev_reg_void();
+            ev_emit_jump_if(b, sel, then_b->id, else_b->id, else_b->id, f->line);
 
             ev_builder_switch_block(b, then_b);
             EvReg tv = ev_lower_form(b, ev_form_arm(f, 0));
@@ -156,9 +182,11 @@ EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
          * selector; the final arm is the fallthrough (else). For
          * N=2 this reduces exactly to if/then/else. */
         EvReg sel = ev_lower_form(b, ev_form_selector(f));
-        EvBlock *then_b = ev_func_new_block(b->func);
-        EvBlock *else_b = ev_func_new_block(b->func);
-        ev_emit_jump_if(b, sel, then_b->id, else_b->id, f->line);
+        EvBlock *then_b = lower_block(b);
+        EvBlock *else_b = lower_block(b);
+        EvBlock *unk_b  = lower_block(b);
+        if (!then_b || !else_b || !unk_b) return ev_reg_void();
+        ev_emit_jump_if(b, sel, then_b->id, else_b->id, unk_b->id, f->line);
 
         ev_builder_switch_block(b, then_b);
         EvReg tv = ev_lower_form(b, ev_form_arm(f, 0));
@@ -176,6 +204,10 @@ EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
             EvArena *a = f->arena;   /* the form tree's arena, not the module's */
             EvForm **rest = (EvForm **)ev_arena_alloc(
                 a, sizeof(EvForm*) * (narms - 1));
+            if (!rest) {
+                ev_lower_fail(b, "out of arena memory while lowering");
+                return ev_reg_void();
+            }
             for (int32_t i = 1; i < narms; i++)
                 rest[i-1] = ev_form_arm(f, i);
             EvForm *tail = ev_form_branch(a, f->role,
@@ -185,6 +217,8 @@ EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
         }
         ev_emit_store(b, phi, ev, f->line);
         ev_emit_jump(b, merge->id, f->line);
+
+        lower_unknown_arm(b, unk_b, phi, merge, f->line);
 
         ev_builder_switch_block(b, merge);
         int16_t conf = _min_conf(tv.confidence, ev.confidence);
@@ -219,25 +253,19 @@ EvReg ev_lower_form(EvBuilder *b, const EvForm *f) {
         return ev_reg_void();
 
     /* ── 8. AGGREGATE ────────────────────────────────────────
-     * list / record / tuple — one shape. Elements lower left to
-     * right; the opcode differs only by role. */
-    case EV_FORM_AGGREGATE: {
-        EvReg items[32];
-        int32_t n = f->part_count < 32 ? f->part_count : 32;
-        for (int32_t i = 0; i < n; i++)
-            items[i] = ev_lower_form(b, f->parts[i]);
-        EvOpcode op = (f->role == EV_ROLE_AGG_RECORD) ? OP_RECORD : OP_LIST;
-        return ev_emit_call(b, ev_opcode_name(op), items, n, f->line);
-    }
+     * list / record / tuple — one shape. The C interpreter has no
+     * composite values, so lowering refuses rather than producing z. */
+    case EV_FORM_AGGREGATE:
+        ev_lower_fail(b, (f->role == EV_ROLE_AGG_RECORD)
+            ? "record values are not supported by the C interpreter"
+            : "list values are not supported by the C interpreter");
+        return ev_reg_void();
 
     /* ── 9. ACCESS ───────────────────────────────────────────
-     * index / field — one shape, one lowering. */
-    case EV_FORM_ACCESS: {
-        EvReg tgt = ev_lower_form(b, ev_form_target(f));
-        EvReg key = ev_lower_form(b, ev_form_key(f));
-        EvReg args[2]; args[0] = tgt; args[1] = key;
-        return ev_emit_call(b, ev_opcode_name(OP_GET), args, 2, f->line);
-    }
+     * index / field — one shape. Refused for the same reason. */
+    case EV_FORM_ACCESS:
+        ev_lower_fail(b, "indexing and field access are not supported by the C interpreter");
+        return ev_reg_void();
 
     /* ── 10. ANNOTATION ──────────────────────────────────────
      * Metadata rides along. anchor / assimilate / confidence all
@@ -280,7 +308,12 @@ EvFunc *ev_lower_form_func(EvModule *m, const EvForm *fn) {
     }
 
     EvFunc  *f   = ev_module_add_func(m, fn->symbol, params, np);
-    EvBlock *blk = ev_func_new_block(f);
+    EvBlock *blk = f ? ev_func_new_block(f) : NULL;
+    if (!blk) {
+        if (!m->lower_error)
+            m->lower_error = "out of arena memory while lowering";
+        return NULL;
+    }
     EvBuilder b  = ev_builder(m, f, blk);
 
     /* bind parameters as loads in the entry block */
@@ -314,13 +347,17 @@ EvModule *ev_lower_form_module(const char *name, const EvForm *root,
     /* A SEQUENCE at the root is a program: abstractions become
      * functions, everything else joins the global body. Any other
      * root form is a single expression program. */
-    const EvForm *items[64];
-    int32_t n = 0;
+    int32_t n = (root->form == EV_FORM_SEQUENCE) ? root->part_count : 1;
+    const EvForm **items = NULL;
+    if (n > 0) {
+        items = (const EvForm**)ev_arena_alloc(ma, sizeof(EvForm*) * (size_t)n);
+        if (!items) { ev_module_free(m); return NULL; }
+    }
     if (root->form == EV_FORM_SEQUENCE) {
-        for (int32_t i = 0; i < root->part_count && n < 64; i++)
-            items[n++] = root->parts[i];
+        for (int32_t i = 0; i < n; i++)
+            items[i] = root->parts[i];
     } else {
-        items[n++] = root;
+        items[0] = root;
     }
 
     for (int32_t i = 0; i < n; i++)
@@ -328,7 +365,8 @@ EvModule *ev_lower_form_module(const char *name, const EvForm *root,
             ev_lower_form_func(m, items[i]);
 
     EvFunc  *gb  = ev_module_add_func(m, "$global", NULL, 0);
-    EvBlock *blk = ev_func_new_block(gb);
+    EvBlock *blk = gb ? ev_func_new_block(gb) : NULL;
+    if (!blk) { ev_module_free(m); return NULL; }
     EvBuilder b  = ev_builder(m, gb, blk);
     m->global_body = gb;
 
@@ -338,5 +376,6 @@ EvModule *ev_lower_form_module(const char *name, const EvForm *root,
         last = ev_lower_form(&b, items[i]);
     }
     ev_emit_return(&b, last, root->line);
+    if (m->lower_error) { ev_module_free(m); return NULL; }
     return m;
 }

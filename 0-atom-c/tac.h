@@ -130,7 +130,8 @@ typedef enum {
 
     /* Error / unknown */
     OP_NOP    = 99,
-    OP_ERR    = 100,
+    OP_HEAL   = 100,   /* block terminator: src0 trusted ? true : false */
+    OP_ERR    = 101,
 } EvOpcode;
 
 const char *ev_opcode_name(EvOpcode op);
@@ -170,6 +171,7 @@ typedef struct {
     EvReg       dest;         /* result register; ev_reg_void() if none */
     EvReg       src0;         /* first source (or only source)           */
     EvReg       src1;         /* second source (void if not used)        */
+    EvReg       src2;         /* third source (void if not used)         */
 
     /* For CONST: inline literal */
     EValue      literal;
@@ -184,9 +186,10 @@ typedef struct {
     /* For RECORD: parallel key array */
     const char **keys;
 
-    /* For JUMP / JUMP_IF: target block ids */
-    int32_t     true_label;   /* block id for true branch                */
-    int32_t     false_label;  /* block id for false branch               */
+    /* For JUMP / JUMP_IF / HEAL: target block ids */
+    int32_t     true_label;   /* block id for true branch (HEAL: trusted) */
+    int32_t     false_label;  /* block id for false branch (HEAL: repair) */
+    int32_t     unknown_label; /* JUMP_IF: block for an unknown (z) cond  */
 
     /* Source position */
     int32_t     line;
@@ -238,6 +241,7 @@ typedef struct {
     int32_t      func_cap;
     EvFunc      *global_body; /* top-level statements as implicit fn     */
     EvArena     *arena;
+    const char  *lower_error;  /* first lowering refusal; NULL if none   */
 } EvModule;
 
 /* ─────────────────────────────────────────────
@@ -249,6 +253,7 @@ typedef struct {
     EvFunc   *func;
     EvBlock  *block;          /* current block being built              */
 } EvBuilder;
+
 
 /* Lifecycle */
 EvModule  *ev_module_new(const char *name, EvArena *arena);
@@ -271,12 +276,18 @@ EvReg ev_emit_call(EvBuilder *b, const char *name,
                    EvReg *args, int32_t nargs, int32_t line);
 void  ev_emit_return(EvBuilder *b, EvReg src, int32_t line);
 void  ev_emit_jump(EvBuilder *b, int32_t label_id, int32_t line);
-void  ev_emit_jump_if(EvBuilder *b, EvReg cond,
-                      int32_t true_lbl, int32_t false_lbl, int32_t line);
+void  ev_emit_jump_if(EvBuilder *b, EvReg cond, int32_t true_lbl,
+                      int32_t false_lbl, int32_t unknown_lbl, int32_t line);
+void  ev_emit_heal(EvBuilder *b, EvReg primary, int32_t trusted_lbl,
+                   int32_t repair_lbl, int32_t line);
 EvReg ev_emit_load(EvBuilder *b, const char *name, int32_t type,
                    int16_t conf, int32_t line);
 void  ev_emit_store(EvBuilder *b, const char *name, EvReg src, int32_t line);
 void  ev_emit_def_fn(EvBuilder *b, const char *name, int32_t line);
+
+/* Record a lowering refusal on the builder's module. Lowering functions
+   return a void register on refusal; ev_lower_module returns NULL. */
+void  ev_lower_fail(EvBuilder *b, const char *msg);
 
 /* ─────────────────────────────────────────────
  * LOWERING  — EvNode AST → EvTAC
@@ -300,7 +311,7 @@ EvFunc *ev_lower_func(EvModule *m, const EvNode *fn_node);
  * result into a complete EvModule, with a global_body block for
  * non-def statements.
  */
-EvModule *ev_lower_module(const char *name, EvNode *root, EvArena *arena);
+EvModule *ev_lower_module(const char *name, EvNode *root);
 
 /* ─────────────────────────────────────────────
  * OPTIMISATION PASSES

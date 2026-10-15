@@ -288,7 +288,7 @@ EV_SUITE_TAGGED(ks_arithmetic_edges, "ks", "ks_bounds") {
         EvNode  *n = ev_node_binop(a, tc.op,
                         ev_node_int(a, tc.a, 1),
                         ev_node_int(a, tc.b, 1), 1);
-        EvModule *m = ev_lower_module(tc.label, n, a);
+        EvModule *m = ev_lower_module(tc.label, n);
         ev_optimise(m->global_body);
         EvInterp *ip = ev_interp_new(m);
         EValue r = ev_interp_run(ip);
@@ -366,7 +366,7 @@ EV_SUITE_TAGGED(ks_confidence_propagation, "ks", "ks_conf") {
        in this codebase and is worth stating exactly where it bites:
          ev_module_new(name, arena)     TAKES the arena; ev_module_free
                                         frees it. Never free it again.
-         ev_lower_module(name, root, a) MINTS its own arena; `a` still
+         ev_lower_module(name, root) MINTS its own arena; `a` still
                                         owns the tree and stays yours.
          ev_lower_form_module(...)      same as ev_lower_module.
        This suite built its module the first way, so `a` goes with it
@@ -414,7 +414,7 @@ EV_SUITE_TAGGED(ks_z_contagion, "ks", "ks_z") {
                 (EvNode*[]){ ev_node_binop(a, EV_NODE_SUB,
                     ev_node_var(a,"n",1), ev_node_int(a,1,1), 1) }, 1, 1), 1), 1);
     EvNode *def = ev_node_def(a, "deep", pn, 1, body, 1);
-    EvModule *m = ev_lower_module("zc", def, a);
+    EvModule *m = ev_lower_module("zc", def);
     ev_optimise(m->funcs[0]);
     EvInterp *ip = ev_interp_new(m);
 
@@ -443,7 +443,7 @@ static int64_t _branch(EvNodeKind op, int64_t a_, int64_t b_,
     EvNode *n = ev_node_if(a,
         ev_node_binop(a, op, ev_node_int(a,a_,1), ev_node_int(a,b_,1), 1),
         ev_node_int(a, t_, 1), ev_node_int(a, e_, 1), 1);
-    EvModule *m = ev_lower_module("br", n, a);
+    EvModule *m = ev_lower_module("br", n);
     ev_optimise(m->global_body);
     EvInterp *ip = ev_interp_new(m);
     EValue r = ev_interp_run(ip);
@@ -495,7 +495,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
     {
         EvNode *n = ev_node_if(a, ev_node_bool(a,1,1),
                         ev_node_int(a,42,1), ev_node_int(a,0,1), 1);
-        EvModule *m = ev_lower_module("lit", n, a);
+        EvModule *m = ev_lower_module("lit", n);
         EvInterp *ip = ev_interp_new(m);
         ASSERT_EQ_INT(42, ev_interp_run(ip).body.as_int);
         ev_interp_free(ip); ev_module_free(m);
@@ -505,7 +505,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
         EvArena *b = ev_arena_new("s2");
         EvNode *n = ev_node_if(b, ev_node_bool(b,0,1),
                         ev_node_int(b,42,1), ev_node_int(b,7,1), 1);
-        EvModule *m = ev_lower_module("lit0", n, b);
+        EvModule *m = ev_lower_module("lit0", n);
         EvInterp *ip = ev_interp_new(m);
         ASSERT_EQ_INT(7, ev_interp_run(ip).body.as_int);
         ev_interp_free(ip); ev_module_free(m); ev_arena_free(b);
@@ -517,7 +517,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
             ev_node_binop(b,EV_NODE_GT,ev_node_int(b,10,1),ev_node_int(b,5,1),1),
             ev_node_binop(b,EV_NODE_ADD,ev_node_int(b,6,1),ev_node_int(b,36,1),1),
             ev_node_binop(b,EV_NODE_MUL,ev_node_int(b,0,1),ev_node_int(b,9,1),1),1);
-        EvModule *m = ev_lower_module("expr", n, b);
+        EvModule *m = ev_lower_module("expr", n);
         ev_optimise(m->global_body);
         EvInterp *ip = ev_interp_new(m);
         ASSERT_EQ_INT(42, ev_interp_run(ip).body.as_int);
@@ -530,7 +530,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
                             ev_node_bool(b,1,1), ev_node_bool(b,0,1), 1);
         EvNode *n = ev_node_if(b, inner,
                         ev_node_int(b,42,1), ev_node_int(b,0,1), 1);
-        EvModule *m = ev_lower_module("condbr", n, b);
+        EvModule *m = ev_lower_module("condbr", n);
         EvInterp *ip = ev_interp_new(m);
         ASSERT_EQ_INT(42, ev_interp_run(ip).body.as_int);
         ev_interp_free(ip); ev_module_free(m); ev_arena_free(b);
@@ -544,7 +544,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
                         ev_node_int(b,-2,1), 1);
         EvNode *l1 = ev_node_if(b, ev_node_bool(b,1,1), l2,
                         ev_node_int(b,-1,1), 1);
-        EvModule *m = ev_lower_module("deep", l1, b);
+        EvModule *m = ev_lower_module("deep", l1);
         EvInterp *ip = ev_interp_new(m);
         ASSERT_EQ_INT(42, ev_interp_run(ip).body.as_int);
         ev_interp_free(ip); ev_module_free(m); ev_arena_free(b);
@@ -559,7 +559,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
                         ev_node_int(b,-2,1), l3, 1);
         EvNode *l1 = ev_node_if(b, ev_node_bool(b,0,1),
                         ev_node_int(b,-1,1), l2, 1);
-        EvModule *m = ev_lower_module("deepelse", l1, b);
+        EvModule *m = ev_lower_module("deepelse", l1);
         EvInterp *ip = ev_interp_new(m);
         ASSERT_EQ_INT(42, ev_interp_run(ip).body.as_int);
         ev_interp_free(ip); ev_module_free(m); ev_arena_free(b);
@@ -572,7 +572,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
         EvNode *earm = ev_node_if(b, ev_node_bool(b,1,1),
                         ev_node_int(b,-2,1), ev_node_int(b,-3,1), 1);
         EvNode *n = ev_node_if(b, ev_node_bool(b,1,1), tarm, earm, 1);
-        EvModule *m = ev_lower_module("both", n, b);
+        EvModule *m = ev_lower_module("both", n);
         EvInterp *ip = ev_interp_new(m);
         ASSERT_EQ_INT(42, ev_interp_run(ip).body.as_int);
         ev_interp_free(ip); ev_module_free(m); ev_arena_free(b);
@@ -582,7 +582,7 @@ EV_SUITE_TAGGED(ks_branch_shapes, "ks", "ks_flow") {
         EvArena *b = ev_arena_new("s8");
         EvNode *n = ev_node_if(b, ev_node_bool(b,0,1),
                         ev_node_int(b,1,1), ev_node_text(b,"else",1), 1);
-        EvModule *m = ev_lower_module("mixed", n, b);
+        EvModule *m = ev_lower_module("mixed", n);
         EvInterp *ip = ev_interp_new(m);
         EValue r = ev_interp_run(ip);
         ASSERT_EQ_INT(EV_TEXT, r.tag);
@@ -661,7 +661,7 @@ static EvModule *_recursive_fn(EvArena *a, const char *name,
             ev_node_var(a,"n",1),
             ev_node_call(a, name, args, 1, 1), 1), 1);
     EvNode *def = ev_node_def(a, name, pn, 1, body, 1);
-    EvModule *m = ev_lower_module(name, def, a);
+    EvModule *m = ev_lower_module(name, def);
     ev_optimise(m->funcs[0]);
     return m;
 }
@@ -1033,7 +1033,7 @@ EV_SUITE_TAGGED(ks_pass_function_arguments, "ks", "ks_passing") {
     EvNode *body = ev_node_binop(a, EV_NODE_ADD,
                      ev_node_var(a,"n",1), ev_node_var(a,"n",1), 1);
     EvNode *def  = ev_node_def(a, "double", pn, 1, body, 1);
-    EvModule *m = ev_lower_module("args", def, a);
+    EvModule *m = ev_lower_module("args", def);
     ev_optimise(m->funcs[0]);
     EvInterp *ip = ev_interp_new(m);
 
@@ -1055,7 +1055,7 @@ EV_SUITE_TAGGED(ks_pass_function_arguments, "ks", "ks_passing") {
     EvNode *sub = ev_node_binop(b, EV_NODE_SUB,
                     ev_node_var(b,"a",1), ev_node_var(b,"b",1), 1);
     EvNode *d2  = ev_node_def(b, "diff", pn2, 2, sub, 1);
-    EvModule *m2 = ev_lower_module("two", d2, b);
+    EvModule *m2 = ev_lower_module("two", d2);
     ev_optimise(m2->funcs[0]);
     EvInterp *ip2 = ev_interp_new(m2);
 
@@ -1104,7 +1104,7 @@ EV_SUITE_TAGGED(ks_pass_cross_arena, "ks", "ks_passing") {
     ASSERT_EQ_INT(6,  copy->children[0]->lit.as_int);
     ASSERT_EQ_INT(36, copy->children[1]->lit.as_int);
 
-    EvModule *m = ev_lower_module("copy", copy, dst);
+    EvModule *m = ev_lower_module("copy", copy);
     ev_optimise(m->global_body);
     EvInterp *ip = ev_interp_new(m);
     ASSERT_EQ_INT(42, ev_interp_run(ip).body.as_int);
@@ -1321,7 +1321,7 @@ EV_SUITE_TAGGED(ks_pipeline_both_paths, "ks", "ks_pipeline") {
     EV_PARAMS(cases, tc) {
         /* node path */
         EvArena *na = ev_arena_new("n");
-        EvModule *mn = ev_lower_module("N", tc.prog, na);
+        EvModule *mn = ev_lower_module("N", tc.prog);
         ev_optimise(mn->global_body);
         EvInterp *in = ev_interp_new(mn);
         EValue rn = ev_interp_run(in);
@@ -1370,12 +1370,12 @@ EV_SUITE_TAGGED(ks_pipeline_optimiser_safety, "ks", "ks_pipeline") {
 
     EV_PARAMS(cases, tc) {
         EvArena *u = ev_arena_new("u");
-        EvModule *mu = ev_lower_module("U", tc.prog, u);
+        EvModule *mu = ev_lower_module("U", tc.prog);
         EvInterp *iu = ev_interp_new(mu);
         EValue ru = ev_interp_run(iu);          /* unoptimised */
 
         EvArena *o = ev_arena_new("o");
-        EvModule *mo = ev_lower_module("O", tc.prog, o);
+        EvModule *mo = ev_lower_module("O", tc.prog);
         ev_optimise(mo->global_body);
         EvInterp *io = ev_interp_new(mo);
         EValue ro = ev_interp_run(io);          /* optimised */
@@ -1461,6 +1461,71 @@ EV_SUITE_TAGGED(ks_pipeline_end_to_end, "ks", "ks_pipeline") {
     /* Arena teardown. ev_module_free owns only the arena the
        lowerer minted for itself; these hold our trees. */
     ev_arena_free(b);
+}
+
+EV_SUITE_TAGGED(ks_div_by_zero_is_z, "ks", "ks_bounds") {
+    /* Division by zero is z, not a number. The state is checked before
+       arithmetic, as in the Python reference. */
+    EvArena *a = ev_arena_new("divzero");
+    EvNode  *n = ev_node_binop(a, EV_NODE_DIV, ev_node_int(a, 1, 1),
+                               ev_node_int(a, 0, 1), 1);
+    EvModule *m = ev_lower_module("div0", n);
+    ASSERT_NOT_NULL(m);
+    EvInterp *ip = ev_interp_new(m);
+    ASSERT_EQ_INT(EV_VOID, ev_interp_run(ip).tag);
+    ev_interp_free(ip);
+    ev_module_free(m);
+    ev_arena_free(a);
+}
+
+/* The depth gate, through the path real programs take. ev_interp_call
+   enters its callee directly and skips the OP_CALL gate for that frame,
+   so the suites above can pass while a gate change goes unseen at the
+   outermost call. Here nothing is entered directly: the global body
+   calls fact as an ordinary expression, through OP_CALL, and
+   ev_interp_run runs it. */
+static EValue _fact_via_op_call(int64_t n) {
+    EvArena *a = ev_arena_new("viaop");
+    const char *pn[] = { "n" };
+    EvNode *rec_arg = ev_node_binop(a, EV_NODE_SUB,
+                        ev_node_var(a, "n", 1), ev_node_int(a, 1, 1), 1);
+    EvNode *rec_args[1] = { rec_arg };
+    EvNode *fbody = ev_node_if(a,
+        ev_node_binop(a, EV_NODE_LTE,
+            ev_node_var(a, "n", 1), ev_node_int(a, 1, 1), 1),
+        ev_node_int(a, 1, 1),
+        ev_node_binop(a, EV_NODE_MUL,
+            ev_node_var(a, "n", 1),
+            ev_node_call(a, "fact", rec_args, 1, 1), 1), 1);
+    EvNode *fdef = ev_node_def(a, "fact", pn, 1, fbody, 1);
+
+    EvNode *call_args[1] = { ev_node_int(a, n, 1) };
+    EvNode *call = ev_node_call(a, "fact", call_args, 1, 1);
+    /* the definition sits in the untaken arm: lowering still registers
+       it in the module, and the taken arm is the ordinary call */
+    EvNode *root = ev_node_if(a, ev_node_bool(a, 1, 1), call, fdef, 1);
+
+    EvModule *m = ev_lower_module("viaop", root);
+    ASSERT_NOT_NULL(m);
+    ev_optimise(m->global_body);
+    EvInterp *ip = ev_interp_new(m);
+    EValue r = ev_interp_run(ip);
+    ev_interp_free(ip);
+    ev_module_free(m);
+    ev_arena_free(a);
+    return r;
+}
+
+EV_SUITE_TAGGED(ks_recursion_ceiling_op_call, "ks", "ks_recursion") {
+    /* fact(3) is the last legal case; fact(4) is refused as z. Both
+       answers come from the OP_CALL gate, reached as a real program
+       reaches it. */
+    EValue r3 = _fact_via_op_call(3);
+    ASSERT_EQ_INT(EV_INT, r3.tag);
+    ASSERT_EQ_INT(6,      r3.body.as_int);
+
+    EValue r4 = _fact_via_op_call(4);
+    ASSERT_EQ_INT(EV_VOID, r4.tag);
 }
 
 EV_MAIN

@@ -167,9 +167,10 @@ public final class EParticle {
 
 
     public static int excelFormula(int a, int b) {
+        if (a >= CERTAIN && b >= CERTAIN) return CERTAIN;
         long v = (long) a + b - ((long) a * b / CERTAIN);
-        if (v > CERTAIN) v = CERTAIN;
-        if (v < ZERO)    v = ZERO;
+        if (v > CERTAIN - 1) v = CERTAIN - 1;
+        if (v < ZERO)        v = ZERO;
         return (int) v;
     }
 

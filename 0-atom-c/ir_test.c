@@ -232,6 +232,8 @@ int main(void) {
     ok("n2 survives its source", n2 && n2->lit.as_int == 77);
     ev_arena_free(ob);
 
+    ok("HEAL has a kind name",           strcmp(ev_node_kind_name(EV_NODE_HEAL), "heal") == 0);
+
     printf("\n=== IR + arena: %d passed, %d failed ===\n\n",
            ok_count, fail_count);
     return fail_count == 0 ? 0 : 1;

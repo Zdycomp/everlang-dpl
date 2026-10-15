@@ -54,6 +54,20 @@ P=0; F=0; S=0; N=()
 finish >/dev/null 2>&1; rc=$?
 check "finish safe with empty results array" "$rc" "0"
 
+# --- 7. finish() fails a run that only skipped
+P=1; F=0; S=1
+finish >/dev/null 2>&1; rc=$?
+check "finish returns 1 when only skips occurred" "$rc" "1"
+
+# --- 8. real C row: payload parses, gcc builds, binary runs (no fakes)
+CDIR="$(mktemp -d)"
+cp 0-atom-c/tapestry.h 0-atom-c/tapestry.c 0-atom-c/tapestry_test.c "$CDIR/"
+P=0; S=0; F=0; N=()
+run_suite "0|c|Layer 0 (C)|header|$CDIR|gcc|tapestry.c tapestry_test.c::tapestry_test::tapestry_test|2|" >/dev/null
+check "real C row passes through run_suite" "$P" "1"
+check "real C row not counted as failed" "$F" "0"
+rm -rf "$CDIR"
+
 rm -rf "$TMP"
 if [ "$failures" -gt 0 ]; then echo "runner self-test: $failures failure(s)"; exit 1; fi
 echo "all runner self-tests passed"

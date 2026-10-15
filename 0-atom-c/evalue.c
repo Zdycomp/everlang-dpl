@@ -237,11 +237,12 @@ int32_t ev_list_len(const EValue *list, ev_pool *pool) {
 int ev_record_set(EValue *rec, const char *name, EValue val,
                   int16_t conf, ev_pool *pool) {
     if (rec->tag != EV_RECORD || !name) return 0;
+    if (strlen(name) >= EV_FIELD_NAME_MAX) return 0;
     ev_record *r = ev_pool_record(pool, rec->body.pool_ref);
     if (!r) return 0;
     /* update existing field */
     for (int i = 0; i < r->h.len; i++) {
-        if (strncmp(r->fields[i].name, name, EV_FIELD_NAME_MAX-1) == 0) {
+        if (strcmp(r->fields[i].name, name) == 0) {
             r->fields[i].value = val;
             r->fields[i].confidence = conf;
             return 1;
@@ -263,20 +264,22 @@ int ev_record_set(EValue *rec, const char *name, EValue val,
 
 EValue ev_record_get(const EValue *rec, const char *name, ev_pool *pool) {
     if (rec->tag != EV_RECORD || !name) return ev_void();
+    if (strlen(name) >= EV_FIELD_NAME_MAX) return ev_void();
     ev_record *r = ev_pool_record(pool, rec->body.pool_ref);
     if (!r) return ev_void();
     for (int i = 0; i < r->h.len; i++)
-        if (strncmp(r->fields[i].name, name, EV_FIELD_NAME_MAX-1) == 0)
+        if (strcmp(r->fields[i].name, name) == 0)
             return r->fields[i].value;
     return ev_void();
 }
 
 int ev_record_has(const EValue *rec, const char *name, ev_pool *pool) {
     if (rec->tag != EV_RECORD || !name) return 0;
+    if (strlen(name) >= EV_FIELD_NAME_MAX) return 0;
     ev_record *r = ev_pool_record(pool, rec->body.pool_ref);
     if (!r) return 0;
     for (int i = 0; i < r->h.len; i++)
-        if (strncmp(r->fields[i].name, name, EV_FIELD_NAME_MAX-1) == 0)
+        if (strcmp(r->fields[i].name, name) == 0)
             return 1;
     return 0;
 }

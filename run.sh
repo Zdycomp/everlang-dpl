@@ -70,7 +70,8 @@ run_suite(){
     py) if require_ok python3; then run_py_test "$dir" "$payload" "$name" "$tail"
         else skip "$name" "${msg:-python3 not found}"; fi ;;
     c)  if require_ok gcc; then
-          local src out art; IFS=':' read -r src out art <<<"$payload"
+          local src out art rest
+          src="${payload%%::*}"; rest="${payload#*::}"; out="${rest%%::*}"; art="${rest#*::}"
           run_c_test "$name" "$dir" "$src" "$out" "$art" "$tail"
         else skip "$name" "gcc not found"; fi ;;
     *)  if require_ok $req; then run_raw_test "$name" "$dir" "$payload" "$tail"
@@ -85,7 +86,7 @@ finish(){
     local n; for n in "${N[@]}"; do printf '  %s\n' "$n"; done
   fi
   printf '\n  verified %d   skipped %d   failed %d\n\n' "$P" "$S" "$F"
-  [ "$F" -gt 0 ] && return 1
+  if [ "$F" -gt 0 ] || [ "$S" -gt 0 ]; then return 1; fi
   return 0
 }
 

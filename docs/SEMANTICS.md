@@ -276,7 +276,8 @@ Examples and an anchor, `fact(100)` computes at depth 99.
 
 ---
 
-## 5. Conditionals
+## 5. Conditionals and Healing
+
 
 ### 5.1 Known condition — lazy
 

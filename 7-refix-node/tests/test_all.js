@@ -5,6 +5,7 @@ const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
 const assert = require('assert');
+const { spawnSync } = require('child_process');
 
 const { Archive, makeRepair }  = require('../src/archive');
 const { loadSignatures, scan } = require('../src/match');
@@ -165,6 +166,56 @@ t('sdk_not_found matches without captures', () => {
   const sigs = loadSignatures(path.join(__dirname, '..', 'signatures', 'gradle.json'));
   const hits = scan('SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable or by setting the sdk.dir path in your project.', sigs);
   assert.ok(hits.some(h => h.signature_id === 'gradle.sdk_not_found'));
+});
+
+// ─── constants and the CLI ─────────────────────────────────────────
+
+const BIN = path.join(__dirname, '..', 'bin', 'refix');
+
+function cli(home, args) {
+  return spawnSync(process.execPath, [BIN, ...args],
+    { env: Object.assign({}, process.env, { REFIX_HOME: home }), encoding: 'utf8' });
+}
+
+function writeLog(home, name, text) {
+  const file = path.join(home, name);
+  fs.writeFileSync(file, text);
+  return file;
+}
+
+t('constants hold the values the SQL archive records', () => {
+  assert.deepStrictEqual({ ...E }, { E_ZERO: 0, E_CERTAIN: 256, E_EXECUTE_FLOOR: 128,
+    E_INTAKE: 120, E_ASCEND_POINTS: 3, E_REPAIR_PLAIN: 8, E_REPAIR_INFERRED: 32 });
+  assert.deepStrictEqual({ ...KIND }, { PLAIN: 0, INFERRED: 1 });
+});
+
+t('propose does not repeat a rule already on record', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'refix-cli-'));
+  const log = writeLog(home, 'build.log', '> Could not find com.squareup.okhttp3:okhttp:4.12.0.\n');
+  for (const src of ['repo/a', 'repo/b', 'repo/c']) {
+    assert.strictEqual(cli(home, ['accept', log, src]).status, 0);
+  }
+  assert.strictEqual(cli(home, ['propose']).status, 0);
+  assert.strictEqual(cli(home, ['propose']).status, 0);
+  const rules = cli(home, ['rules']).stdout.trim().split('\n');
+  assert.strictEqual(rules.length, 1, rules.join('\n'));
+  assert.ok(rules[0].startsWith('admitted'), rules[0]);
+});
+
+t('an empty build log is a no-match, not a crash', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'refix-cli-'));
+  const r = cli(home, ['scan', writeLog(home, 'empty.log', '')]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes('nothing to match'), r.stdout);
+});
+
+t('refix errors shows only the first line of a multi-line message', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'refix-cli-'));
+  const log = writeLog(home, 'novel.log', 'FAILURE: Build failed\n* What went wrong:\nSomething odd\n');
+  assert.strictEqual(cli(home, ['scan', log]).status, 0);
+  const out = cli(home, ['errors']).stdout;
+  assert.ok(out.includes('FAILURE: Build failed …'), out);
+  assert.ok(!out.includes('Something odd'), out);
 });
 
 // ─────────────────────────────────────────────

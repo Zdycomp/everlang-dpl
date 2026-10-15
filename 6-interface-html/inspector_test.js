@@ -8,7 +8,9 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const HERE = __dirname;
 const html = fs.readFileSync(path.join(HERE, 'inspector.html'), 'utf8');
@@ -20,11 +22,13 @@ js += '\nmodule.exports = { detect, inspect, score, E_CERTAIN, E_ZERO, ' +
     'E_EMULATE_CEILING, E_EXECUTE_FLOOR, E_PI_WIDTH_WARN, ' +
     'E_PI_WIDTH_ENUMERATE };\n';
 
-const tmp = path.join('/tmp', 'ever_inspector_logic.js');
-fs.writeFileSync(tmp, js);
-const L6 = require(tmp);
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ever-inspector-'));
+const logic = path.join(scratch, 'inspector_logic.js');
+fs.writeFileSync(logic, js);
+const L6 = require(logic);
+fs.rmSync(scratch, { recursive: true, force: true });
 
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 
 function ok(name, cond) {
     if (cond) {
@@ -133,10 +137,49 @@ const mine = cases.map(c => {
     const r = run(c);
     return {lang: r.lang, state: r.state, confidence: r.confidence};
 });
-fs.writeFileSync('/tmp/ever_layer6_results.json', JSON.stringify(mine));
-ok('results written for cross-check', mine.length === cases.length);
+
+const PY_LANG = { 'C++': 'CPP' };
+const translator = [
+    'import json, sys',
+    'sys.path.insert(0, sys.argv[1])',
+    'from translate import Translator, lang_name, EState',
+    'out = []',
+    'for code in json.load(sys.stdin):',
+    '    t = Translator().translate(code)',
+    '    out.append({"lang": lang_name(t.lang),',
+    '                "state": EState(t.particle.state).name,',
+    '                "confidence": t.particle.confidence})',
+    'print(json.dumps(out))',
+].join('\n');
+
+let theirs = null;
+try {
+    theirs = JSON.parse(execFileSync('python3',
+        ['-B', '-c', translator, path.join(HERE, '..', '2-inspect-python')],
+        { input: JSON.stringify(cases), encoding: 'utf8' }));
+} catch (e) {
+    if (e.code === 'ENOENT') {
+        skipped++;
+        console.log('  ∼ SKIP: python3 not on PATH, cross-layer agreement not checked');
+    } else {
+        ok('Python translator runs on every case', false);
+    }
+}
+
+if (theirs) {
+    ok('Python translator reads every case', theirs.length === cases.length);
+    mine.forEach((r, i) => {
+        const p = theirs[i];
+        ok('case ' + i + ': language agrees with Python',
+            (PY_LANG[r.lang] || r.lang).toUpperCase() === p.lang);
+        ok('case ' + i + ': state agrees with Python', r.state.toUpperCase() === p.state);
+        ok('case ' + i + ': confidence agrees with Python', r.confidence === p.confidence);
+    });
+}
+
 mine.forEach((r, i) => console.log('      case ' + i + ': ' + r.lang +
     ' ' + r.state + ' ' + r.confidence + '/256'));
 
-console.log('\n=== Layer 6: ' + passed + ' passed, ' + failed + ' failed ===\n');
-process.exit(failed === 0 ? 0 : 1);
+console.log('\n=== Layer 6: ' + passed + ' passed, ' + failed + ' failed, ' +
+    skipped + ' skipped ===\n');
+process.exit(failed ? 1 : (skipped ? 77 : 0));

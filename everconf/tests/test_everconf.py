@@ -99,6 +99,17 @@ def test_rejects_uncoercible_types():
     with pytest.raises(TypeError):
         C(5) + [1, 2, 3]
 
+def test_mismatched_operands_raise_rather_than_report_unknown():
+    with pytest.raises(TypeError):
+        C("a") + C(1)
+    with pytest.raises(TypeError):
+        "a" - C(1)
+
+def test_reflected_pow_matches_the_other_operators():
+    assert (2 ** C(3)).value == 8
+    assert (2 ** C(3)).confidence == CERTAIN
+    assert (2 ** UNKNOWN).is_unknown
+
 
 # ── arithmetic: confidence ──
 
@@ -263,3 +274,19 @@ def test_mse_empty_is_unknown():
 def test_constants():
     assert CERTAIN == 256
     assert 0 < INTAKE < FLOOR < CERTAIN
+
+
+# ── the README's headline results, as written there ──
+
+def test_readme_headline_results():
+    assert (C(88) + C(76) + UNKNOWN + C(91)).is_unknown
+    r = mse([C(0.9), C(0.2), C(0.6)], [C(1), C(0), C(1)])
+    assert r.value == pytest.approx(0.07)
+    assert r.confidence == CERTAIN
+    assert mse([C(0.9), C(0.2), C(0.6)], [C(1), C(0), UNKNOWN]).is_unknown
+    assert (C(10, confidence=256) + C(20, confidence=120)).confidence == 120
+
+def test_module_docstring_examples_run():
+    import doctest
+    import everconf
+    assert doctest.testmod(everconf).failed == 0

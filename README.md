@@ -18,8 +18,8 @@ promise the archive makes — nothing is ever deleted.*
 python3 tests/run_all.py
 ```
 
-**34 suites · 34 passed · 0 skipped · 0 failed · 1,385 counted assertions**
-— macOS, 2026-09-05. Layers whose toolchain is missing report SKIP;
+**45 suites · 45 passed · 0 skipped · 0 failed**
+— macOS, 2026-10-12. Layers whose toolchain is missing report SKIP;
 they never report PASS.
 
 ---

@@ -75,7 +75,14 @@ class Archive {
   }
 
   append(record)  { fs.appendFileSync(this.repairsPath, JSON.stringify(record) + '\n'); }
-  appendRule(r)   { fs.appendFileSync(this.rulesPath,   JSON.stringify(r)      + '\n'); }
+  appendRule(r) {
+    const recorded = this.rules().some(q => q.signature_id === r.signature_id
+      && q.fixture_form === r.fixture_form && q.status === r.status
+      && q.replay_total === r.replay_total && q.replay_agreed === r.replay_agreed);
+    if (recorded) return false;
+    fs.appendFileSync(this.rulesPath, JSON.stringify(r) + '\n');
+    return true;
+  }
 
   readAll(file) {
     if (!fs.existsSync(file)) return [];
