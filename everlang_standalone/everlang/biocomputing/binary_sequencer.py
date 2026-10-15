@@ -63,6 +63,9 @@ class BinarySequencer:
         not hold a whole number of bytes. The translator alone would drop
         both silently, so they are checked here.
         """
+        if not "".join(dna.split()):
+            # sequence(b"") yields an empty strand, so the empty strand must decode to b"".
+            return b""
         result = self.sequencer.run(dna)
         if result["lexer_errors"]:
             bad = "".join(tok.base for tok in result["lexer_errors"])

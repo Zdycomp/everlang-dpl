@@ -53,6 +53,13 @@ class TestBinarySequencerRoundTrip(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.seq.decode("ATXG")
 
+    def test_decode_empty_strand_is_empty_bytes(self):
+        self.assertEqual(self.seq.decode(""), b"")
+        self.assertEqual(self.seq.decode("  \n"), b"")
+
+    def test_decode_accepts_lowercase_and_whitespace(self):
+        self.assertEqual(self.seq.decode("at cg\n"), bytes([0x1B]))
+
     def test_decode_rejects_partial_byte(self):
         with self.assertRaises(ValueError):
             self.seq.decode("ATC")
