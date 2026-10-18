@@ -8,10 +8,18 @@ merely compiles proves nothing; a backend that computes 88 where Ever
 says z has broken the one guarantee the language makes.
 
 Targets whose toolchain isn't installed are skipped and reported as
-skipped — never as passing.
+skipped — never as passing. Toolchains are found on PATH (run_all.py puts
+EVER_TOOLCHAIN_PATH in front of it).
+
+Ever runs and emits in the main thread, because run_source keeps per-run
+state. Only the compile-and-run subprocesses go to a thread pool, and the
+results are printed in the same fixed order as a sequential run. Every
+toolchain gets the job's own temporary directory, Java's included, so no
+compiler writes to the system temp directory.
 """
 
-import os, re, shutil, subprocess, sys, tempfile
+import os, re, shutil, subprocess, sys, tempfile, threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -21,9 +29,9 @@ sys.path.insert(0, str(ROOT / "2-interpreter-python"))
 from runtime import run_source
 from emit import emit, BACKENDS
 
-KOTLIN_BIN = "/tmp/kotlinc/bin"
-if os.path.isdir(KOTLIN_BIN):
-    os.environ["PATH"] = os.environ["PATH"] + ":" + KOTLIN_BIN
+WORKERS = max(1, min(6, os.cpu_count() or 2))
+# Each kotlinc is a JVM of several hundred megabytes: two at a time.
+KOTLIN_SLOTS = threading.BoundedSemaphore(2)
 
 
 def have(cmd):
@@ -38,42 +46,58 @@ TOOLS = {
 }
 
 
+def job_env(tmp):
+    """The environment for one job: its own temp directory, Java's included."""
+    env = dict(os.environ)
+    env["TMPDIR"] = tmp
+    env["JAVA_OPTS"] = (env.get("JAVA_OPTS", "") + f" -Djava.io.tmpdir={tmp}").strip()
+    return env
+
+
+def error_text(stderr):
+    """The compiler's own error, without the JVM's JAVA_TOOL_OPTIONS banner,
+    which would otherwise be the first line and hide the real message."""
+    lines = [l for l in stderr.splitlines()
+             if l.strip() and not l.startswith("Picked up ")]
+    return "\n".join(lines)[:300] or stderr[:300]
+
+
 def run_target(target, code, tmp):
     """Compile+run emitted code, return stdout lines."""
     ext = BACKENDS[target].ext
     src = os.path.join(tmp, f"prog.{ext}")
     with open(src, "w") as f:
         f.write(code)
+    env = job_env(tmp)
+
+    def run(cmd, timeout):
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=timeout, env=env)
 
     if target == "go":
-        r = subprocess.run(["go", "run", src], capture_output=True,
-                           text=True, timeout=180)
+        r = run(["go", "run", src], 180)
     elif target == "rust":
         exe = os.path.join(tmp, "prog")
-        c = subprocess.run(["rustc", "-O", "-o", exe, src],
-                           capture_output=True, text=True, timeout=240)
+        c = run(["rustc", "-O", "-o", exe, src], 240)
         if c.returncode:
-            return None, c.stderr[:300]
-        r = subprocess.run([exe], capture_output=True, text=True, timeout=120)
+            return None, error_text(c.stderr)
+        r = run([exe], 120)
     elif target == "r":
-        r = subprocess.run(["Rscript", src], capture_output=True,
-                           text=True, timeout=180)
+        r = run(["Rscript", src], 180)
     elif target == "kotlin":
         jar = os.path.join(tmp, "prog.jar")
-        c = subprocess.run(["kotlinc", src, "-include-runtime", "-d", jar],
-                           capture_output=True, text=True, timeout=600)
+        with KOTLIN_SLOTS:
+            c = run(["kotlinc", src, "-include-runtime", "-d", jar], 600)
         if c.returncode:
-            return None, c.stderr[:300]
-        r = subprocess.run(["java", "-jar", jar], capture_output=True,
-                           text=True, timeout=180)
+            return None, error_text(c.stderr)
+        r = run(["java", f"-Djava.io.tmpdir={tmp}", "-jar", jar], 180)
     elif target == "js":
-        r = subprocess.run(["node", src], capture_output=True,
-                           text=True, timeout=120)
+        r = run(["node", src], 120)
     else:
         return None, "unknown target"
 
     if r.returncode:
-        return None, r.stderr[:300]
+        return None, error_text(r.stderr)
     return [l.strip() for l in r.stdout.splitlines() if l.strip()], None
 
 
@@ -128,79 +152,66 @@ def main():
     for t in skipped:
         print(f"  ~ SKIP {t} ({TOOLS[t][0]} not installed)")
 
+    # (label, source, regression): an integration program that Ever itself
+    # cannot run, or that a backend declines to emit, is a skip; a
+    # regression program in either state is a failure.
+    cases = [(p.stem, p.read_text(), False) for p in programs]
+    cases += [(label, src, True) for label, src in REGRESSIONS.items()]
+
     npass = nfail = nskip = 0
-    for prog in programs:
-        src = prog.read_text()
+    jobs = []          # (label, target, code, expected), in print order
+    for label, src, regression in cases:
         ref = run_source(src)
         if not ref.ok:
-            print(f"  ~ SKIP {prog.stem} (Ever itself errors)")
-            nskip += 1
+            if regression:
+                print(f"  x FAIL {label:22} Ever itself errors: {ref.errors}")
+                nfail += 1
+            else:
+                print(f"  ~ SKIP {label} (Ever itself errors)")
+                nskip += 1
             continue
         expected = norm(ref.format_lines())
-
         for target in targets:
             try:
                 code = emit(src, target)
             except NotImplementedError as e:
-                print(f"  ~ SKIP {prog.stem:22} {target:7} ({e})")
-                nskip += 1
+                if regression:
+                    print(f"  x FAIL {label:22} {target:7} emit: {e}")
+                    nfail += 1
+                else:
+                    print(f"  ~ SKIP {label:22} {target:7} ({e})")
+                    nskip += 1
                 continue
-            except Exception as e:
-                print(f"  x FAIL {prog.stem:22} {target:7} emit: {e}")
-                nfail += 1
-                continue
-
-            with tempfile.TemporaryDirectory() as tmp:
-                got, err = run_target(target, code, tmp)
-
-            if err:
-                print(f"  x FAIL {prog.stem:22} {target:7} {err.splitlines()[0][:70]}")
-                nfail += 1
-                continue
-            if norm(got) != expected:
-                print(f"  x FAIL {prog.stem:22} {target:7} output differs")
-                for g, e in zip(norm(got), expected):
-                    if g != e:
-                        print(f"        ever: {e}")
-                        print(f"        {target:4}: {g}")
-                        break
-                nfail += 1
-                continue
-            print(f"  . OK   {prog.stem:22} {target}")
-            npass += 1
-
-    for label, src in REGRESSIONS.items():
-        ref = run_source(src)
-        if not ref.ok:
-            print(f"  x FAIL {label:22} Ever itself errors: {ref.errors}")
-            nfail += 1
-            continue
-        expected = norm(ref.format_lines())
-        for target in targets:
-            try:
-                code = emit(src, target)
             except Exception as e:
                 print(f"  x FAIL {label:22} {target:7} emit: {e}")
                 nfail += 1
                 continue
-            with tempfile.TemporaryDirectory() as tmp:
-                got, err = run_target(target, code, tmp)
-            if err:
-                print(f"  x FAIL {label:22} {target:7} "
-                      f"{err.splitlines()[0][:70]}")
-                nfail += 1
-                continue
-            if norm(got) != expected:
-                print(f"  x FAIL {label:22} {target:7} output differs")
-                for g, e in zip(norm(got), expected):
-                    if g != e:
-                        print(f"        ever: {e}")
-                        print(f"        {target:4}: {g}")
-                        break
-                nfail += 1
-                continue
-            print(f"  . OK   {label:22} {target}")
-            npass += 1
+            jobs.append((label, target, code, expected))
+
+    def compile_and_run(job):
+        _, target, code, _ = job
+        with tempfile.TemporaryDirectory() as tmp:
+            return run_target(target, code, tmp)
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        outcomes = list(pool.map(compile_and_run, jobs))
+
+    for (label, target, _, expected), (got, err) in zip(jobs, outcomes):
+        if err:
+            print(f"  x FAIL {label:22} {target:7} {err.splitlines()[0][:70]}")
+            nfail += 1
+            continue
+        if norm(got) != expected:
+            print(f"  x FAIL {label:22} {target:7} output differs")
+            for g, e in zip(norm(got), expected):
+                if g != e:
+                    print(f"        ever: {e}")
+                    print(f"        {target:4}: {g}")
+                    break
+            nfail += 1
+            continue
+        print(f"  . OK   {label:22} {target}")
+        npass += 1
 
     print(f"\n{'-'*54}")
     print(f"  {npass} passed  {nfail} failed"

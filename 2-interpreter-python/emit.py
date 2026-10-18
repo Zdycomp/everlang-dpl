@@ -1100,7 +1100,9 @@ fun show(name: String, v: Val) {
 
     def let(self, name, expr, tracked):
         if self._first_binding(name):
-            return f"    var {name} = {expr}"
+            # typed as Val: inferred from num(...) it would be Val.Num, and a
+            # rebinding to any other Val would not compile
+            return f"    var {name}: Val = {expr}"
         return f"    {name} = {expr}"
     def show(self, name):  return f'    show("{name}", {name})'
     def num(self, v):      return f"num({float(v)})"
