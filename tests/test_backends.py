@@ -101,6 +101,39 @@ def run_target(target, code, tmp):
     return [l.strip() for l in r.stdout.splitlines() if l.strip()], None
 
 
+def run_kotlin_batch(codes):
+    """Every Kotlin program in one kotlinc call, each in its own package, then
+    each main run on its own. Starting kotlinc's JVM costs more than compiling a
+    program, so this pays it once. If the batch does not compile, each program is
+    compiled alone, so the failure is reported against the program that caused it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        env = job_env(tmp)
+        srcs = []
+        for i, code in enumerate(codes):
+            path = os.path.join(tmp, f"Prog{i}.kt")
+            with open(path, "w") as f:
+                f.write(f"package ev{i}\n\n{code}")
+            srcs.append(path)
+        jar = os.path.join(tmp, "all.jar")
+        c = subprocess.run(["kotlinc", *srcs, "-include-runtime", "-d", jar],
+                           capture_output=True, text=True, timeout=900, env=env)
+        if c.returncode:
+            results = []
+            for code in codes:
+                with tempfile.TemporaryDirectory() as one:
+                    results.append(run_target("kotlin", code, one))
+            return results
+        results = []
+        for i in range(len(codes)):
+            r = subprocess.run(["java", f"-Djava.io.tmpdir={tmp}", "-cp", jar, f"ev{i}.Prog{i}Kt"],
+                               capture_output=True, text=True, timeout=180, env=env)
+            if r.returncode:
+                results.append((None, error_text(r.stderr)))
+            else:
+                results.append(([l.strip() for l in r.stdout.splitlines() if l.strip()], None))
+        return results
+
+
 def norm(lines):
     return [re.sub(r"\s+", " ", l).strip() for l in lines]
 
@@ -193,8 +226,17 @@ def main():
         with tempfile.TemporaryDirectory() as tmp:
             return run_target(target, code, tmp)
 
+    kotlin = [i for i, j in enumerate(jobs) if j[1] == "kotlin"]
+    others = [i for i, j in enumerate(jobs) if j[1] != "kotlin"]
+    outcomes = [None] * len(jobs)
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        outcomes = list(pool.map(compile_and_run, jobs))
+        batch = pool.submit(run_kotlin_batch, [jobs[i][2] for i in kotlin]) if kotlin else None
+        futures = {i: pool.submit(compile_and_run, jobs[i]) for i in others}
+        for i, f in futures.items():
+            outcomes[i] = f.result()
+        if batch is not None:
+            for i, result in zip(kotlin, batch.result()):
+                outcomes[i] = result
 
     for (label, target, _, expected), (got, err) in zip(jobs, outcomes):
         if err:
