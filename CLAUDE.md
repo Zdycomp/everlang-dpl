@@ -6,7 +6,7 @@ Founder: Ricky (Dreid), Codric Enterprise.
 ## Before you touch anything
 
 ```
-python3 tests/run_all.py          # must be 34 passed / 0 skipped / 0 failed
+python3 tests/run_all.py          # must be 0 skipped / 0 failed
 ```
 
 If it isn't green before your change, stop and say so. Don't build on red.
@@ -136,8 +136,8 @@ agree on every case, so a change to the repair process is verified in all three.
 EVER_TOOLCHAIN_PATH=... python3 tests/run_all.py
 gcc -std=c99 -g -fsanitize=address,undefined -o /tmp/t \
   0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c \
-  0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c \
-  0-atom-c/tapestry.c -lm && /tmp/t
+  0-atom-c/tac.c 0-atom-c/repair.c 0-atom-c/scope.c 0-atom-c/ir.c \
+  0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && /tmp/t
 ```
 
 ASAN must report zero errors AND zero leaks.
