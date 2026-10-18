@@ -4,6 +4,21 @@ set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 RUNNER_LIB=1 source ./run.sh
 
+# A scratch directory the sandbox allows: the system temp directory, else build/runner
+# in the project. Exits rather than return an empty path, which would send cp to /.
+scratch_dir(){
+  local d=""
+  d="$(mktemp -d "${TMPDIR:-/tmp}/ever-runner.XXXXXX" 2>/dev/null)" || d=""
+  if [ -z "$d" ]; then
+    mkdir -p build/runner && d="$(mktemp -d build/runner/run.XXXXXX 2>/dev/null)" || d=""
+  fi
+  if [ -z "$d" ] || [ ! -d "$d" ]; then
+    echo "runner: no scratch directory could be created" >&2
+    exit 1
+  fi
+  printf '%s\n' "$d"
+}
+
 failures=0
 check(){
   local desc="$1" got="$2" want="$3"
@@ -20,7 +35,7 @@ check "no pass counted" "$P" "0"
 check "no fail counted" "$F" "0"
 
 # --- 2. fake python3: passing test increments P
-TMP="$(mktemp -d)"
+TMP="$(scratch_dir)"
 printf '#!/bin/sh\nexit 0\n' > "$TMP/python3"; chmod +x "$TMP/python3"
 PATH="$TMP:$PATH"
 have(){ command -v "$1" >/dev/null 2>&1; }
@@ -60,7 +75,7 @@ finish >/dev/null 2>&1; rc=$?
 check "finish returns 1 when only skips occurred" "$rc" "1"
 
 # --- 8. real C row: payload parses, gcc builds, binary runs (no fakes)
-CDIR="$(mktemp -d)"
+CDIR="$(scratch_dir)"
 cp 0-atom-c/tapestry.h 0-atom-c/tapestry.c 0-atom-c/tapestry_test.c "$CDIR/"
 P=0; S=0; F=0; N=()
 run_suite "0|c|Layer 0 (C)|header|$CDIR|gcc|tapestry.c tapestry_test.c::tapestry_test::tapestry_test|2|" >/dev/null

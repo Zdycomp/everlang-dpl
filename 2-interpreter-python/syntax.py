@@ -1660,46 +1660,76 @@ def eval_ast(node: Node, env: Dict[str, E],
         return r
 
     if isinstance(node, Heal):
+        import heal_order as ho
         primary = eval_ast(node.primary, env, fns, depth, limit)
-        if not primary.is_z and primary.confidence >= E_EXECUTE_FLOOR:
+        trusted_now = not primary.is_z and primary.confidence >= E_EXECUTE_FLOOR
+        reason = "" if trusted_now else (
+            primary.reason if primary.is_z else "low confidence")
+        a = ho.evaluate("heal", primary.is_z, primary.confidence, reason)
+        if trusted_now:
+            ho.keep(a, primary.confidence)
             return primary
 
         strategy = eval_ast(node.strategy, env, fns, depth, limit)
-        reason = primary.reason if primary.is_z else "low confidence"
-
-        # Query the repair registry
-        repair = get_registry().find_repair(reason, strategy)
-        if repair:
-            fixture_text, cost = repair
-            fixture_node, perr = parse(fixture_text)
+        p = ho.plan(a, get_registry(), strategy)
+        if p.action == ho.SUBSTITUTE:
+            fixture_node, perr = parse(p.fixture)
             if perr is not None or fixture_node is None:
                 detail = perr.reason if perr is not None else "no expression"
+                ho.finish(a, ho.FAILED, 0, f"archived fixture unparsable: {detail}")
                 return e_z("heal", f"archived fixture unparsable: {detail}",
                            Defect.MISBOUND)
             res = eval_ast(fixture_node, env, fns, depth, limit)
             if res.is_z:
+                ho.finish(a, ho.FAILED, 0, "archived fixture evaluated to z")
                 return e_z("heal", "fixture failed", Defect.MISBOUND)
-            base = recovery_base(primary.is_z, primary.confidence)
-            return _at_confidence(res, repair_confidence(base, res.confidence, cost))
+            conf = ho.substituted_confidence(a, p, res.confidence)
+            if conf <= 0:
+                ho.finish(a, ho.FAILED, 0, "repair left no confidence")
+                return e_z("heal", "repair left no confidence", Defect.MISBOUND)
+            ho.finish(a, ho.SUBSTITUTE, conf, p.why)
+            return _at_confidence(res, conf)
 
-        # Fallback
-        return eval_ast(node.fallback, env, fns, depth, limit)
+        fallback = eval_ast(node.fallback, env, fns, depth, limit)
+        ho.finish(a, ho.FALLBACK, fallback.confidence, p.why)
+        return fallback
 
     if isinstance(node, Learn):
+        import heal_order as ho
         primary = eval_ast(node.primary, env, fns, depth, limit)
-        if not primary.is_z and primary.confidence >= E_EXECUTE_FLOOR:
+        trusted_now = not primary.is_z and primary.confidence >= E_EXECUTE_FLOOR
+        reason = "" if trusted_now else (
+            primary.reason if primary.is_z else "low confidence")
+        a = ho.evaluate("learn", primary.is_z, primary.confidence, reason)
+        if trusted_now:
+            ho.keep(a, primary.confidence)
             return primary
 
         fixture = eval_ast(node.fixture, env, fns, depth, limit)
         if fixture.is_z:
+            ho.set_context(strategy=None, fixture=str(node.fixture), cost=0)
+            ho.finish(a, ho.FAILED, 0, "fixture evaluated to z; nothing archived")
             return fixture
 
-        if fixture.confidence >= E_EXECUTE_FLOOR:
-            reason = primary.reason if primary.is_z else "low confidence"
-            get_registry().archive_repair(reason, str(node.fixture))
-
+        key = None
+        if fixture.confidence >= E_EXECUTE_FLOOR and not ho.quiet():
+            # archived under the strategy it was learned with; text only
+            from repair import strategy_key
+            key = strategy_key(eval_ast(node.strategy, env, fns, depth, limit))
+            if key is None:
+                action, detail = ho.SUBSTITUTE, "not archived: strategy must be text"
+            else:
+                get_registry().archive_repair(reason, str(node.fixture), strategy=key)
+                action = ho.LEARNED
+                detail = f"archived '{node.fixture}' for strategy '{key}'"
+        else:
+            action = ho.SUBSTITUTE
+            detail = f"not archived: fixture confidence {fixture.confidence} below the floor"
         base = recovery_base(primary.is_z, primary.confidence)
-        return _at_confidence(fixture, min(base, fixture.confidence))
+        conf = min(base, fixture.confidence)
+        ho.set_context(strategy=key, fixture=str(node.fixture), cost=0)
+        ho.finish(a, action, conf, detail)
+        return _at_confidence(fixture, conf)
 
     if isinstance(node, Call):
         fn = fns.get(node.name)

@@ -85,7 +85,9 @@ function cmdAccept(logPath, sourceIdent) {
   const arch = new Archive(HOME);
   const runId = Date.now();
   let n = 0;
+  // The same order as heal_order.py: evaluate → plan → execute, once per hit.
   for (const h of hits) {
+    console.log(`evaluate: ${h.signature_id} matched '${h.failure_text}' (kind ${h.kind})`);
     const rec = makeRepair({
       runId, lang: 'gradle',
       signatureId: h.signature_id,
@@ -98,7 +100,11 @@ function cmdAccept(logPath, sourceIdent) {
       reason: `accepted from ${logPath}`,
       confBefore: E.E_CERTAIN,
     });
+    // makeRepair derived the cost from the kind and checked that confidence cannot rise.
+    console.log(`plan:     archive '${rec.fixture_text}' at cost ${rec.cost}, ` +
+                `confidence ${rec.conf_before} → ${rec.conf_after}`);
     arch.append(rec);
+    console.log(`execute:  archived to ${HOME}`);
     n++;
   }
   console.log(`archived ${n} repair(s) from ${sourceIdent}.`);

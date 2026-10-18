@@ -91,6 +91,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             print()
         for line in result.format_lines():
             print(line)
+        if getattr(args, "trace", False) and result.heal_trace:
+            print()
+            print("repair trace (evaluate → plan → execute):")
+            for line in result.heal_trace:
+                print(f"  {line}")
 
     if profiler is not None:
         profiler.save()
@@ -218,6 +223,8 @@ def build_parser():
     pr.add_argument("--explain", action="store_true",
                     help="show a one-line note on what confidence means "
                          "(only shown at Novice/Learner proficiency)")
+    pr.add_argument("--trace", action="store_true",
+                    help="show each repair's evaluate → plan → execute trace")
     pr.set_defaults(func=cmd_run)
 
     pc = sub.add_parser("check", help="parse and type-check without running")

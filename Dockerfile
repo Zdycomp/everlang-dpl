@@ -13,6 +13,9 @@
 # Codric Enterprise · Ricky (Dreid) · 2026
 # ─────────────────────────────────────────────
 
+# JDK 25 comes from the official Temurin image. Debian bookworm ships only JDK 17.
+FROM eclipse-temurin:25-jdk AS jdk
+
 FROM debian:bookworm-slim
 
 LABEL org.opencontainers.image.title="Ever / Tapestry"
@@ -22,6 +25,10 @@ LABEL org.opencontainers.image.authors="Ricky (Dreid)"
 LABEL org.opencontainers.image.version="3.8.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
+# JDK 25 from the Temurin stage
+COPY --from=jdk /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH=/opt/java/openjdk/bin:$PATH
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 # Ensure consistent locale for all string operations
@@ -42,7 +49,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ruby-full \
         sqlite3 \
         nodejs \
-        default-jdk-headless \
         ca-certificates \
         diffutils \
     && apt-get upgrade -y \

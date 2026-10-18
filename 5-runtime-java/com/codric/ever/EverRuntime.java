@@ -24,6 +24,7 @@ public final class EverRuntime {
      * ═════════════════════════════════════════ */
 
     public static final class ExpectFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
         public ExpectFailure(String m) { super(m); }
     }
 

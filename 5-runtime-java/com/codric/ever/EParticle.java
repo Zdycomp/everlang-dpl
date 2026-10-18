@@ -49,6 +49,16 @@ public final class EParticle {
     private EParticle(State state, Lang lang, int confidence, int lo, int hi,
                       int errorDistance, int generation, long bornMs,
                       String ident, String reason) {
+        this(state, lang, confidence, lo, hi, errorDistance, generation,
+                bornMs, ident, reason, null);
+    }
+
+    /* the value a particle carries: Long, Double, Boolean or String, or null */
+    private final Object payload;
+
+    private EParticle(State state, Lang lang, int confidence, int lo, int hi,
+                      int errorDistance, int generation, long bornMs,
+                      String ident, String reason, Object payload) {
         this.state         = state;
         this.lang          = lang;
         this.confidence    = confidence;
@@ -59,7 +69,28 @@ public final class EParticle {
         this.bornMs        = bornMs;
         this.ident         = ident == null ? "" : ident;
         this.reason        = reason == null ? "" : reason;
+        if (payload != null && !(payload instanceof Long
+                || payload instanceof Double || payload instanceof Boolean
+                || payload instanceof String))
+            throw new IllegalArgumentException(
+                    "payload must be Long, Double, Boolean or String");
+        this.payload = payload;
     }
+
+    /** A particle that carries a value at the given confidence. Zero or less
+     *  is Z; at or above CERTAIN is certain. */
+    public static EParticle valued(String ident, Object value, int conf,
+                                   Lang lang) {
+        if (conf <= ZERO) return z(ident, "confidence collapsed to zero");
+        if (conf >= CERTAIN)
+            return new EParticle(State.CERTAIN_S, lang, CERTAIN, CERTAIN,
+                    CERTAIN, 0, 0, System.currentTimeMillis(), ident, "", value);
+        return new EParticle(State.CONFIDENT, lang, conf, conf, conf, 0, 0,
+                System.currentTimeMillis(), ident, "", value);
+    }
+
+    /** The value this particle carries, or null for Z and valueless particles. */
+    public Object payload() { return payload; }
 
     /* ── constructors ── */
 
@@ -141,7 +172,8 @@ public final class EParticle {
         if (state == State.EERROR) return z(newIdent, "upstream error");
         if (state == State.ABSENT) return z(newIdent, "upstream absent");
         return new EParticle(state, lang, confidence, lo, hi, errorDistance,
-                generation, System.currentTimeMillis(), newIdent, reason);
+                generation, System.currentTimeMillis(), newIdent, reason,
+                payload);
     }
 
     public EParticle cap(int ceiling) {
@@ -150,7 +182,7 @@ public final class EParticle {
         State demoted = (state == State.CERTAIN_S) ? State.CONFIDENT : state;
         return new EParticle(demoted, lang, ceiling,
                 Math.min(lo, ceiling), Math.min(hi, ceiling),
-                errorDistance, generation, bornMs, ident, reason);
+                errorDistance, generation, bornMs, ident, reason, payload);
     }
 
     public EParticle assimilate(Lang to) {
@@ -158,7 +190,7 @@ public final class EParticle {
             return z(ident, "uncleared particle does not translate");
         return new EParticle(state, to, confidence, lo, hi, errorDistance,
                 generation, System.currentTimeMillis(), ident,
-                "assimilated " + lang + " to " + to);
+                "assimilated " + lang + " to " + to, payload);
     }
 
     public boolean equilibriumWith(EParticle other) {

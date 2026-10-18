@@ -132,7 +132,6 @@ const cases = [
     'def greet\n  puts "hi"',
     'SELECT * FROM a JOIN b;\nDELETE FROM c;\nDROP TABLE d;\nUPDATE e SET x = 1;'
 ];
-fs.writeFileSync('/tmp/ever_cases.json', JSON.stringify(cases));
 const mine = cases.map(c => {
     const r = run(c);
     return {lang: r.lang, state: r.state, confidence: r.confidence};

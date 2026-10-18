@@ -1,0 +1,4 @@
+this is not json
+[1, 2, 3]
+{"v": 1, "failure_text": "division by zero"}
+{"v": 1, "failure_text": "division by zero", "fixture_text": "1", "kind": 0}

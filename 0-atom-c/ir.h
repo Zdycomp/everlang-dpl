@@ -44,6 +44,10 @@
  *             evalue.c  pool composites (blob, list, record storage; RULE 5)
  *             scope.c   scope slot tables
  *             tac.c     interpreter state and frames, pass scratch, named slots
+ *             repair.c  archive registry: process lifetime, not per program, so
+ *                       it cannot live in a program arena; freed by
+ *                       ev_repair_registry_free, never crosses the ABI. Its
+ *                       line reader's buffer is freed after every line.
  *           tests/test_invariants.py pins the count per file: a new raw
  *           allocation fails until it is reviewed and listed here.
  *

@@ -7,12 +7,32 @@ import json
 import os
 from typing import Optional, Tuple, Dict, List, Any
 from ever import E_ZERO, E_INTAKE
+from evalue import EvType
 
 # Constants mirrored from 7-refix-node/src/constants.js
 E_REPAIR_PLAIN = 8
 E_REPAIR_INFERRED = 32
 KIND_PLAIN = 0
 KIND_INFERRED = 1
+
+
+def strategy_key(strategy: Any) -> Optional[str]:
+    """The text a strategy matches on, or None when it has no text.
+
+    Accepts a runtime EValue (text in `ev_text`), a syntax-reference E (text
+    in `value`), or a plain str. Only text strategies can match a tied repair;
+    anything else matches wildcard repairs only.
+    """
+    if isinstance(strategy, str):
+        return strategy
+    if getattr(strategy, 'ev_tag', None) is EvType.TEXT:
+        return strategy.ev_text
+    value = getattr(strategy, 'value', None)
+    if isinstance(value, str) and getattr(strategy, 'state', None) is not None:
+        from ever import State
+        if strategy.state is not State.Z:
+            return value
+    return None
 
 
 def recovery_base(primary_is_z: bool, primary_conf: int) -> int:
@@ -69,22 +89,36 @@ class RepairRegistry:
         return records
 
     def find_repair(self, failure_reason: str, strategy: Any) -> Optional[Tuple[str, int]]:
+        """Look up the repair for a failure reason under a strategy.
+
+        A repair with a `strategy` matches only that strategy. A repair without
+        one (every ReFix archive entry, and every entry written before strategies
+        existed) matches any strategy. An exact strategy match wins over a
+        wildcard; the first matching entry of each kind wins. Returns
+        (fixture_text, cost) or None.
         """
-        Look up a fixture based on the failure reason and strategy.
-        Returns (fixture_text, cost) or None.
-        """
-        # Simple strategy: exact match on failure reason
-        # More complex strategies can be implemented here.
+        key = strategy_key(strategy)
+        exact = wildcard = None
         for r in self.repairs:
-            if r.get('failure_text') == failure_reason and isinstance(r.get('fixture_text'), str):
-                kind = r.get('kind', KIND_PLAIN)
-                cost = E_REPAIR_PLAIN if kind == KIND_PLAIN else E_REPAIR_INFERRED
-                return r['fixture_text'], cost
+            if r.get('failure_text') != failure_reason or not isinstance(r.get('fixture_text'), str):
+                continue
+            tied = r.get('strategy')
+            if tied is None:
+                if wildcard is None:
+                    wildcard = r
+            elif key is not None and tied == key and exact is None:
+                exact = r
+        chosen = exact if exact is not None else wildcard
+        if chosen is None:
+            return None
+        kind = chosen.get('kind', KIND_PLAIN)
+        cost = E_REPAIR_PLAIN if kind == KIND_PLAIN else E_REPAIR_INFERRED
+        return chosen['fixture_text'], cost
 
-        return None
-
-    def archive_repair(self, failure_text: str, fixture_text: str, kind: int = KIND_PLAIN):
-        """Record a repair once. Re-learning a repair already held does nothing."""
+    def archive_repair(self, failure_text: str, fixture_text: str, kind: int = KIND_PLAIN,
+                       strategy: Optional[str] = None):
+        """Record a repair once. Re-learning a repair already held does nothing.
+        A strategy ties the repair to that strategy; None makes it a wildcard."""
         record = {
             'v': 1,
             'archived_ms': 0, # Simplified for Python impl
@@ -92,9 +126,12 @@ class RepairRegistry:
             'fixture_text': fixture_text,
             'kind': kind,
         }
+        if strategy is not None:
+            record['strategy'] = strategy
         if any(r.get('failure_text') == failure_text
                and r.get('fixture_text') == fixture_text
-               and r.get('kind', KIND_PLAIN) == kind for r in self.repairs):
+               and r.get('kind', KIND_PLAIN) == kind
+               and r.get('strategy') == strategy for r in self.repairs):
             return
         self.repairs.append(record)
         try:

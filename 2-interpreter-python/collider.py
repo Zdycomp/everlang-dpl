@@ -11,10 +11,10 @@ import argparse
 import json
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from runtime import run_source
 
@@ -43,6 +43,17 @@ def execute_lane(job: tuple[str, str, int]) -> LaneResult:
     )
 
 
+def _pool(workers: int) -> Tuple[Executor, str, str]:
+    """A process pool. Where the platform forbids one (sandboxes that deny the
+    POSIX semaphores it needs), a thread pool, and the reason is reported.
+    Returns (executor, kind, note); kind is "process" or "thread"."""
+    try:
+        return ProcessPoolExecutor(max_workers=workers), "process", ""
+    except (PermissionError, OSError, NotImplementedError) as exc:
+        return (ThreadPoolExecutor(max_workers=workers), "thread",
+                f"process pool unavailable: {type(exc).__name__}: {exc}")
+
+
 def collide(source: str, rounds: int = 1, workers: int = 4) -> Dict[str, Any]:
     """Run four independent lanes and return quantified results.
 
@@ -58,7 +69,8 @@ def collide(source: str, rounds: int = 1, workers: int = 4) -> Dict[str, Any]:
     jobs = [(lane, source, sequence)
             for sequence in range(rounds) for lane in LANES]
     started = time.perf_counter_ns()
-    with ProcessPoolExecutor(max_workers=min(4, workers)) as pool:
+    pool, executor, executor_note = _pool(min(4, workers))
+    with pool:
         results = list(pool.map(execute_lane, jobs))
     elapsed_ns = max(1, time.perf_counter_ns() - started)
 
@@ -72,6 +84,8 @@ def collide(source: str, rounds: int = 1, workers: int = 4) -> Dict[str, Any]:
         "lanes": len(LANES),
         "rounds": rounds,
         "workers": min(4, workers),
+        "executor": executor,
+        "executor_note": executor_note,
         "executions": executions,
         "output_lines": output_lines,
         "agreement": len(output_signatures) == 1 and not errors,

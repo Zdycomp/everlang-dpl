@@ -4,6 +4,7 @@
  */
 
 #include "tac.h"
+#include "repair.h"
 #ifndef E_INTAKE
 #define E_INTAKE 120  /* external data enters at 120/256 */
 #endif
@@ -11,6 +12,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+
+EvRepairRegistry *g_repair_registry = NULL;
 
 /* ─────────────────────────────────────────────
  * OPCODE METADATA
@@ -48,6 +51,8 @@ const char *ev_opcode_name(EvOpcode op) {
         case OP_SET:     return "SET";
         case OP_NOP:     return "NOP";
         case OP_HEAL:    return "HEAL";
+        case OP_RECOVERY:   return "RECOVERY";
+        case OP_REPAIR_STATE: return "REPAIR_STATE";
         case OP_ERR:     return "ERR";
         default:         return "?";
     }
@@ -278,6 +283,24 @@ EvReg ev_emit_binop(EvBuilder *b, EvOpcode op,
     return dest;
 }
 
+EvReg ev_emit_recovery(EvBuilder *b, EvReg primary, EvReg strategy, int32_t line) {
+    EvReg dest = ev_next_reg(b, EV_VOID, primary.confidence);
+    EvInstr *ins = _emit(b, OP_RECOVERY, line);
+    if (!ins) return ev_reg_void();
+    ins->dest = dest; ins->src0 = primary; ins->src1 = strategy;
+    return dest;
+}
+
+/* The outcome of the last repair, as an int (EV_HEAL_*). The lowered branch
+   tests this, never the repaired value's truthiness. */
+EvReg ev_emit_repair_state(EvBuilder *b, int32_t line) {
+    EvReg dest = ev_next_reg(b, EV_INT, E_INTAKE);
+    EvInstr *ins = _emit(b, OP_REPAIR_STATE, line);
+    if (!ins) return ev_reg_void();
+    ins->dest = dest;
+    return dest;
+}
+
 EvReg ev_emit_call(EvBuilder *b, const char *name,
                    EvReg *args, int32_t nargs, int32_t line) {
     /* confidence of a call = min over all args (and fn itself unknown here) */
@@ -441,11 +464,17 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
 
             EvBlock *trust_blk  = new_block(b);
             EvBlock *repair_blk = new_block(b);
-            EvBlock *merge_blk  = new_block(b);
-            if (!trust_blk || !repair_blk || !merge_blk) return ev_reg_void();
+            if (!trust_blk || !repair_blk) return ev_reg_void();
 
             char phi_name[32];
             snprintf(phi_name, sizeof phi_name, "_phi_%d", b->func->reg_counter);
+
+            /* We'll create the merge block last so it's the final block in the function. */
+            /* But we need its ID for the jumps. We can pre-allocate it or just use a placeholder.
+               Actually, the easiest way is to create it now, but ensure it's the one we end with.
+               The blocks array is just a list. The interpreter uses the ID. */
+            EvBlock *merge_blk  = new_block(b);
+            if (!merge_blk) return ev_reg_void();
 
             ev_emit_heal(b, primary, trust_blk->id, repair_blk->id, n->line);
 
@@ -454,7 +483,38 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             ev_emit_jump(b, merge_blk->id, n->line);
 
             ev_builder_switch_block(b, repair_blk);
-            ev_lower_node(b, n->children[1]);
+            EvReg strat = ev_lower_node(b, n->children[1]);
+            EvReg rec = ev_emit_recovery(b, primary, strat, n->line);
+
+            /* Branch on the repair's outcome (evaluate → plan → execute), never
+               on the value: a repaired 0 or false is still a success. */
+            EvReg state = ev_emit_repair_state(b, n->line);
+            EvReg sub_flag = ev_emit_binop(b, OP_EQ, state,
+                ev_emit_const(b, ev_int(EV_HEAL_SUBSTITUTE), n->line), n->line);
+            EvReg fail_flag = ev_emit_binop(b, OP_EQ, state,
+                ev_emit_const(b, ev_int(EV_HEAL_FAILED), n->line), n->line);
+
+            EvBlock *sub_blk  = new_block(b);
+            EvBlock *chk_blk  = new_block(b);
+            EvBlock *fail_blk = new_block(b);
+            EvBlock *fb_blk   = new_block(b);
+            if (!sub_blk || !chk_blk || !fail_blk || !fb_blk) return ev_reg_void();
+
+            ev_emit_jump_if(b, sub_flag, sub_blk->id, chk_blk->id, chk_blk->id, n->line);
+
+            ev_builder_switch_block(b, sub_blk);
+            ev_emit_store(b, phi_name, rec, n->line);
+            ev_emit_jump(b, merge_blk->id, n->line);
+
+            ev_builder_switch_block(b, chk_blk);
+            ev_emit_jump_if(b, fail_flag, fail_blk->id, fb_blk->id, fb_blk->id, n->line);
+
+            ev_builder_switch_block(b, fail_blk);
+            EvReg zed = ev_emit_const(b, ev_void(), n->line);
+            ev_emit_store(b, phi_name, zed, n->line);
+            ev_emit_jump(b, merge_blk->id, n->line);
+
+            ev_builder_switch_block(b, fb_blk);
             EvReg fallback = ev_lower_node(b, n->children[2]);
             ev_emit_store(b, phi_name, fallback, n->line);
             ev_emit_jump(b, merge_blk->id, n->line);
@@ -462,7 +522,8 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             ev_builder_switch_block(b, merge_blk);
             int16_t conf = _binconf(primary, fallback);
             int32_t typ  = (primary.type != EV_VOID) ? primary.type : fallback.type;
-            return ev_emit_load(b, phi_name, typ, conf, n->line);
+            EvReg result = ev_emit_load(b, phi_name, typ, conf, n->line);
+            return result;
         }
 
         case EV_NODE_IF: {
@@ -829,7 +890,21 @@ struct EvInterp {
     EvFrameSave *frames;     /* EV_MAX_DEPTH+2 save slots */
     int16_t      ret_conf;   /* confidence of the value last returned */
     int          failed;     /* set when the interpreter ran out of memory */
+    const char  *last_failure;     /* reason of the most recent z-producing failure */
+    int32_t      last_failure_reg; /* register that failure's z was written to */
+    int32_t      heal_count;       /* heals evaluated (see ev_interp_heal_trace) */
+    int32_t      heal_action;      /* EV_HEAL_* outcome of the last repair       */
+    int16_t      heal_conf;        /* confidence of a substituted repair, else 0 */
 };
+
+EvHealTrace ev_interp_heal_trace(const EvInterp *ip) {
+    EvHealTrace t = { 0, EV_HEAL_KEEP, 0 };
+    if (!ip) return t;
+    t.count  = ip->heal_count;
+    t.action = ip->heal_action;
+    t.conf   = ip->heal_conf;
+    return t;
+}
 
 static int named_reserve(EvNamedSlot **buf, int32_t *cap, int32_t need) {
     if (need <= *cap) return 1;
@@ -958,6 +1033,12 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                        turns an unknown into a confident wrong number. */
                     if (a.tag == EV_VOID || b_val.tag == EV_VOID) {
                         res = ev_void();
+                        /* the z is passed on, so its failure reason travels
+                         * with it: heal((1 / 0) + 1) still knows why it failed */
+                        if (ip->last_failure &&
+                            (ins->src0.id == ip->last_failure_reg ||
+                             ins->src1.id == ip->last_failure_reg))
+                            ip->last_failure_reg = ins->dest.id;
                         break;
                     }
                     {
@@ -979,7 +1060,15 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                         case OP_MUL: res=(a.tag==EV_INT&&b_val.tag==EV_INT)
                                          ?ev_int(a.body.as_int*b_val.body.as_int)
                                          :ev_real(da*db); break;
-                        case OP_DIV: res = (db != 0.0) ? ev_real(da/db) : ev_void(); break;
+                        case OP_DIV:
+                            if (db != 0.0) {
+                                res = ev_real(da/db);
+                            } else {
+                                res = ev_void();
+                                ip->last_failure = "division by zero";
+                                ip->last_failure_reg = ins->dest.id;
+                            }
+                            break;
                         case OP_LT:  res=ev_bool(da< db); break;
                         case OP_GT:  res=ev_bool(da> db); break;
                         case OP_LTE: res=ev_bool(da<=db); break;
@@ -1122,11 +1211,62 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                     EValue primary = reg_get(ip, ins->src0);
                     int trusted = primary.tag != EV_VOID &&
                                   reg_conf_get(ip, ins->src0) >= E_EXECUTE_FLOOR;
+                    ip->heal_count++;
+                    if (trusted) {
+                        ip->heal_action = EV_HEAL_KEEP;
+                        ip->heal_conf   = reg_conf_get(ip, ins->src0);
+                    }
                     int32_t lbl = trusted ? ins->true_label : ins->false_label;
                     if (lbl >= 0 && lbl < f->nblocks)
                         next = f->blocks[lbl];
                     goto next_block;
                 }
+                case OP_RECOVERY: {
+                    /* the primary's failure reason is the TEXT it carries, or
+                     * the reason recorded when this very register went to z */
+                    EValue reason_ev = reg_get(ip, ins->src0);
+                    EValue strategy_ev = reg_get(ip, ins->src1);
+                    const char *reason = NULL;
+                    if (reason_ev.tag == EV_TEXT) reason = reason_ev.text;
+                    else if (ip->last_failure && ip->last_failure_reg == ins->src0.id)
+                        reason = ip->last_failure;
+                    ip->last_failure = NULL;
+                    int32_t kind = 0;
+                    const char *fixture = NULL;
+                    /* a strategy with no text matches wildcard repairs only */
+                    const char *strat = (strategy_ev.tag == EV_TEXT) ? strategy_ev.text : NULL;
+                    if (reason)
+                        fixture = ev_repair_find(g_repair_registry, reason, strat, &kind);
+                    /* base as in repair.py: E_INTAKE when the primary is z,
+                       otherwise its own confidence */
+                    int16_t base = (reason_ev.tag == EV_VOID) ? E_INTAKE
+                                   : reg_conf_get(ip, ins->src0);
+                    int16_t cost = (kind == 0) ? E_REPAIR_PLAIN : E_REPAIR_INFERRED;
+
+                    res = ev_void();
+                    rc  = 0;
+                    if (!fixture || base - cost <= 0) {
+                        /* PLAN: no archived repair, or one that cannot add trust */
+                        ip->heal_action = EV_HEAL_FALLBACK;
+                    } else {
+                        /* EXECUTE: an unusable or z fixture is FAILED: the
+                           result is z, never the fallback */
+                        EValue value = ev_parse_constant(fixture);
+                        if (value.tag == EV_VOID) {
+                            ip->heal_action = EV_HEAL_FAILED;
+                        } else {
+                            res = value;
+                            rc  = (int16_t)(base - cost);
+                            ip->heal_action = EV_HEAL_SUBSTITUTE;
+                        }
+                    }
+                    ip->heal_conf = (ip->heal_action == EV_HEAL_SUBSTITUTE) ? rc : 0;
+                    break;
+                }
+                case OP_REPAIR_STATE:
+                    res = ev_int(ip->heal_action);
+                    rc  = E_INTAKE;
+                    break;
 
                 case OP_DEF_FN: break; /* function already in module */
                 default: break;
@@ -1182,6 +1322,9 @@ static EValue interp_func(EvInterp *ip, EvFunc *f, EValue *args,
     /* ── POP FRAME ───────────────────────────────────────────
      * result is a by-value copy taken before the restore, so the
      * return value crosses the boundary and the bindings do not. */
+    /* register ids are per function, so a failure recorded in this frame
+     * must not match a register of the caller after the return */
+    ip->last_failure = NULL;
     if (!frame_pop(ip, save)) ip->failed = 1;
     return result;
 }

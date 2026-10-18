@@ -38,6 +38,8 @@ ALLOWED_RAW_ALLOCATIONS = {
     "evalue.c": 8,
     "scope.c": 2,
     "tac.c": 9,
+    "repair.c": 7,  # archive registry (process lifetime) and its per-line read
+                    # buffer (malloc/realloc, freed every line); see ir.h RULE 1
 }
 RAW_ALLOC = re.compile(r"\b(malloc|calloc|realloc)\s*\(")
 

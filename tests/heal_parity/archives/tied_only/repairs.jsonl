@@ -1,0 +1,2 @@
+{"v": 1, "failure_text": "division by zero", "fixture_text": "1", "kind": 0, "strategy": "plain"}
+{"v": 1, "failure_text": "division by zero", "fixture_text": "2", "kind": 0, "strategy": "other"}

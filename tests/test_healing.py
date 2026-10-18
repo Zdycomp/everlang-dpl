@@ -141,3 +141,40 @@ class TestHealing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStrategy(unittest.TestCase):
+    """The strategy selects among archived repairs: a repair tied to it first,
+    then a wildcard. A tied repair for another strategy is never a candidate."""
+
+    RECORDS = [
+        {"failure_text": "division by zero", "fixture_text": "1", "kind": 0, "strategy": "plain"},
+        {"failure_text": "division by zero", "fixture_text": "2", "kind": 0, "strategy": "other"},
+        {"failure_text": "division by zero", "fixture_text": "3", "kind": 0},
+    ]
+
+    def _heal(self, strategy):
+        src = (f'let zero = 0\n'
+               f'let res = heal (1 / zero) using ("{strategy}") fallback (50)\n'
+               f'show res')
+        return run_source(src).format_lines()
+
+    def test_tied_strategy_wins_over_the_wildcard(self):
+        with _Archive(self.RECORDS):
+            self.assertIn("res = 1", self._heal("plain")[0])
+            self.assertIn("res = 2", self._heal("other")[0])
+
+    def test_unmatched_strategy_takes_the_wildcard(self):
+        with _Archive(self.RECORDS):
+            self.assertIn("res = 3", self._heal("nope")[0])
+
+    def test_without_a_wildcard_an_unmatched_strategy_falls_back(self):
+        with _Archive(self.RECORDS[:2]):
+            self.assertIn("res = 50", self._heal("nope")[0])
+
+    def test_learn_archives_under_its_strategy(self):
+        with _Archive([]) as reg:
+            run_source('let zero = 0\nlet res = learn (1 / zero) using ("plain") fix (7)\nshow res')
+            self.assertEqual(reg.repairs[-1].get("strategy"), "plain")
+            self.assertIn("res = 7", self._heal("plain")[0])
+            self.assertIn("res = 50", self._heal("nope")[0])

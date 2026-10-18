@@ -72,10 +72,15 @@
 #ifndef EVER_TAC_H
 #define EVER_TAC_H
 
+#include "repair.h"
+#define E_REPAIR_PLAIN    8   /* mirrors repair.py: E_REPAIR_PLAIN */
+#define E_REPAIR_INFERRED 32  /* mirrors repair.py: E_REPAIR_INFERRED */
 #include <stdint.h>
 #include <stddef.h>
 #include "evalue.h"    /* EValue, ev_type            */
-#include "ir.h"        /* EvNode, EvArena, EvNodeKind */
+#include "ir.h"
+
+extern EvRepairRegistry *g_repair_registry;        /* EvNode, EvArena, EvNodeKind */
 
 /* ─────────────────────────────────────────────
  * TAC OPCODES
@@ -130,9 +135,26 @@ typedef enum {
 
     /* Error / unknown */
     OP_NOP    = 99,
-    OP_HEAL   = 100,   /* block terminator: src0 trusted ? true : false */
-    OP_ERR    = 101,
+    OP_HEAL     = 100,   /* block terminator: src0 trusted ? true : false */
+    OP_RECOVERY = 101,   /* query registry for repair of src0 using src1 */
+    OP_ERR      = 102,
+    OP_REPAIR_STATE = 103,  /* dest = action code of the last repair (EV_HEAL_*) */
 } EvOpcode;
+
+/* The order's outcome for one heal (evaluate → plan → execute). The codes are
+ * what OP_REPAIR_STATE yields, so the lowered branch never reads a value's
+ * truthiness: a fixture of 0 or false is still a successful repair. */
+#define EV_HEAL_KEEP       0   /* primary trusted; no repair ran              */
+#define EV_HEAL_SUBSTITUTE 1   /* archived fixture ran; its value is trusted   */
+#define EV_HEAL_FALLBACK   2   /* no usable repair; the fallback ran           */
+#define EV_HEAL_FAILED     3   /* a repair was chosen but could not run: z     */
+
+/* Trace of the heals a program has run: how many, and the last outcome. */
+typedef struct {
+    int32_t count;      /* heals evaluated in this interpreter          */
+    int32_t action;     /* EV_HEAL_* of the most recent heal            */
+    int16_t conf;       /* confidence the most recent heal produced     */
+} EvHealTrace;
 
 const char *ev_opcode_name(EvOpcode op);
 int         ev_opcode_is_binary(EvOpcode op);
@@ -272,6 +294,8 @@ EvReg ev_emit_const(EvBuilder *b, EValue lit, int32_t line);
 EvReg ev_emit_copy(EvBuilder *b, EvReg src, int32_t line);
 EvReg ev_emit_binop(EvBuilder *b, EvOpcode op,
                     EvReg src0, EvReg src1, int32_t line);
+EvReg ev_emit_recovery(EvBuilder *b, EvReg primary, EvReg strategy, int32_t line);
+EvReg ev_emit_repair_state(EvBuilder *b, int32_t line);
 EvReg ev_emit_call(EvBuilder *b, const char *name,
                    EvReg *args, int32_t nargs, int32_t line);
 void  ev_emit_return(EvBuilder *b, EvReg src, int32_t line);
@@ -349,6 +373,9 @@ EValue    ev_interp_call(EvInterp *ip, const char *fn_name,
 
 /* Execute the module's global body */
 EValue    ev_interp_run(EvInterp *ip);
+
+/* The heal trace of an interpreter: count and last outcome */
+EvHealTrace ev_interp_heal_trace(const EvInterp *ip);
 
 /* ─────────────────────────────────────────────
  * PRETTY PRINTER — for debugging and teaching

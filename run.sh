@@ -36,7 +36,7 @@ SUITES=(
 '0|c|Layer 0 (C)|C — the atom (carries T)|0-atom-c|gcc|tapestry.c tapestry_test.c::tapestry_test::tapestry_test|2|'
 '1|raw|Layer 1 (C++)|C++ — the phase engine|1-phase-cpp|gcc g++|gcc -std=c99 -Wall -c ../0-atom-c/tapestry.c -o tapestry.o && g++ -std=c++14 -Wall -Wno-format-truncation -c phase.cpp -o phase.o && g++ -std=c++14 -Wall -Wno-format-truncation -c phase_test.cpp -o phase_test.o && trap "rm -f tapestry.o phase.o phase_test.o phase_test" EXIT && g++ -o phase_test phase_test.o phase.o tapestry.o -lm && ./phase_test|2|gcc and g++ required'
 '2|py|Layer 2 (Python)|Python — the interpreter|2-interpreter-python|python3|ever_test.py|2|'
-'tac|c|TAC IR (C)|C — Three-Address IR (EvTAC)|0-atom-c|gcc|tac_test.c tac.c scope.c ir.c evalue.c tapestry.c::tac_test::tac_test|2|'
+'tac|c|TAC IR (C)|C — Three-Address IR (EvTAC)|0-atom-c|gcc|tac_test.c tac.c repair.c scope.c ir.c evalue.c tapestry.c::tac_test::tac_test|2|'
 'scope-c|c|EvScope (C)|C — universal map (EvScope)|0-atom-c|gcc|scope_test.c scope.c ir.c evalue.c tapestry.c::scope_test::scope_test scope.o|2|'
 'scope-py|py|EvScope (Python)|Python — universal map (EvScope)|2-interpreter-python|python3|scope_test.py|2|'
 'bridge|c|Bridge (C)|C — Hello World bridge (5 stages, 45 assertions)|0-atom-c|gcc|bridge_test.c tapestry.c evalue.c ir.c::bridge_test::bridge_test|4|'

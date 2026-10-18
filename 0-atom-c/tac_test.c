@@ -5,6 +5,7 @@
  * confidence propagation, and the TAC interpreter.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "tac.h"
@@ -39,6 +40,26 @@ static EvNode *heal_node(EvArena *a, EvNode *primary, EvNode *fallback) {
     ev_node_add_child(h, ev_node_text(a, "strategy", 1));
     ev_node_add_child(h, fallback);
     return h;
+}
+
+/* heal with a chosen strategy text, for the strategy tests */
+static EvNode *heal_with(EvArena *a, EvNode *primary, const char *strat, EvNode *fallback) {
+    EvNode *h = ev_node_new(a, EV_NODE_HEAL, 1);
+    ev_node_add_child(h, primary);
+    ev_node_add_child(h, ev_node_text(a, strat, 1));
+    ev_node_add_child(h, fallback);
+    return h;
+}
+
+/* append a repair to an in-memory registry; strat NULL makes a wildcard */
+static void add_test_repair(EvRepairRegistry *reg, const char *fail, const char *fix,
+                            int32_t kind, const char *strat) {
+    EvRepair *r = (EvRepair*)calloc(1, sizeof *r);
+    r->failure_text = strdup(fail);
+    r->fixture_text = strdup(fix);
+    r->kind = kind;
+    r->strategy = strat ? strdup(strat) : NULL;
+    reg->repairs[reg->count++] = r;
 }
 
 static EvNode *sum_node(EvArena *a, EvNode *l, EvNode *r) {
@@ -313,7 +334,9 @@ int main(void){
     printf("\nHEAL\n");
     {
         int lw = 0;
+        g_repair_registry = ev_repair_registry_new("7-refix-node/repairs.jsonl");
         EvArena *ha = ev_arena_new("heal-test");
+
 
         EValue r1 = run_node(ha, heal_node(ha, ev_node_int(ha, 10, 1),
                                            ev_node_int(ha, 1, 1)), 0, &lw);
@@ -323,6 +346,13 @@ int main(void){
         EValue r2 = run_node(ha, heal_node(ha, ev_node_var(ha, "x_undef", 1),
                                            ev_node_int(ha, 42, 1)), 0, &lw);
         ok("heal(z) takes the fallback (42)",    r2.tag == EV_INT && r2.body.as_int == 42);
+
+        /* test recovery from archived repair: fallback is 99 so a pass can
+           only come from the registry's fixture "1", not from the fallback */
+        EValue r_rec = run_node(ha, heal_node(ha, ev_node_binop(ha, EV_NODE_DIV, ev_node_int(ha, 1, 1),
+                                                                ev_node_int(ha, 0, 1), 1),
+                                              ev_node_int(ha, 99, 1)), 0, &lw);
+        ok("heal(1/0) recovers to 1 (not fallback 99)", r_rec.tag == EV_INT && r_rec.body.as_int == 1);
 
         EValue r3 = run_node(ha, heal_node(ha, ev_node_var(ha, "x_undef", 1),
                                            sum_node(ha, ev_node_int(ha, 2, 1),
@@ -356,9 +386,21 @@ int main(void){
                                         ev_node_int(ha, 42, 1)));
         int16_t mconf = -1;
         if (cm) {
-            EvBlock *mb = cm->global_body->blocks[cm->global_body->nblocks - 1];
-            for (int32_t i = 0; i < mb->len; i++)
-                if (mb->instrs[i].op == OP_LOAD) mconf = mb->instrs[i].dest.confidence;
+            EvBlock *mb = NULL;
+            for (int32_t bi = 0; bi < cm->global_body->nblocks; bi++) {
+                EvBlock *b = cm->global_body->blocks[bi];
+                for (int32_t ii = 0; ii < b->len; ii++) {
+                    if (b->instrs[ii].op == OP_LOAD) {
+                        mb = b;
+                        break;
+                    }
+                }
+                if (mb) break;
+            }
+            if (mb) {
+                for (int32_t i = 0; i < mb->len; i++)
+                    if (mb->instrs[i].op == OP_LOAD) mconf = mb->instrs[i].dest.confidence;
+            }
             ev_module_free(cm);
         }
         ok("heal result takes the lower arm confidence", mconf == E_INTAKE);
@@ -471,6 +513,33 @@ int main(void){
         ok("a 17-argument call keeps all 17",    nargs_seen == 17);
         (void)lw;
         ev_arena_free(fa);
+    }
+
+    printf("\nHEAL STRATEGY\n");
+    {
+        /* the strategy selects among archived repairs: tied first, then a wildcard */
+        EvRepairRegistry *prev = g_repair_registry;
+        g_repair_registry = ev_repair_registry_new(NULL);
+        add_test_repair(g_repair_registry, "division by zero", "1", 0, "plain");
+        add_test_repair(g_repair_registry, "division by zero", "2", 0, "other");
+        add_test_repair(g_repair_registry, "division by zero", "3", 0, NULL);
+        EvArena *sa = ev_arena_new("heal-strategy");
+        int slw = 0;
+        EValue r_plain = run_node(sa, heal_with(sa, ev_node_binop(sa, EV_NODE_DIV,
+                                                ev_node_int(sa, 1, 1), ev_node_int(sa, 0, 1), 1),
+                                                "plain", ev_node_int(sa, 50, 1)), 0, &slw);
+        ok("strategy 'plain' selects its tied repair (1)", r_plain.tag == EV_INT && r_plain.body.as_int == 1);
+        EValue r_other = run_node(sa, heal_with(sa, ev_node_binop(sa, EV_NODE_DIV,
+                                                ev_node_int(sa, 1, 1), ev_node_int(sa, 0, 1), 1),
+                                                "other", ev_node_int(sa, 50, 1)), 0, &slw);
+        ok("strategy 'other' selects its tied repair (2)", r_other.tag == EV_INT && r_other.body.as_int == 2);
+        EValue r_nope = run_node(sa, heal_with(sa, ev_node_binop(sa, EV_NODE_DIV,
+                                               ev_node_int(sa, 1, 1), ev_node_int(sa, 0, 1), 1),
+                                               "nope", ev_node_int(sa, 50, 1)), 0, &slw);
+        ok("an unmatched strategy takes the wildcard (3)", r_nope.tag == EV_INT && r_nope.body.as_int == 3);
+        ev_arena_free(sa);
+        ev_repair_registry_free(g_repair_registry);
+        g_repair_registry = prev;
     }
 
     printf("\n=== EvTAC: %d passed, %d failed ===\n\n", ok_n, fail_n);

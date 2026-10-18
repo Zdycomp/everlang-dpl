@@ -41,3 +41,7 @@ node_modules/
 .claude-tmp/
 
 .fake
+# local build output: parity, repair suite and runner scratch
+build/
+t_tac
+t_tac.dSYM/

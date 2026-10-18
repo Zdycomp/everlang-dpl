@@ -19,6 +19,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 
+# Toolchains installed outside the system paths are named here, not guessed:
+#   EVER_TOOLCHAIN_PATH=~/.jdks/jdk-25.0.4.1+1/Contents/Home/bin:~/.local/opt/kotlinc/bin:...
+# Each entry is put in front of PATH for every suite, so the run sees exactly these.
+for _p in reversed([p for p in os.environ.get("EVER_TOOLCHAIN_PATH", "").split(os.pathsep) if p]):
+    os.environ["PATH"] = os.path.expanduser(_p) + os.pathsep + os.environ["PATH"]
+
 #: Exit code a suite uses to say "my toolchain is absent; I ran nothing".
 SKIP_EXIT = 77
 
@@ -44,12 +50,12 @@ SUITES = [
     ("Checker",        f"{sys.executable} 2-interpreter-python/checker_test.py", ()),
     ("Collider",       f"{sys.executable} tests/test_collider.py", ()),
     ("SQL archive",    f"{sys.executable} 4-archive-sql/archive_test.py", ()),
-    ("Kitchen sink",   "gcc -std=c99 -Wall -o $EVER_TMP/ev_ks 0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/ev_ks", ("gcc",)),
-    ("Form IR (C99)",  "gcc -std=c99 -Wall -o $EVER_TMP/ev_form 0-atom-c/form_test.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/ev_form", ("gcc",)),
+    ("Kitchen sink",   "gcc -std=c99 -Wall -o $EVER_TMP/ev_ks 0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/tac.c 0-atom-c/repair.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/ev_ks", ("gcc",)),
+    ("Form IR (C99)",  "gcc -std=c99 -Wall -o $EVER_TMP/ev_form 0-atom-c/form_test.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/tac.c 0-atom-c/repair.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/ev_form", ("gcc",)),
     ("Profiler",       f"{sys.executable} 2-interpreter-python/profiler_test.py", ()),
-    ("Native (C99)",   "gcc -std=c99 -Wall -o $EVER_TMP/ev_native 0-atom-c/native_test.c 0-atom-c/tapestry.c 0-atom-c/evalue.c 0-atom-c/ir.c 0-atom-c/scope.c 0-atom-c/tac.c -lm && $EVER_TMP/ev_native", ("gcc",)),
+    ("Native (C99)",   "gcc -std=c99 -Wall -o $EVER_TMP/ev_native 0-atom-c/native_test.c 0-atom-c/tapestry.c 0-atom-c/evalue.c 0-atom-c/ir.c 0-atom-c/scope.c 0-atom-c/tac.c 0-atom-c/repair.c -lm && $EVER_TMP/ev_native", ("gcc",)),
     ("CFG (C99)",      "gcc -std=c99 -Wall -o $EVER_TMP/cfg_test 0-atom-c/cfg_test.c 0-atom-c/cfg.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/cfg_test", ("gcc",)),
-    ("Tac / HEAL (C99)", "gcc -std=c99 -Wall -o $EVER_TMP/tac_test 0-atom-c/tac_test.c 0-atom-c/tac.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/tac_test", ("gcc",)),
+    ("Tac / HEAL (C99)", "gcc -std=c99 -Wall -o $EVER_TMP/tac_test 0-atom-c/tac_test.c 0-atom-c/tac.c 0-atom-c/repair.c 0-atom-c/form.c 0-atom-c/form_lower.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/tac_test", ("gcc",)),
     ("Scope (C99)",    "gcc -std=c99 -Wall -o $EVER_TMP/scope_test 0-atom-c/scope_test.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && $EVER_TMP/scope_test", ("gcc",)),
     ("Integration",    f"{sys.executable} tests/ev_integrate.py", ()),
     ("Gold standard", f"{sys.executable} tests/gold_check.py", ()),
@@ -73,6 +79,10 @@ SUITES = [
     ("Java runtime",   "rm -rf $EVER_TMP/ev_java && mkdir -p $EVER_TMP/ev_java && "
                        "javac -d $EVER_TMP/ev_java 5-runtime-java/com/codric/ever/*.java && "
                        "java -cp $EVER_TMP/ev_java com.codric.ever.EverTest", ("javac", "java")),
+    ("Repair suite (Java)", "rm -rf $EVER_TMP/ev_java_repair && mkdir -p $EVER_TMP/ev_java_repair && "
+                       "javac -d $EVER_TMP/ev_java_repair 5-runtime-java/com/codric/ever/*.java && "
+                       "java -cp $EVER_TMP/ev_java_repair com.codric.ever.RepairSuite run", ("javac", "java")),
+    ("Heal parity (Py/C/Java)", f"{sys.executable} tests/heal_parity_test.py", ("javac", "java", "gcc")),
     ("HTML inspector", "node 6-interface-html/inspector_test.js", ("node",)),
     ("ReFix (Node)",   "node 7-refix-node/tests/test_all.js", ("node",)),
     ("Finality (Rust/Go)", f"{sys.executable} 8-finality/test_finality.py", ()),

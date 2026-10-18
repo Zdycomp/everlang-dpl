@@ -251,7 +251,7 @@ def _build_c_executor() -> Tuple[Optional[str], Optional[str]]:
             f.write(c_src)
         r = subprocess.run(
             ["gcc", "-std=c99", f"-I{atom}", "-O2", "-o", exe, src,
-             f"{atom}/tac.c", f"{atom}/scope.c", f"{atom}/ir.c",
+             f"{atom}/tac.c", f"{atom}/repair.c", f"{atom}/scope.c", f"{atom}/ir.c",
              f"{atom}/evalue.c", f"{atom}/tapestry.c", "-lm"],
             capture_output=True, text=True)
         if r.returncode:

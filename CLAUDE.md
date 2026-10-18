@@ -115,10 +115,25 @@ ANNOTATION, DEFECT). The operator is DATA (`EvRole`, open enum). The shape is TY
 syntax should cost ZERO changes to `form.c`,
 `form_lower.c`, or any pass. If you're adding a form kind, you're probably wrong.
 
+## Every repair runs evaluate → plan → execute
+
+Any heal, learn, or archive-backed repair runs three phases, in this order, identically in every layer:
+
+1. **Evaluate.** Read the primary. Confidence at or above the execute floor: keep it and stop.
+2. **Plan.** Look up the archived repair for the failure reason before running anything. The strategy selects among them: a repair tied to that strategy first, then a wildcard (an archived repair with no `strategy`). A repair tied to another strategy is never a candidate. `learn` archives its repair under its own `using (…)` strategy. No repair, or one that cannot add trust (cost ≥ base), means the fallback.
+3. **Execute.** Run the chosen action. A repair that was chosen but cannot run (unparsable or `z` fixture) gives `z`, never the fallback. A repaired `0` or `false` is a success: branch on the outcome, never on the value's truthiness.
+
+Each phase writes a trace line: `heal_order.py` (`run_source(...).heal_trace`, `ever run --trace`), `OP_REPAIR_STATE` and `ev_interp_heal_trace` (C), `refix accept` (ReFix). A confidence re-read of a repair node is a probe: it must not trace or archive (`heal_order.probing()`).
+
 ## Verify before you report done
 
+The gate is `0 failed, 0 skipped`. A skip is a gap, and gaps are fixed, not reported as done. Toolchains installed
+outside the system paths are named in `EVER_TOOLCHAIN_PATH` (colon-separated bin directories), which the runner puts
+in front of `PATH`. The heal process is checked across layers by `tests/heal_parity_test.py`: Python, Java and C must
+agree on every case, so a change to the repair process is verified in all three.
+
 ```
-python3 tests/run_all.py
+EVER_TOOLCHAIN_PATH=... python3 tests/run_all.py
 gcc -std=c99 -g -fsanitize=address,undefined -o /tmp/t \
   0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c \
   0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c \

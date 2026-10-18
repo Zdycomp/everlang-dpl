@@ -219,8 +219,11 @@ def eval_confidence(node: Optional[EvNode], scope: EvScope) -> int:
         return last_conf
 
     if k in (NK.HEAL, NK.LEARN):
-        # the value carries the confidence it was given by the operator
-        return eval_node(node, scope).confidence
+        # the value carries the confidence it was given by the operator. This
+        # re-reads a repair that already ran, so it is a probe: no trace, no archive.
+        import heal_order
+        with heal_order.probing():
+            return eval_node(node, scope).confidence
 
     if k == NK.CALL:
         name = node.str_val or ""
@@ -279,6 +282,7 @@ class ProgramResult:
     proficiency: Optional[int]    = None
     scaffold:    Optional[str]    = None
     scope:       Optional[EvScope] = None
+    heal_trace:  List[str]        = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -333,7 +337,18 @@ def _lowering_error(node: Optional[EvNode]) -> Optional[EvNode]:
 
 
 def run_source(source: str, profiler: Optional["Profiler"] = None,
-              scope: Optional[EvScope] = None) -> ProgramResult:
+               scope: Optional[EvScope] = None) -> ProgramResult:
+    """Parse and execute a full .ever source string, recording every repair's
+    evaluate → plan → execute trace on the result (see heal_order.py)."""
+    import heal_order
+    heal_order.begin()
+    result = _run_source(source, profiler, scope)
+    result.heal_trace = heal_order.drain()
+    return result
+
+
+def _run_source(source: str, profiler: Optional["Profiler"] = None,
+                scope: Optional[EvScope] = None) -> ProgramResult:
     """Parse and execute a full .ever source string for real: through
     the actual grammar (syntax.py), the actual semantic pass (with
     Program-level scope threading), and the actual evaluator
