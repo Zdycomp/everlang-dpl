@@ -63,6 +63,14 @@ class TestInverses(unittest.TestCase):
         self.assertEqual(A.sources_still_needed(0), 3)
         self.assertEqual(A.sources_still_needed(3), 0)
 
+    def test_excel_matches_ruled_behaviour(self):
+        self.assertEqual(A.excel(E_CERTAIN, E_CERTAIN), E_CERTAIN)
+        self.assertEqual(A.excel(E_CERTAIN, 100), 255)
+        self.assertEqual(A.excel(0, E_CERTAIN), 255)
+        self.assertEqual(A.excel(0, 0), 0)
+        self.assertEqual(A.excel(200, 230), 251)
+        self.assertEqual(A.excel(128, 128), 192)
+
     def test_pi_collapse_boundaries(self):
         self.assertEqual([A.pi_collapse(w) for w in (0, 25, 26, 81, 82)],
                          ["accept", "accept", "enumerate", "enumerate", "collapse"])

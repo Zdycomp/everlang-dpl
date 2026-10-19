@@ -58,6 +58,18 @@ def sources_still_needed(distinct_sources: int) -> int:
     return max(0, E_ASCEND_POINTS - distinct_sources)
 
 
+def excel(a: int, b: int) -> int:
+    """§2.2 corroboration, as ezr/2-interpreter-python/ever.py::excel implements it.
+
+    Certain only when both inputs are Certain; otherwise capped at 255 (T3).
+    Z (0) is the identity: excel(0, c) is c, capped.
+    """
+    if a >= E_CERTAIN and b >= E_CERTAIN:
+        return E_CERTAIN
+    v = a + b - (a * b // E_CERTAIN)
+    return max(0, min(E_CERTAIN - 1, v))
+
+
 def pi_collapse(width: int) -> str:
     """§5.2: an unknown condition's range is 'accept', 'enumerate', or 'collapse' to Z."""
     if width <= PI_ENUMERATE:
@@ -88,6 +100,8 @@ ALGEBRA: Tuple[Law, ...] = (
     Law("inferred_repairs_left", "inverse", "SEMANTICS.md §9.2",
         "floor((c - 128) / 32) inferred repairs"),
     Law("sources_still_needed", "inverse", "SEMANTICS.md §9.6", "max(0, 3 - distinct sources)"),
+    Law("excel", "law", "SEMANTICS.md §2.2, T1/T3 (ruled: code wins)",
+        "256 if both Certain, else min(255, a + b - floor(a*b/256))"),
     Law("pi_collapse", "law", "SEMANTICS.md §5.2",
         "width <= 25 accept; 26..81 enumerate; > 81 collapse to Z(unbounded)"),
     Law("depth_limit", "law", "SEMANTICS.md §4.6",
