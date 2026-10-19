@@ -15,7 +15,7 @@
 
 Toolchains available in the cloud env: python3.11, gcc/g++, java/javac, maven/gradle (Maven Central is reachable). Create a target directory only when the user asks for that phase.
 
-Two JDKs are needed. `5-runtime-java` compiles with `--release 25`, and Gradle 8.14 (`6-android-kotlin`) cannot run on JDK 25. Keep JDK 21 as the system default and install `openjdk-25-jdk-headless` alongside it. `run_all.py` gives Maven the JDK that matches the pom's `maven.compiler.release` when it is installed under `/usr/lib/jvm`.
+Two JDKs are needed. `5-runtime-java` compiles with `--release 25`, and the `6-android-kotlin` build (Gradle 8.14.3, Kotlin plugin 2.2.0) fails to configure on JDK 25. Keep JDK 21 as the system default and install `openjdk-25-jdk-headless` alongside it. `run_all.py` gives Maven the JDK that matches the pom's `maven.compiler.release` when it is installed under `/usr/lib/jvm` (Linux only). The options and the plan to reach one JDK are in `docs/adr/ADR-001-jdk-21-vs-25.md`.
 
 ## Cross-phase contract: reinforcing the self-healing Archive
 `EArchive` (Python, in-process, no persistence) is reinforced — not replaced — by two independent backend phases, wired together by `everlang/core/reinforced_archive.py::ReinforcedArchive`:
