@@ -8,6 +8,8 @@ phase's own test suite in its own toolchain and reports a summary.
 
 Exits non-zero if any phase fails.
 """
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -16,10 +18,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
-def run(name, cmd, cwd=None):
+def jdk_for_pom(pom):
+    """The installed JDK matching the pom's maven.compiler.release, or None.
+
+    The JVM phases need different JDKs (Gradle 8.14 cannot run on JDK 25, while
+    5-runtime-java compiles with --release 25), so Maven gets its own JAVA_HOME
+    instead of whatever JDK is the system default.
+    """
+    m = re.search(r"<maven\.compiler\.release>(\d+)</maven\.compiler\.release>", pom.read_text())
+    if not m:
+        return None
+    for home in sorted(Path("/usr/lib/jvm").glob(f"java-{m.group(1)}-openjdk*")):
+        if (home / "bin" / "javac").exists():
+            return home
+    return None
+
+
+def run(name, cmd, cwd=None, env=None):
     print(f"\n=== {name} ===")
     print(f"$ {' '.join(cmd)}" + (f"  (in {cwd})" if cwd else ""))
-    result = subprocess.run(cmd, cwd=cwd or ROOT)
+    result = subprocess.run(cmd, cwd=cwd or ROOT, env=env)
     ok = result.returncode == 0
     print(f"--- {name}: {'PASS' if ok else 'FAIL'} (exit {result.returncode}) ---")
     return ok
@@ -52,10 +70,16 @@ def main():
 
     if not skip_native and (ROOT / "5-runtime-java").is_dir():
         if shutil.which("mvn"):
+            env = None
+            jdk = jdk_for_pom(ROOT / "5-runtime-java" / "pom.xml")
+            if jdk:
+                env = dict(os.environ, JAVA_HOME=str(jdk))
+                print(f"\njava-runtime: using JAVA_HOME={jdk} (matches the pom's release)")
             results["java-runtime (5-runtime-java)"] = run(
                 "java-runtime (5-runtime-java)",
                 ["mvn", "-q", "-f", "5-runtime-java/pom.xml", "test"],
                 cwd=ROOT,
+                env=env,
             )
         else:
             print("\n=== java-runtime (5-runtime-java) ===\nSKIPPED: mvn not found")

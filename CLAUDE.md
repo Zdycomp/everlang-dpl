@@ -15,6 +15,8 @@
 
 Toolchains available in the cloud env: python3.11, gcc/g++, java/javac, maven/gradle (Maven Central is reachable). Create a target directory only when the user asks for that phase.
 
+Two JDKs are needed. `5-runtime-java` compiles with `--release 25`, and Gradle 8.14 (`6-android-kotlin`) cannot run on JDK 25. Keep JDK 21 as the system default and install `openjdk-25-jdk-headless` alongside it. `run_all.py` gives Maven the JDK that matches the pom's `maven.compiler.release` when it is installed under `/usr/lib/jvm`.
+
 ## Cross-phase contract: reinforcing the self-healing Archive
 `EArchive` (Python, in-process, no persistence) is reinforced — not replaced — by two independent backend phases, wired together by `everlang/core/reinforced_archive.py::ReinforcedArchive`:
 1. **C++ safety gate** (`1-phase-cpp/bin/verify_particle`): every write is checked natively (confidence in [0,256], value non-empty and ≤4096 bytes) before being trusted. Contract: `verify_particle <confidence>` with the value on stdin; prints `VALID` or `INVALID:<REASON>` (see `1-phase-cpp/README.md`).
