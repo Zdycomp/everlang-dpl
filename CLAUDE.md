@@ -14,6 +14,14 @@
 
 Toolchains available in the cloud env: python3.11, gcc/g++, java/javac, maven/gradle (Maven Central is reachable). Create a target directory only when the user asks for that phase.
 
+## Commands
+- Full gate (repo root): `python3 run_all.py`; Python+SQL only: `python3 run_all.py --skip-native`. `run_all.py` runs `5-runtime-java` on a JDK 25 when one is installed (`/usr/lib/jvm/java-25-*`); the container's `JAVA_HOME` is JDK 21 and fails with class file version 69.
+- ezr lineage gate (29 suites, must read 29 passed / 0 failed): `python3 ezr/tests/run_all.py`.
+- Single Python test (from `everlang_standalone/`): `python3 -m unittest tests.test_algebra.TestLaws.test_uncertainty_endpoints`.
+- Single Java test: `mvn -f 5-runtime-java/pom.xml test -Dtest=SelfHealingAuditIntegrationTest`.
+- C++ phase: `make -C 1-phase-cpp test` (`make asan` for the sanitizer build).
+- Cross-language parity: `python3 ezr/tests/algebra_parity.py`.
+
 ## Cross-phase contract: reinforcing the self-healing Archive
 `EArchive` (Python, in-process, no persistence) is reinforced — not replaced — by two independent backend phases, wired together by `everlang/core/reinforced_archive.py::ReinforcedArchive`:
 1. **C++ safety gate** (`1-phase-cpp/bin/verify_particle`): every write is checked natively (confidence in [0,256], value non-empty and ≤4096 bytes) before being trusted. Contract: `verify_particle <confidence>` with the value on stdin; prints `VALID` or `INVALID:<REASON>` (see `1-phase-cpp/README.md`).
@@ -26,10 +34,12 @@ Both the C++ and SQL legs are optional at runtime — if either is missing/unbui
 
 ## Rules (non-negotiable)
 1. **Boundary awareness.** Identify the target phase before writing code. Never bleed Python interpretation rules into C++ or vice versa; phases communicate only through the IR and documented file/CLI contracts.
-2. **Tests gate every change.** Run `python3 run_all.py` from the repo root (all suites must pass). `--skip-native` runs the Python+SQL legs only, if g++/mvn aren't available.
+2. **Tests gate every change.** Run `python3 run_all.py` from the repo root (all five legs must pass). `--skip-native` runs the Python+SQL legs only, if g++/mvn aren't available. Don't build on red.
+2a. **Hooks.** `.claude/hooks/run-tests.sh` runs after each Write/Edit of a Python file under `everlang_standalone/` and blocks on test or pyflakes failures. `.claude/hooks/session-start.sh` checks toolchains and runs the `everlang_standalone` unit tests.
 3. **TAC preservation.** Changes to `ir.py`, `tac.c`, or any optimizer must keep basic blocks well-formed (single entry, terminator-ended, valid jump targets) and evaluation frames consistent.
 4. **No invented features.** Behavior must trace to `ezr/SEMANTICS.md` or existing code/README. Memory-safety (ownership, lifetimes, bounds) must be explicit at compile time.
 5. **Stay minimal and match surrounding style.**
+6. **Terse replies.** No explanations, recaps or narration. Do the work; report the result in one line.
 
 ## Multi-agent team (`.claude/agents/`)
 Delegate to the agent that owns the phase; for cross-phase changes, start with `architect`.
