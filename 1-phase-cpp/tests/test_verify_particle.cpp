@@ -146,6 +146,9 @@ int main() {
 
     // confidence="abc", stdin="x" -> INVALID:CONFIDENCE_NOT_INTEGER, exit 1
     ExpectCase("confidence_not_integer", "abc", "x", "INVALID:CONFIDENCE_NOT_INTEGER", 1);
+    ExpectCase("confidence_leading_space", "\" 100\"", "x", "INVALID:CONFIDENCE_NOT_INTEGER", 1);
+    ExpectCase("confidence_leading_plus", "\"+100\"", "x", "INVALID:CONFIDENCE_NOT_INTEGER", 1);
+    ExpectCase("confidence_trailing_space", "\"100 \"", "x", "INVALID:CONFIDENCE_NOT_INTEGER", 1);
 
     // confidence=100, stdin="" -> INVALID:VALUE_EMPTY, exit 1
     ExpectCase("value_empty", "100", "", "INVALID:VALUE_EMPTY", 1);

@@ -41,6 +41,11 @@ bool ParseFullInteger(const char* text, long& out) {
     if (text == nullptr || text[0] == '\0') {
         return false;
     }
+    // strtol skips leading whitespace and accepts a leading '+'; the contract
+    // allows only an optional '-' or a digit as the first character.
+    if (text[0] != '-' && (text[0] < '0' || text[0] > '9')) {
+        return false;
+    }
 
     errno = 0;
     char* endptr = nullptr;
