@@ -65,7 +65,7 @@ mkdir -p .gradle && flock .gradle/build.lock ./gradlew --console=plain :predict:
 | A | uniform random bytes | 1 MiB = 4,194,304 bases | 1001 | `evaluateBytes` |
 | B | order-2 Markov DNA source | 1,000,000 bases | 2002 | 16 contexts, weights in `predict/tools/markov_order2.tsv`, started in context `AA` |
 | C | period-16 tandem repeat, substitution rate 0, 0.01, 0.05, 0.10 | 1,000,000 bases each | unit 3003, substitutions 4004 to 4007 | template `GTCGGGCATAGAGGTT`; each base is replaced with probability r, by one of the other three bases uniformly; substitutions are independent and do not accumulate |
-| D | this repository's Python source | first 1 MiB = 4,194,304 bases | none (fixed by repo state) | 116 files outside `6-android-kotlin` and hidden, cache, build and venv directories, sorted by path. The first 104 files, from `4-archive-sql/archive_db.py` to `ezr/tests/algebra_parity.py`, were concatenated and cut at 1,048,576 bytes. SHA-256 of the slice: `7a288d04a028b4df56c658a319e32460c0bd848d0f59921624eaeb6f68cbedcb` |
+| D | this repository's Python source | first 1 MiB = 4,194,304 bases | none (fixed by repo state) | 116 files pinned in `6-android-kotlin/predict/tools/corpus_116.txt`, the list of the original run, which is the tree at commit `d0e17de`. The first 104 files, from `4-archive-sql/archive_db.py` to `ezr/tests/algebra_parity.py`, were concatenated and cut at 1,048,576 bytes. SHA-256 of the slice: `7a288d04a028b4df56c658a319e32460c0bd848d0f59921624eaeb6f68cbedcb` |
 
 Datasets B and C are symbol streams, passed to `evaluateSymbols`. Datasets A and D are bytes, passed
 to `evaluateBytes`, which splits each byte into four 2-bit symbols, most significant pair first.
@@ -282,8 +282,11 @@ These statements describe the tables above. They are not claims beyond the measu
   learning cost that longer inputs would reduce.
 - **Orders 1 to 8 only.** Orders 9 and 10 are supported by the code, but they were not part of this
   evaluation.
-- **Dataset D depends on the repository state.** Its SHA-256 identifies the slice used in this run. Any change
-  to the Python files outside `6-android-kotlin` changes the slice and the numbers.
+- **Dataset D is pinned, not live.** The file list is `predict/tools/corpus_116.txt`, and the test fails unless
+  the slice hashes to the pinned SHA-256. Repository changes do not change the numbers, but they do break the
+  check if they touch one of the first 104 listed files. The later listed files do not affect the slice. Two
+  files added after the original run, `everlang_standalone/everlang/core/algebra.py` and
+  `everlang_standalone/tests/test_algebra.py`, are not in the list, which is why a live walk now finds 118 files.
 - **Floors are process bounds, not order-k bounds, for the tandem source.** An order-k predictor sees only k
   symbols, so it can sit above them. For the Markov source, the floors H(X_t given X_{t-1}) and the entropy
   rate are the bounds for orders 1 and 2 and up.
