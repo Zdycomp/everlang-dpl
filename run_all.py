@@ -4,7 +4,7 @@ Repo-wide integration wrapper (CLAUDE.md's "run_all.py" gate): runs each
 phase's own test suite in its own toolchain and reports a summary.
 
     python3 run_all.py            # run everything
-    python3 run_all.py --skip-native   # Python + SQL phases only (no g++/mvn needed)
+    python3 run_all.py --skip-native   # Python + SQL phases only (no g++/mvn/JDK needed)
 
 Exits non-zero if any phase fails.
 """
@@ -71,6 +71,16 @@ def main():
             )
         else:
             print("\n=== java-runtime (5-runtime-java) ===\nSKIPPED: mvn not found")
+
+    if not skip_native and (ROOT / "6-android-kotlin").is_dir():
+        if shutil.which("java"):
+            results["kotlin-dna (6-android-kotlin)"] = run(
+                "kotlin-dna (6-android-kotlin)",
+                ["./gradlew", "--console=plain", ":core:test", ":predict:test", ":fuzz:test"],
+                cwd=ROOT / "6-android-kotlin",
+            )
+        else:
+            print("\n=== kotlin-dna (6-android-kotlin) ===\nSKIPPED: java not found")
 
     if not skip_native and (ROOT / "ezr").is_dir():
         results["ezr-lineage (ezr)"] = run(
