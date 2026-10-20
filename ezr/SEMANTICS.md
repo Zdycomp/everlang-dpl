@@ -153,9 +153,11 @@ there Z is the **identity**: `u(Z) = 1`, `1 × x = x`, so
 had exactly as it was — correct, and what the code has always done.
 
 This theorem previously read "Z is absorbing. `u(Z) = 1`, and
-`1 × x = 1`", which is false twice over: `1 × x = x`, and the absorbing
-element of `EXCEL` is `Certain`, not Z (`EXCEL(Certain, c) = Certain` for
-every c, which is T3 seen from the other side). The error survived
+`1 × x = 1`", which is false twice over: `1 × x = x`, and `EXCEL` has no
+absorbing element at `Certain`. `EXCEL(Certain, c)` is `255` for every
+`c < Certain`, and `Certain` only when both inputs are `Certain` (the
+cap of T3, ruled in favour of the implementation in `ever.py`'s `excel`).
+The error survived
 because `research.py` shipped a function called `z_absorbs` that returned
 True while actually asserting `EXCEL(0, b) == b` — the identity law under
 a name promising absorption. See `FINDINGS.md` §1.

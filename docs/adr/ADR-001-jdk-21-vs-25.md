@@ -24,7 +24,7 @@ Measured on 2026-10-19 in an Ubuntu 24.04 container with OpenJDK 21.0.12 and 25.
 
 So no single JDK builds both phases today. Three more facts shape the options:
 
-- `run_all.py` (commit `3d9c804`) finds the pom's JDK under `/usr/lib/jvm`. That's the Debian/Ubuntu layout. The modernization plan shows the owner's machine is macOS, with JDKs under `/Library/Java/JavaVirtualMachines`, where this lookup finds nothing.
+- `run_all.py`'s `jdk25_env()` finds a JDK 25 under `/usr/lib/jvm`. That's the Debian/Ubuntu layout. The modernization plan shows the owner's machine is macOS, with JDKs under `/Library/Java/JavaVirtualMachines`, where this lookup finds nothing.
 - Installing JDK 25 with apt made it the system default, which breaks the Kotlin build until the default is set back to 21. The two-JDK setup is easy to break by accident.
 - Android Studio runs Gradle on its own bundled JDK. Which version that is depends on the Studio release, and it wasn't checked.
 
@@ -116,5 +116,5 @@ Maven runs on any JDK. The pom requests JDK 25 through `maven-toolchains-plugin`
 1. [ ] The owner confirms Java 25 stays the target. If not, take Option B.
 2. [ ] Add JDK 25 to the cloud environment's setup script and keep JDK 21 as the default (`update-alternatives --set java` and `--set javac` to the JDK 21 binaries).
 3. [ ] Test Option C on a scratch branch: move to a Gradle 9.x wrapper and a Kotlin plugin version that both support JDK 25, then run `6-android-kotlin/tools/determinism_check.sh` on JDK 25. Open the project in Android Studio and sync `:app`.
-4. [ ] If C passes: make JDK 25 the only JDK, remove `jdk_for_pom` from `run_all.py`, update `CLAUDE.md`, and mark this ADR Accepted with C.
+4. [ ] If C passes: make JDK 25 the only JDK, remove `jdk25_env()` from `run_all.py`, update `CLAUDE.md`, and mark this ADR Accepted with C.
 5. [ ] If C fails or is deferred: make the JDK lookup work on macOS (`/usr/libexec/java_home -v 25`) or adopt Option D, and mark this ADR Accepted with A.

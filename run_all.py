@@ -9,7 +9,6 @@ phase's own test suite in its own toolchain and reports a summary.
 Exits non-zero if any phase fails.
 """
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -18,19 +17,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
-def jdk_for_pom(pom):
-    """The installed JDK matching the pom's maven.compiler.release, or None.
-
-    The JVM phases need different JDKs (Gradle 8.14 cannot run on JDK 25, while
-    5-runtime-java compiles with --release 25), so Maven gets its own JAVA_HOME
-    instead of whatever JDK is the system default.
-    """
-    m = re.search(r"<maven\.compiler\.release>(\d+)</maven\.compiler\.release>", pom.read_text())
-    if not m:
-        return None
-    for home in sorted(Path("/usr/lib/jvm").glob(f"java-{m.group(1)}-openjdk*")):
-        if (home / "bin" / "javac").exists():
-            return home
+def jdk25_env():
+    """5-runtime-java compiles to release 25; use a JDK 25 if one is installed."""
+    for home in sorted(Path("/usr/lib/jvm").glob("java-25-*")) + [Path("/usr/lib/jvm/jdk-25")]:
+        if (home / "bin" / "java").is_file():
+            env = dict(os.environ, JAVA_HOME=str(home))
+            env["PATH"] = f"{home / 'bin'}{os.pathsep}{env.get('PATH', '')}"
+            return env
     return None
 
 
@@ -70,16 +63,11 @@ def main():
 
     if not skip_native and (ROOT / "5-runtime-java").is_dir():
         if shutil.which("mvn"):
-            env = None
-            jdk = jdk_for_pom(ROOT / "5-runtime-java" / "pom.xml")
-            if jdk:
-                env = dict(os.environ, JAVA_HOME=str(jdk))
-                print(f"\njava-runtime: using JAVA_HOME={jdk} (matches the pom's release)")
             results["java-runtime (5-runtime-java)"] = run(
                 "java-runtime (5-runtime-java)",
                 ["mvn", "-q", "-f", "5-runtime-java/pom.xml", "test"],
                 cwd=ROOT,
-                env=env,
+                env=jdk25_env(),
             )
         else:
             print("\n=== java-runtime (5-runtime-java) ===\nSKIPPED: mvn not found")
