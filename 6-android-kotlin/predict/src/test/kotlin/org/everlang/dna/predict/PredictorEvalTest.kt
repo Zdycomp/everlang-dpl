@@ -109,8 +109,9 @@ class PredictorEvalTest {
             title = "D. This repository's Python source (first 1 MiB)",
             note = "${corpus.candidates} Python files pinned in `$CORPUS_LIST`. " +
                 "The first ${corpus.filesUsed} files, from `${corpus.first}` to `${corpus.last}` in list order, were " +
-                "concatenated and cut at 1,048,576 bytes. SHA-256 of the slice: `${corpus.sha256}`, checked against the " +
-                "pinned value on every run. evaluateBytes, so $UNIFORM_BASES_TEXT bases. " +
+                "concatenated and cut at ${grouped(CORPUS_BYTES.toLong())} bytes. SHA-256 of the slice: " +
+                "`${corpus.sha256}`, checked against the pinned value on every run. The slice is scored with " +
+                "evaluateBytes, giving ${grouped(4L * MIB)} bases. " +
                 "No floor is known for this data.",
             expectedBases = 4L * MIB,
             rows = (1..MAX_ORDER).map { k -> Row(k, evaluateBytes(corpus.bytes, k), null, null) },
@@ -466,6 +467,7 @@ private class Checks {
 }
 
 private fun f2(x: Double) = String.format(Locale.ROOT, "%.2f", x)
+private fun grouped(n: Long) = String.format(Locale.ROOT, "%,d", n)
 
 private fun f3(x: Double) = String.format(Locale.ROOT, "%.3f", x)
 
