@@ -107,10 +107,11 @@ class PredictorEvalTest {
         val corpus = pythonCorpus()
         datasets += Dataset(
             title = "D. This repository's Python source (first 1 MiB)",
-            note = "${corpus.candidates} Python files outside 6-android-kotlin and hidden, cache, build and venv " +
-                "directories, ${corpus.candidateBytes} bytes in total. The first ${corpus.filesUsed} files, " +
-                "from `${corpus.first}` to `${corpus.last}` in sorted path order, were concatenated and cut at " +
-                "1,048,576 bytes. SHA-256 of the slice: `${corpus.sha256}`. evaluateBytes, so $UNIFORM_BASES_TEXT bases. " +
+            note = "${corpus.candidates} Python files pinned in `$CORPUS_LIST`. " +
+                "The first ${corpus.filesUsed} files, from `${corpus.first}` to `${corpus.last}` in list order, were " +
+                "concatenated and cut at ${grouped(CORPUS_BYTES.toLong())} bytes. SHA-256 of the slice: " +
+                "`${corpus.sha256}`, checked against the pinned value on every run. The slice is scored with " +
+                "evaluateBytes, giving ${grouped(4L * MIB)} bases. " +
                 "No floor is known for this data.",
             expectedBases = 4L * MIB,
             rows = (1..MAX_ORDER).map { k -> Row(k, evaluateBytes(corpus.bytes, k), null, null) },
@@ -375,7 +376,6 @@ class PredictorEvalTest {
     private class Corpus(
         val bytes: ByteArray,
         val candidates: Int,
-        val candidateBytes: Long,
         val filesUsed: Int,
         val first: String,
         val last: String,
@@ -383,24 +383,17 @@ class PredictorEvalTest {
     )
 
     /**
-     * The Python source of this repository, as bytes. The repository root is the nearest ancestor
-     * containing run_all.py. 6-android-kotlin is excluded, so edits to this module's own tools do not change
-     * the dataset. Files are taken in sorted path order and the slice is cut at exactly 1 MiB.
+     * The Python source of this repository, as bytes. The file list is pinned in [CORPUS_LIST] and read in list
+     * order, so later repository changes (new modules, edited sources) do not change the dataset. The slice is cut
+     * at exactly 1 MiB and its SHA-256 must equal [PINNED_CORPUS_SHA256], or the evaluation fails.
      */
     private fun pythonCorpus(): Corpus {
         val start = File(".").canonicalFile
         val root = generateSequence(start) { it.parentFile }
             .firstOrNull { File(it, "run_all.py").isFile }
             ?: error("no run_all.py found above ${start.path}, so the repository root is unknown")
-        val files = root.walkTopDown()
-            .onEnter { dir ->
-                dir == root ||
-                    (!dir.name.startsWith(".") && dir.name !in SKIP_DIRS &&
-                        !(dir.parentFile == root && dir.name == MODULE_DIR_NAME))
-            }
-            .filter { it.isFile && it.name.endsWith(".py") }
-            .sortedBy { it.relativeTo(root).invariantSeparatorsPath }
-            .toList()
+        val files = File(root, CORPUS_LIST).readLines().filter { it.isNotBlank() }.map { File(root, it) }
+        for (f in files) check(f.isFile) { "${f.path} is listed in $CORPUS_LIST but is missing" }
         val total = files.sumOf { it.length() }
         check(total >= CORPUS_BYTES) { "Python corpus is $total bytes, below the $CORPUS_BYTES required" }
 
@@ -413,10 +406,12 @@ class PredictorEvalTest {
         }
         val bytes = buf.toByteArray().copyOf(CORPUS_BYTES)
         val sha = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        check(sha == PINNED_CORPUS_SHA256) {
+            "corpus slice SHA-256 $sha differs from the pinned $PINNED_CORPUS_SHA256: a file listed in $CORPUS_LIST changed"
+        }
         return Corpus(
             bytes = bytes,
             candidates = files.size,
-            candidateBytes = total,
             filesUsed = used,
             first = files.first().relativeTo(root).invariantSeparatorsPath,
             last = files[used - 1].relativeTo(root).invariantSeparatorsPath,
@@ -446,12 +441,12 @@ class PredictorEvalTest {
         const val FLOOR_TOLERANCE = 0.01
         const val CEILING_TOLERANCE = 0.01
         const val MUTATION_RATE_TOLERANCE = 0.002
-        const val MODULE_DIR_NAME = "6-android-kotlin"
+        const val CORPUS_LIST = "6-android-kotlin/predict/tools/corpus_116.txt"
+        const val PINNED_CORPUS_SHA256 = "7a288d04a028b4df56c658a319e32460c0bd848d0f59921624eaeb6f68cbedcb"
         const val MATRIX = "tools/markov_order2.tsv"
         const val REFERENCE = "tools/eval_reference.tsv"
         const val UNIFORM_BASES_TEXT = "4,194,304"
         val TANDEM_RATES = listOf("0", "0.01", "0.05", "0.10")
-        val SKIP_DIRS = setOf("__pycache__", "build", "node_modules", "venv")
     }
 }
 
@@ -472,6 +467,7 @@ private class Checks {
 }
 
 private fun f2(x: Double) = String.format(Locale.ROOT, "%.2f", x)
+private fun grouped(n: Long) = String.format(Locale.ROOT, "%,d", n)
 
 private fun f3(x: Double) = String.format(Locale.ROOT, "%.3f", x)
 

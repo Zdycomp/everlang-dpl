@@ -8,11 +8,14 @@
         "ms-python.debugpy",
         "ms-vscode.cpptools",
         "vscjava.vscode-java-pack",
+        "fwcd.kotlin",
         "shopify.ruby-lsp"
       ],
       "settings": {
         "java.jdt.ls.java.home": "/usr/lib/jvm/jdk-25",
+        "java.import.gradle.java.home": "/usr/lib/jvm/jdk-21",
         "java.configuration.runtimes": [
+          { "name": "JavaSE-21", "path": "/usr/lib/jvm/jdk-21" },
           { "name": "JavaSE-25", "path": "/usr/lib/jvm/jdk-25", "default": true }
         ]
       }
