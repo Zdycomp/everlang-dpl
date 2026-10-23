@@ -20,6 +20,16 @@
       "justMyCode": false
     },
     {
+      "name": "Python: fuzz harness (2,000 cases)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/everlang_standalone/tests/fuzz_harness.py",
+      "args": ["--cases", "2000", "--seed", "1"],
+      "cwd": "${workspaceFolder}/everlang_standalone",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
       "name": "Python: pytest current file",
       "type": "debugpy",
       "request": "launch",

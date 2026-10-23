@@ -3,7 +3,7 @@
   "tasks": [
     {
       "label": "Gate: everything (run_all.py)",
-      "detail": "All five legs: Python, SQL, C++, Java, and the ezr lineage's 29 suites. Java needs JDK 25.",
+      "detail": "All six legs: Python, SQL, C++, Java, Kotlin, and the ezr lineage's 29 suites. Java needs a JDK 25 installed; Kotlin runs on the default JDK, which must be 17 to 24.",
       "type": "shell",
       "command": "python3 run_all.py",
       "options": { "cwd": "${workspaceFolder}" },
@@ -17,6 +17,49 @@
       "type": "shell",
       "command": "python3 run_all.py --skip-native",
       "options": { "cwd": "${workspaceFolder}" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Kotlin: JVM tests (core, predict, fuzz)",
+      "detail": "Gradle 8.14.3 needs JDK 17 to 24 as the default; it fails on JDK 25.",
+      "type": "shell",
+      "command": "./gradlew --console=plain :core:test :predict:test :fuzz:test",
+      "options": { "cwd": "${workspaceFolder}/6-android-kotlin" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Kotlin: determinism check (3 runs)",
+      "detail": "Offline; needs a warm Gradle cache. Exit 0 = deterministic and green.",
+      "type": "shell",
+      "command": "tools/determinism_check.sh 3",
+      "options": { "cwd": "${workspaceFolder}/6-android-kotlin" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Kotlin: 1,000,000-case fuzz",
+      "type": "shell",
+      "command": "FUZZ_CASES=1000000 ./gradlew --console=plain :fuzz:cleanTest :fuzz:test",
+      "options": { "cwd": "${workspaceFolder}/6-android-kotlin" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Kotlin: predictor evaluation (EVAL=1)",
+      "detail": "Checks dataset D against the pinned corpus hash; takes about a minute.",
+      "type": "shell",
+      "command": "EVAL=1 ./gradlew --console=plain :predict:cleanTest :predict:test --tests '*PredictorEvalTest*'",
+      "options": { "cwd": "${workspaceFolder}/6-android-kotlin" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Python: fuzz harness (100,000 cases)",
+      "type": "shell",
+      "command": "python3 tests/fuzz_harness.py --cases 100000 --seed 1",
+      "options": { "cwd": "${workspaceFolder}/everlang_standalone" },
       "group": "test",
       "problemMatcher": []
     },
@@ -98,9 +141,9 @@
     },
     {
       "label": "Java: mvn test",
-      "detail": "Needs JDK 25 (the pom sets release 25).",
+      "detail": "Finds a JDK 25 under /usr/lib/jvm (Linux) or with java_home (macOS); the pom sets release 25.",
       "type": "shell",
-      "command": "mvn -q -f 5-runtime-java/pom.xml test",
+      "command": "J=$(ls -d /usr/lib/jvm/java-25-* 2>/dev/null | head -1); [ -n \"$J\" ] || J=$(/usr/libexec/java_home -v 25); JAVA_HOME=\"$J\" mvn -q -f 5-runtime-java/pom.xml test",
       "options": { "cwd": "${workspaceFolder}" },
       "group": "test",
       "problemMatcher": []

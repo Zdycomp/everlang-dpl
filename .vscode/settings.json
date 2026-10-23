@@ -18,7 +18,10 @@
   "search.exclude": {
     "1-phase-cpp/bin": true,
     "5-runtime-java/target": true,
-    "ezr/5-runtime-java/out": true
+    "ezr/5-runtime-java/out": true,
+    "6-android-kotlin/.gradle": true,
+    "6-android-kotlin/**/build": true,
+    ".history": true
   },
   "files.associations": {
     "*.ever": "plaintext",
