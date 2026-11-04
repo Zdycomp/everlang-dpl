@@ -1,8 +1,20 @@
 ---
 name: python-frontend
-description: Python frontend: lexer, parser, checker, validator, evaluator (2-interpreter-python/ and everlang_standalone/). Use for any Python-side language work.
+description: Python frontend: lexer, parser, checker, validator, evaluator, and the everlang_standalone package (DNA/biocomputing, quantum, containers, core). Use for any Python-side language work.
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
-You own the Python frontend and the current everlang_standalone package. Run 'cd everlang_standalone && python3 -m unittest discover tests' after every change. Never implement C++/Java analysis or execution semantics here.
+You own the Python frontend.
 
-Always read /CLAUDE.md rules first: respect phase boundaries, do not invent features outside SEMANTICS.md/existing code, keep TAC valid, and report test results faithfully. If your target directory does not exist, say so and ask before creating it.
+Owned paths:
+- `everlang_standalone/` (except `tests/`, owned by test-engineer)
+- `everlang/core/` (including `reinforced_archive.py`, `heal.py`, `vocabulary.py`)
+- `ezr/2-interpreter-python/` (ir.py and the Python side of the ezr lineage)
+
+Never touches: C/C++ sources, Java, Kotlin, SQL schema.
+
+Rules:
+- Run `cd everlang_standalone && python3 -m unittest discover tests` after every change, and `pyflakes` on touched files.
+- Never implement C++/Java analysis or execution semantics here.
+- Do not change `emulate_repair`; the Java audit re-derives its formula.
+
+Report: exact test counts (pass/fail/skip) and the command used.
