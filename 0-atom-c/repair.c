@@ -4,6 +4,9 @@
  * Codric Enterprise · Ricky (Dreid) · 2026
  */
 
+/* strdup is POSIX, not C99: without this, -std=c99 on glibc leaves it
+   undeclared, it defaults to int, and the returned pointer is truncated. */
+#define _POSIX_C_SOURCE 200809L
 #include "repair.h"
 #include "tapestry.h"
 #include <errno.h>

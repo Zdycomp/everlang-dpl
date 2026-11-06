@@ -22,7 +22,15 @@ static EvNode *div_node(EvArena *a, int64_t x, int64_t y) {
     return ev_node_binop(a, EV_NODE_DIV, ev_node_int(a, x, 1), ev_node_int(a, y, 1), 1);
 }
 
-/* builds the primary for an expr token: int:N, div:A:B, nested:A:B, zvar */
+/* the callee every call case names: f(x) = 10 / x */
+static EvNode *callee_def(EvArena *a) {
+    const char *params[] = {"x"};
+    EvNode *body = ev_node_binop(a, EV_NODE_DIV, ev_node_int(a, 10, 1),
+                                 ev_node_var(a, "x", 1), 1);
+    return ev_node_def(a, "f", params, 1, body, 1);
+}
+
+/* builds the primary for an expr token: int:N, div:A:B, nested:A:B, call:B, zvar */
 static EvNode *primary(EvArena *a, const char *expr) {
     int64_t x = 0, y = 0;
     if (sscanf(expr, "int:%lld", (long long *)&x) == 1) return ev_node_int(a, x, 1);
@@ -30,6 +38,10 @@ static EvNode *primary(EvArena *a, const char *expr) {
         return div_node(a, x, y);
     if (sscanf(expr, "nested:%lld:%lld", (long long *)&x, (long long *)&y) == 2)
         return ev_node_binop(a, EV_NODE_ADD, div_node(a, x, y), ev_node_int(a, 1, 1), 1);
+    if (sscanf(expr, "call:%lld", (long long *)&x) == 1) {
+        EvNode *args[] = { ev_node_int(a, x, 1) };
+        return ev_node_call(a, "f", args, 1, 1);
+    }
     if (strcmp(expr, "zvar") == 0) return ev_node_var(a, "x_undef", 1);
     return NULL;
 }
@@ -41,7 +53,12 @@ static void run_case(const char *name, const char *expr, const char *strat,
     EvNode *h = ev_node_new(a, EV_NODE_HEAL, 1);
     ev_node_add_child(h, p);
     ev_node_add_child(h, ev_node_text(a, strat, 1));
-    ev_node_add_child(h, ev_node_int(a, fallback, 1));
+    EvNode *fb = ev_node_int(a, fallback, 1);
+    /* a call's callee must be in the module. Lowering registers it from this
+       branch, which never runs: the condition is false. */
+    if (strncmp(expr, "call:", 5) == 0)
+        fb = ev_node_if(a, ev_node_bool(a, 0, 1), callee_def(a), fb, 1);
+    ev_node_add_child(h, fb);
     EvModule *m = ev_lower_module("heal_matrix", h);
     if (!m) { printf("%s\tERROR\tlowering\t-\n", name); return; }
     EvInterp *ip = ev_interp_new(m);

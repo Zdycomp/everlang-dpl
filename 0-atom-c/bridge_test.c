@@ -254,6 +254,7 @@ int main(void) {
     ev_arena_free(a2);
     ev_arena_free(a3);
     ok("all arenas freed cleanly",   1);
+    ev_pool_clear(&pool);
 
     /* ── Summary ── */
     printf("\n");

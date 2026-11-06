@@ -524,6 +524,31 @@ ok("report suggests next steps", "try next" in rep)
 
 
 # ══════════════════════════════════════════════
+# 12. THE CLI KEEPS ITS RESULT WHEN THE PROFILE CANNOT BE WRITTEN
+# ══════════════════════════════════════════════
+print("[cli profile save]")
+
+import contextlib, io
+from pathlib import Path
+import ever_cli
+
+with tempfile.TemporaryDirectory() as d:
+    blocker = os.path.join(d, "not-a-directory")
+    open(blocker, "w").close()
+    unwritable = Profiler(path=Path(blocker) / "profile.json")
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            ever_cli._save_profile(unwritable)
+        raised = False
+    except OSError:
+        raised = True
+    ok("an unwritable profile does not raise", not raised)
+    ok("the warning names where the profile was not saved",
+       "profile not saved to" in err.getvalue())
+
+
+# ══════════════════════════════════════════════
 print("\n" + "=" * 58)
 print(f"=== Dynamic Profiler: {_pass} passed, {_fail} failed ===")
 print("=" * 58 + "\n")

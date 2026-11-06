@@ -203,6 +203,28 @@ def _heal_keyword_case(tokens: List[Token]) -> Tuple[List[Token], List[Correctio
     return out, corrections
 
 
+_HEAL_WORDS = {"using", "fallback", "fix"}
+
+
+def _heal_form_at(tokens: List[Token], i: int) -> bool:
+    """Is tokens[i] the '(' of a heal form? That is `heal (` with `using`
+    after the matching `)`, the same test syntax.Parser._heal_ahead makes.
+    Such a '(' is not a call: its contents are one primary, not arguments."""
+    if i < 1 or tokens[i - 1].kind is not T.NAME or tokens[i - 1].text != "heal":
+        return False
+    depth = 0
+    for j in range(i, len(tokens)):
+        kind = tokens[j].kind
+        if kind is T.LPAR:
+            depth += 1
+        elif kind is T.RPAR:
+            depth -= 1
+            if depth == 0:
+                after = tokens[j + 1] if j + 1 < len(tokens) else None
+                return after is not None and after.kind is T.NAME and after.text == "using"
+    return False
+
+
 def heal(tokens: List[Token]) -> Tuple[List[Token], List[Correction]]:
     """Repair a well-defined set of common slips in a token stream.
     Returns the healed stream and a record of every change made —
@@ -240,7 +262,8 @@ def heal(tokens: List[Token]) -> Tuple[List[Token], List[Correction]]:
         # ── track bracket context (before rewriting EQ/COLON, so the
         #    stack reflects where we structurally are) ──
         if tok.kind in _OPENERS:
-            is_call = tok.kind is T.LPAR and out and out[-1].kind is T.NAME
+            is_call = (tok.kind is T.LPAR and out and out[-1].kind is T.NAME
+                       and not _heal_form_at(tokens, i))
             stack.append((tok.kind, is_call))
         elif tok.kind in (T.RBRACK, T.RBRACE, T.RPAR):
             if stack:
@@ -283,7 +306,10 @@ def heal(tokens: List[Token]) -> Tuple[List[Token], List[Correction]]:
             (stack[-1][0] is T.LPAR and stack[-1][1]))
         if in_collection:
             nxt = tokens[i + 1] if i + 1 < n else None
-            if nxt and _is_value_start(nxt) and _completes_value(tok, nxt):
+            # a heal/learn clause word is never a value, so `) using` in a
+            # list is one heal form, not two items
+            heal_word = nxt is not None and nxt.kind is T.NAME and nxt.text in _HEAL_WORDS
+            if nxt and not heal_word and _is_value_start(nxt) and _completes_value(tok, nxt):
                 corrections.append(Correction(
                     nxt.line, "missing ','", "',' inserted",
                     "two values back to back inside a collection "

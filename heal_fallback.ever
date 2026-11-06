@@ -1,0 +1,3 @@
+let x = z
+let res = heal (x) using ("plain") fallback (50)
+show res

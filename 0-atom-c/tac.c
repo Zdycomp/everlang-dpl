@@ -53,6 +53,10 @@ const char *ev_opcode_name(EvOpcode op) {
         case OP_HEAL:    return "HEAL";
         case OP_RECOVERY:   return "RECOVERY";
         case OP_REPAIR_STATE: return "REPAIR_STATE";
+        case OP_CAUSE_OPEN:  return "CAUSE_OPEN";
+        case OP_CAUSE_CLOSE: return "CAUSE_CLOSE";
+        case OP_NOTE:        return "NOTE";
+        case OP_SETTLE:      return "SETTLE";
         case OP_ERR:     return "ERR";
         default:         return "?";
     }
@@ -283,11 +287,12 @@ EvReg ev_emit_binop(EvBuilder *b, EvOpcode op,
     return dest;
 }
 
-EvReg ev_emit_recovery(EvBuilder *b, EvReg primary, EvReg strategy, int32_t line) {
+EvReg ev_emit_recovery(EvBuilder *b, EvReg primary, EvReg strategy,
+                       EvReg reason, int32_t line) {
     EvReg dest = ev_next_reg(b, EV_VOID, primary.confidence);
     EvInstr *ins = _emit(b, OP_RECOVERY, line);
     if (!ins) return ev_reg_void();
-    ins->dest = dest; ins->src0 = primary; ins->src1 = strategy;
+    ins->dest = dest; ins->src0 = primary; ins->src1 = strategy; ins->src2 = reason;
     return dest;
 }
 
@@ -299,6 +304,38 @@ EvReg ev_emit_repair_state(EvBuilder *b, int32_t line) {
     if (!ins) return ev_reg_void();
     ins->dest = dest;
     return dest;
+}
+
+/* Cause frames. A heal names its primary's failure by the first failure noted
+   while the primary runs, as the Python reference does. These emitters have
+   no value of their own except the reason, so their destinations are void
+   where they are only side effects, and the dead-register pass keeps them. */
+void ev_emit_cause_open(EvBuilder *b, int32_t line) {
+    _emit(b, OP_CAUSE_OPEN, line);
+}
+
+EvReg ev_emit_cause_close(EvBuilder *b, EvReg primary, int32_t line) {
+    EvReg dest = ev_next_reg(b, EV_TEXT, E_CERTAIN);
+    EvInstr *ins = _emit(b, OP_CAUSE_CLOSE, line);
+    if (!ins) return ev_reg_void();
+    ins->dest = dest; ins->src0 = primary;
+    return dest;
+}
+
+void ev_emit_cause_drop(EvBuilder *b, int32_t line) {
+    _emit(b, OP_CAUSE_CLOSE, line);   /* dest and src0 void: pop, yield nothing */
+}
+
+void ev_emit_note(EvBuilder *b, const char *reason, int32_t line) {
+    EvInstr *ins = _emit(b, OP_NOTE, line);
+    if (!ins) return;
+    ins->name = ev_arena_strdup(b->func->arena, reason);
+}
+
+void ev_emit_settle(EvBuilder *b, EvReg result, EvReg reason, int32_t line) {
+    EvInstr *ins = _emit(b, OP_SETTLE, line);
+    if (!ins) return;
+    ins->src0 = result; ins->src1 = reason;
 }
 
 EvReg ev_emit_call(EvBuilder *b, const char *name,
@@ -460,7 +497,9 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
                are lowered into the repair path only, so an untaken repair
                is never evaluated, as in the Python reference. */
             if (n->child_count < 3) return ev_reg_void();
+            ev_emit_cause_open(b, n->line);
             EvReg primary = ev_lower_node(b, n->children[0]);
+            EvReg reason  = ev_emit_cause_close(b, primary, n->line);
 
             EvBlock *trust_blk  = new_block(b);
             EvBlock *repair_blk = new_block(b);
@@ -483,8 +522,10 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             ev_emit_jump(b, merge_blk->id, n->line);
 
             ev_builder_switch_block(b, repair_blk);
+            ev_emit_cause_open(b, n->line);
             EvReg strat = ev_lower_node(b, n->children[1]);
-            EvReg rec = ev_emit_recovery(b, primary, strat, n->line);
+            ev_emit_cause_drop(b, n->line);
+            EvReg rec = ev_emit_recovery(b, primary, strat, reason, n->line);
 
             /* Branch on the repair's outcome (evaluate → plan → execute), never
                on the value: a repaired 0 or false is still a success. */
@@ -515,7 +556,9 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             ev_emit_jump(b, merge_blk->id, n->line);
 
             ev_builder_switch_block(b, fb_blk);
+            ev_emit_cause_open(b, n->line);
             EvReg fallback = ev_lower_node(b, n->children[2]);
+            ev_emit_cause_drop(b, n->line);
             ev_emit_store(b, phi_name, fallback, n->line);
             ev_emit_jump(b, merge_blk->id, n->line);
 
@@ -523,6 +566,9 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             int16_t conf = _binconf(primary, fallback);
             int32_t typ  = (primary.type != EV_VOID) ? primary.type : fallback.type;
             EvReg result = ev_emit_load(b, phi_name, typ, conf, n->line);
+            /* a z result is the failure the heal could not repair: it hands that
+               reason up to the enclosing frame, as _settle does in scope.py */
+            ev_emit_settle(b, result, reason, n->line);
             return result;
         }
 
@@ -599,6 +645,10 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
         }
 
         case EV_NODE_Z:
+            /* an explicit unknown: a failure, named as the Python reference names it */
+            ev_emit_note(b, "declared unknown", n->line);
+            return ev_reg_void();
+
         case EV_NODE_ERR:
             return ev_reg_void();
 
@@ -879,6 +929,14 @@ typedef struct {
     int32_t      named_cap;
 } EvFrameSave;
 
+/* A cause frame: the first failure noted while a heal's primary runs. The
+   reason is copied in, so it outlives the register that carried the z.
+   Mirrors heal_order.py's cause_frame. */
+typedef struct {
+    char    text[EV_INLINE_MAX];
+    int32_t set;
+} EvCause;
+
 struct EvInterp {
     EvModule    *module;
     int32_t      nregs;      /* register file size: highest reg_counter  */
@@ -890,8 +948,10 @@ struct EvInterp {
     EvFrameSave *frames;     /* EV_MAX_DEPTH+2 save slots */
     int16_t      ret_conf;   /* confidence of the value last returned */
     int          failed;     /* set when the interpreter ran out of memory */
-    const char  *last_failure;     /* reason of the most recent z-producing failure */
-    int32_t      last_failure_reg; /* register that failure's z was written to */
+    EvCause      cause;      /* the innermost frame's first failure          */
+    EvCause     *cause_stack; /* the frames each enclosing heal left open    */
+    int32_t      ncause;
+    int32_t      cause_cap;
     int32_t      heal_count;       /* heals evaluated (see ev_interp_heal_trace) */
     int32_t      heal_action;      /* EV_HEAL_* outcome of the last repair       */
     int16_t      heal_conf;        /* confidence of a substituted repair, else 0 */
@@ -933,6 +993,36 @@ static EvNamedSlot *named_find(const EvInterp *ip, const char *name) {
         if (ip->named[k].name && strcmp(ip->named[k].name, name) == 0)
             return &ip->named[k];
     return NULL;
+}
+
+/* A failure happened here. The frame keeps the first one: a later z is a
+   consequence of it, not a second cause (scope.py's heal_order.note). */
+static void cause_note(EvInterp *ip, const char *reason) {
+    if (ip->cause.set) return;
+    snprintf(ip->cause.text, sizeof ip->cause.text, "%s", reason);
+    ip->cause.set = 1;
+}
+
+/* A heal's primary begins: the enclosing frame is saved, and a fresh one opens. */
+static void cause_push(EvInterp *ip) {
+    if (ip->ncause == ip->cause_cap) {
+        int32_t nc = (ip->cause_cap > 0) ? ip->cause_cap * 2 : 8;
+        EvCause *nb = (EvCause*)realloc(ip->cause_stack,
+                                        (size_t)nc * sizeof(EvCause));
+        if (!nb) { ip->failed = 1; return; }
+        ip->cause_stack = nb;
+        ip->cause_cap   = nc;
+    }
+    ip->cause_stack[ip->ncause++] = ip->cause;
+    ip->cause.set = 0;
+}
+
+/* The frame closes: it is returned, and the enclosing one is restored. */
+static EvCause cause_pop(EvInterp *ip) {
+    EvCause inner = ip->cause;
+    if (ip->ncause > 0) ip->cause = ip->cause_stack[--ip->ncause];
+    else                ip->cause.set = 0;
+    return inner;
 }
 
 static int frame_push(EvInterp *ip, EvFrameSave *s) {
@@ -993,6 +1083,7 @@ void ev_interp_free(EvInterp *ip) {
     free(ip->regs);
     free(ip->reg_conf);
     free(ip->named);
+    free(ip->cause_stack);
     free(ip);
 }
 
@@ -1032,13 +1123,9 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                        it. Reading a void's body as a double is what
                        turns an unknown into a confident wrong number. */
                     if (a.tag == EV_VOID || b_val.tag == EV_VOID) {
+                        /* the failure was named where it arose: passing the z on
+                         * notes nothing, so heal((1 / 0) + 1) names the division */
                         res = ev_void();
-                        /* the z is passed on, so its failure reason travels
-                         * with it: heal((1 / 0) + 1) still knows why it failed */
-                        if (ip->last_failure &&
-                            (ins->src0.id == ip->last_failure_reg ||
-                             ins->src1.id == ip->last_failure_reg))
-                            ip->last_failure_reg = ins->dest.id;
                         break;
                     }
                     {
@@ -1065,8 +1152,7 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                                 res = ev_real(da/db);
                             } else {
                                 res = ev_void();
-                                ip->last_failure = "division by zero";
-                                ip->last_failure_reg = ins->dest.id;
+                                cause_note(ip, "division by zero");
                             }
                             break;
                         case OP_LT:  res=ev_bool(da< db); break;
@@ -1081,6 +1167,7 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                 }
 
                 case OP_LOAD: {
+                    int bound = 0;   /* a binding of this name exists, even a z one */
                     if (ins->name) {
                         /* 1. Check named slot store (phi slots from if/else) */
                         EvNamedSlot *slot = named_find(ip, ins->name);
@@ -1098,6 +1185,7 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                             if (!ki_ins->name) continue;
                             if (strcmp(ki_ins->name, ins->name) != 0) continue;
                             if (ev_reg_is_void(ki_ins->dest)) continue;
+                            bound = 1;
                             EValue candidate = reg_get(ip, ki_ins->dest);
                             if (candidate.tag != EV_VOID) {
                                 res = candidate;
@@ -1105,6 +1193,13 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                                 break;
                             }
                         }
+                    }
+                    /* a name nothing binds is unbound. The lowering's own _phi_
+                       slots are not names a program can leave unbound. */
+                    if (!bound && ins->name && strncmp(ins->name, "_phi_", 5) != 0) {
+                        char why[EV_INLINE_MAX];
+                        snprintf(why, sizeof why, "%s was never bound", ins->name);
+                        cause_note(ip, why);
                     }
                     break;
                 }
@@ -1137,7 +1232,13 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                             callee = ip->module->funcs[fi]; break;
                         }
                     }
-                    if (!callee) { res = ev_void(); break; }
+                    if (!callee) {
+                        char why[EV_INLINE_MAX];
+                        snprintf(why, sizeof why, "%s was never bound", ins->name);
+                        cause_note(ip, why);
+                        res = ev_void();
+                        break;
+                    }
                     /* Language rule: unanchored recursion may not
                        exceed depth ceiling floor(pi) = 3. Beyond it the
                        call yields z.
@@ -1157,6 +1258,7 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                        EV_MAX_DEPTH remains as a hard backstop. */
                     if (depth >= E_DEPTH_CEILING ||
                         depth >= EV_MAX_DEPTH) {
+                        cause_note(ip, "depth ceiling reached");
                         res = ev_void(); break;
                     }
 
@@ -1222,15 +1324,12 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                     goto next_block;
                 }
                 case OP_RECOVERY: {
-                    /* the primary's failure reason is the TEXT it carries, or
-                     * the reason recorded when this very register went to z */
-                    EValue reason_ev = reg_get(ip, ins->src0);
+                    /* the reason is the one the heal's frame named (src2); the
+                     * primary (src0) is only the base the repair starts from */
+                    EValue reason_ev = reg_get(ip, ins->src2);
                     EValue strategy_ev = reg_get(ip, ins->src1);
-                    const char *reason = NULL;
-                    if (reason_ev.tag == EV_TEXT) reason = reason_ev.text;
-                    else if (ip->last_failure && ip->last_failure_reg == ins->src0.id)
-                        reason = ip->last_failure;
-                    ip->last_failure = NULL;
+                    const char *reason = (reason_ev.tag == EV_TEXT && reason_ev.text[0])
+                                         ? reason_ev.text : NULL;
                     int32_t kind = 0;
                     const char *fixture = NULL;
                     /* a strategy with no text matches wildcard repairs only */
@@ -1239,7 +1338,7 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                         fixture = ev_repair_find(g_repair_registry, reason, strat, &kind);
                     /* base as in repair.py: E_INTAKE when the primary is z,
                        otherwise its own confidence */
-                    int16_t base = (reason_ev.tag == EV_VOID) ? E_INTAKE
+                    int16_t base = (reg_get(ip, ins->src0).tag == EV_VOID) ? E_INTAKE
                                    : reg_conf_get(ip, ins->src0);
                     int16_t cost = (kind == 0) ? E_REPAIR_PLAIN : E_REPAIR_INFERRED;
 
@@ -1267,6 +1366,39 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                     res = ev_int(ip->heal_action);
                     rc  = E_INTAKE;
                     break;
+
+                case OP_CAUSE_OPEN:
+                    cause_push(ip);
+                    break;
+
+                case OP_CAUSE_CLOSE: {
+                    EvCause inner = cause_pop(ip);
+                    if (ev_reg_is_void(ins->dest)) break;   /* a drop: pop only */
+                    /* the same three cases as scope.py's _primary_assessment */
+                    const char *why;
+                    if (reg_get(ip, ins->src0).tag == EV_VOID)
+                        why = inner.set ? inner.text : "unverified";
+                    else if (reg_conf_get(ip, ins->src0) >= E_EXECUTE_FLOOR)
+                        why = "";
+                    else
+                        why = "low confidence";
+                    res = ev_text(why);
+                    rc  = E_CERTAIN;
+                    break;
+                }
+
+                case OP_NOTE:
+                    cause_note(ip, ins->name);
+                    break;
+
+                case OP_SETTLE: {
+                    /* a z result is the failure the heal could not repair */
+                    EValue result = reg_get(ip, ins->src0);
+                    EValue why    = reg_get(ip, ins->src1);
+                    if (result.tag == EV_VOID && why.tag == EV_TEXT && why.text[0])
+                        cause_note(ip, why.text);
+                    break;
+                }
 
                 case OP_DEF_FN: break; /* function already in module */
                 default: break;
@@ -1322,9 +1454,8 @@ static EValue interp_func(EvInterp *ip, EvFunc *f, EValue *args,
     /* ── POP FRAME ───────────────────────────────────────────
      * result is a by-value copy taken before the restore, so the
      * return value crosses the boundary and the bindings do not. */
-    /* register ids are per function, so a failure recorded in this frame
-     * must not match a register of the caller after the return */
-    ip->last_failure = NULL;
+    /* the cause is not reset here: a failure in a callee belongs to the heal
+     * whose primary made the call, as it does in scope.py */
     if (!frame_pop(ip, save)) ip->failed = 1;
     return result;
 }
@@ -1357,6 +1488,8 @@ EValue ev_interp_run(EvInterp *ip) {
             ip->module->global_body->nblocks == 0)
         return ev_void();
     ip->failed = 0;
+    ip->ncause = 0;
+    ip->cause.set = 0;
     EValue r = interp_block(ip, ip->module->global_body,
                             ip->module->global_body->blocks[0], 0);
     return ip->failed ? ev_void() : r;

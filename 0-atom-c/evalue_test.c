@@ -267,6 +267,7 @@ int main(void) {
         ok("record keeps only the two valid fields", ev_pool_record(&pool, lr.body.pool_ref)->h.len == 2);
     }
 
+    ev_pool_clear(&pool);
     printf("\n=== EValue: %d passed, %d failed ===\n\n", passed, failed);
     return failed == 0 ? 0 : 1;
 }

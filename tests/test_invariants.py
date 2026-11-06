@@ -37,7 +37,7 @@ ALLOWED_RAW_ALLOCATIONS = {
     "ir.c": 3,
     "evalue.c": 8,
     "scope.c": 2,
-    "tac.c": 9,
+    "tac.c": 10,    # the cause stack (cause_push) is interpreter state, freed in ev_interp_free
     "repair.c": 7,  # archive registry (process lifetime) and its per-line read
                     # buffer (malloc/realloc, freed every line); see ir.h RULE 1
 }

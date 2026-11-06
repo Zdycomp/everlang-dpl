@@ -96,10 +96,12 @@ def drain() -> List[str]:
 def probing() -> Iterator[None]:
     """A confidence re-read of a repair node. It runs the node again only to
     read its confidence, so it must not trace, count, or archive: the repair
-    already ran once in this evaluation."""
+    already ran once in this evaluation. It does name its failures, in a frame
+    of its own, so the re-run reaches the same repair and the same answer."""
     _probing[0] += 1
     try:
-        yield
+        with cause_frame():
+            yield
     finally:
         _probing[0] -= 1
 
@@ -107,6 +109,32 @@ def probing() -> Iterator[None]:
 def quiet() -> bool:
     """True inside a probe: side effects (trace, archive) are suppressed."""
     return _probing[0] > 0
+
+
+_cause: List[Optional[str]] = [None]   # the first failure in the innermost frame
+
+
+def note(reason: str) -> None:
+    """A z-producing operation failed here. Inside a frame the first failure
+    noted is the cause: a later z is a consequence of it, not a second cause."""
+    if _cause[0] is None:
+        _cause[0] = reason
+
+
+@contextmanager
+def cause_frame() -> Iterator[List[Optional[str]]]:
+    """Evaluate a primary, or a sub-evaluation a heal absorbs, in its own frame.
+    The block yields a one-item list; after the block it holds the first failure
+    noted inside, or None. Failures inside the frame do not reach the enclosing
+    frame: the enclosing evaluation never saw them fail, the heal did."""
+    outer = _cause[0]
+    _cause[0] = None
+    found: List[Optional[str]] = [None]
+    try:
+        yield found
+    finally:
+        found[0] = _cause[0]
+        _cause[0] = outer
 
 
 def _emit(op: str, phase: str, text: str) -> None:

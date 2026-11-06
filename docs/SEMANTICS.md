@@ -399,4 +399,62 @@ failed and all four had been asserting the defect.
 
 ---
 
+## 9. Repair: the named process
+
+Two operators. `heal (e) using (s) fallback (f)` repairs `e` when it fails. `learn (e) using (s) fix (f)` archives a
+fix for it. Both run one process, the **repair cycle**, in three named phases, in this order. Each phase writes one
+trace line (`heal_order.py`), and every layer that claims the process must write the same lines.
+
+**1. EVALUATE.** Run the primary in a cause frame.
+- Confidence at or above the execute floor (128): **KEEP**. The order stops here.
+- A z: it is named by the *first failure* noted inside the frame. The vocabulary is closed:
+
+  | Reason | Raised by |
+  |---|---|
+  | `division by zero` | `/` with a zero divisor |
+  | `declared unknown` | a `z` literal |
+  | `<name> was never bound` | an unbound variable or unknown function |
+  | `operands do not combine` | an operator given two values it cannot combine |
+  | `depth ceiling reached` | a call past the recursion ceiling, or past an anchor's limit |
+  | `anchor broken` | an anchored call whose measure did not decrease |
+  | `wrong number of arguments` | a builtin given the wrong arity |
+  | `unverified` | nothing in the frame named the failure |
+
+- A value below the floor, not z: reason `low confidence`.
+
+**2. PLAN.** Choose before running anything. Look up the archive by `(reason, strategy)`: a repair tied to this
+strategy first, then an untied (wildcard) one. None found, or one whose cost is not below the base, gives **FALLBACK**.
+Otherwise **SUBSTITUTE** with that fixture. The base is 120 for a z and the primary's own confidence otherwise. A plain
+repair costs 8; an inferred one costs 32.
+
+**3. EXECUTE.** Run the chosen action and record its outcome.
+- SUBSTITUTE carries `min(base, fixture confidence) − cost`, and only if that is above zero.
+- A chosen repair that cannot run (unparsable, evaluates to z, or leaves no confidence) is **FAILED**: the result is z,
+  never the fallback. Its reason is handed to the enclosing evaluation.
+- `learn` archives `(reason, fixture, strategy)` only when the fixture reaches the floor. Only text strategies archive.
+
+**Rules that follow from the process.**
+- *The first failure is the cause.* Later z's are its consequences. A branch that never ran names nothing: `if true
+  then 4 else 1 / zero` has no failure. An `if` on a z condition runs its else arm, so the condition's failure, which
+  comes first, is the cause.
+- *Frames absorb.* The primary, strategy, fixture and fallback each run in their own frame. A failure a heal absorbs does
+  not reach an enclosing heal. A heal that yields z hands its reason up.
+- *Probes are not events.* A confidence re-read runs in a frame of its own and traces, counts and archives nothing. It
+  still names its failures, so it reaches the same repair and the same answer.
+- *A repair is trusted only at the floor.* A plain repair of a z is 112. An enclosing heal does not trust 112 and names
+  its own primary `low confidence`. Repairs do not stack their way past the floor.
+- *Naming reaches through calls.* A failure inside a function body is named where it happened, so `heal (f(0))` and
+  `learn (f(0))` act on `division by zero`.
+
+**Known limits, stated so they are not mistaken for guarantees.**
+- Causes live in evaluation, not in values. `let x = z` then `heal (x)` names `unverified`, because the z in `x` has
+  lost where it came from.
+- The Java layer (`EverRepair.java`) does not model user functions. Its call case is the callee's z, which claims less
+  than the Python and C layers do for a failure inside a call.
+- The C layer (`tac.c`) names causes as this section does, through cause frames in the lowered code. It does not
+  implement `learn` yet, and it does not raise `operands do not combine`, because its operators do not check operand
+  types.
+
+---
+
 *297 assertions across C, C++, Python and SQL, plus 70 on the abstraction layer. Codric Enterprise, 2026.*

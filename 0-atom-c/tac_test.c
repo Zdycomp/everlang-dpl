@@ -4,6 +4,9 @@
  * Tests opcodes, lowering, all three optimisation passes,
  * confidence propagation, and the TAC interpreter.
  */
+/* strdup is POSIX, not C99: without this, -std=c99 on glibc leaves it
+   undeclared, it defaults to int, and the returned pointer is truncated. */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +52,24 @@ static EvNode *heal_with(EvArena *a, EvNode *primary, const char *strat, EvNode 
     ev_node_add_child(h, ev_node_text(a, strat, 1));
     ev_node_add_child(h, fallback);
     return h;
+}
+
+/* the callee the call tests use: f(x) = 10 / x */
+static EvNode *callee_def(EvArena *a) {
+    const char *ps[] = {"x"};
+    EvNode *body = ev_node_binop(a, EV_NODE_DIV, ev_node_int(a, 10, 1),
+                                 ev_node_var(a, "x", 1), 1);
+    return ev_node_def(a, "f", ps, 1, body, 1);
+}
+
+/* heal (f(arg)) using ("plain") fallback (fb). Lowering registers f from the
+   fallback's dead branch, which the false condition never runs. */
+static EvNode *heal_call(EvArena *a, int64_t arg, int64_t fb) {
+    EvNode *args[] = { ev_node_int(a, arg, 1) };
+    EvNode *call = ev_node_call(a, "f", args, 1, 1);
+    EvNode *dead = ev_node_if(a, ev_node_bool(a, 0, 1), callee_def(a),
+                              ev_node_int(a, fb, 1), 1);
+    return heal_with(a, call, "plain", dead);
 }
 
 /* append a repair to an in-memory registry; strat NULL makes a wildcard */
@@ -328,6 +349,8 @@ int main(void){
     ev_module_free(am); ev_module_free(fm); ev_module_free(cm);
     ev_module_free(dm); ev_module_free(pm); ev_module_free(sm);
     ev_module_free(im); ev_module_free(im2); ev_module_free(lm);
+    ev_module_free(m);
+    ev_arena_free(ia); ev_arena_free(sa); ev_arena_free(ia2);
 
 
     /* ── HEAL on the real path ── */
@@ -513,6 +536,42 @@ int main(void){
         ok("a 17-argument call keeps all 17",    nargs_seen == 17);
         (void)lw;
         ev_arena_free(fa);
+    }
+
+    /* ── Cause naming: through calls, nested heals and declared unknowns ── */
+    printf("\nCAUSE NAMING\n");
+    {
+        EvRepairRegistry *prev = g_repair_registry;
+        g_repair_registry = ev_repair_registry_new(NULL);
+        add_test_repair(g_repair_registry, "division by zero", "1", 0, "plain");
+        add_test_repair(g_repair_registry, "declared unknown", "9", 0, "plain");
+        EvArena *ca = ev_arena_new("cause");
+        int lw = 0;
+
+        EValue c1 = run_node(ca, heal_call(ca, 0, 5), 0, &lw);
+        ok("heal(f(0)) names the division inside f: the repair (1)",
+           lw && c1.tag == EV_INT && c1.body.as_int == 1);
+
+        EValue c2 = run_node(ca, heal_with(ca, ev_node_new(ca, EV_NODE_Z, 1), "plain",
+                                           ev_node_int(ca, 5, 1)), 0, &lw);
+        ok("heal(z) names the declared unknown: the repair (9)",
+           lw && c2.tag == EV_INT && c2.body.as_int == 9);
+
+        /* the inner division is repaired to 1 at 112, below the execute floor, so
+           the outer heal names low confidence, which has no repair: the fallback */
+        EvNode *inner = heal_with(ca, ev_node_binop(ca, EV_NODE_DIV, ev_node_int(ca, 1, 1),
+                                                    ev_node_int(ca, 0, 1), 1),
+                                  "plain", ev_node_int(ca, 3, 1));
+        EvNode *outer = heal_with(ca, ev_node_binop(ca, EV_NODE_ADD, inner,
+                                                    ev_node_int(ca, 1, 1), 1),
+                                  "plain", ev_node_int(ca, 5, 1));
+        EValue c3 = run_node(ca, outer, 0, &lw);
+        ok("a repair an inner heal absorbed is not the outer cause: fallback (5)",
+           lw && c3.tag == EV_INT && c3.body.as_int == 5);
+
+        ev_arena_free(ca);
+        ev_repair_registry_free(g_repair_registry);
+        g_repair_registry = prev;
     }
 
     printf("\nHEAL STRATEGY\n");

@@ -39,6 +39,12 @@ public final class HealMatrix {
             return EverRepair.add(div(Long.parseLong(p[1]), Long.parseLong(p[2])),
                     EParticle.valued("one", 1L, 256, EParticle.Lang.EVER));
         }
+        if (expr.startsWith("call:")) {
+            // Java has no user functions. The callee is f(x) = 10 / x, so a
+            // call's failure is that division's z, which is the weaker claim
+            // this case makes for Java.
+            return div(10, Long.parseLong(expr.substring(5)));
+        }
         if (expr.equals("zvar")) return EParticle.z("x", null);
         throw new IllegalArgumentException("unknown expr " + expr);
     }

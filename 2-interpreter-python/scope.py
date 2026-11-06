@@ -29,6 +29,7 @@ from evalue import (
     deserialise as ev_deserialise,
 )
 from ir import EvNode, NK, E_EXECUTE_FLOOR
+import heal_order as ho
 
 
 # ─────────────────────────────────────────────
@@ -327,6 +328,9 @@ def eval_node(node: EvNode, scope: EvScope,
     k = node.kind
 
     if k == NK.VOID:  return EValue.void()
+    if k == NK.Z:
+        ho.note("declared unknown")
+        return EValue.void()
     if k == NK.BOOL:  return EValue.from_bool(node.lit_bool)
     if k == NK.INT:   return EValue.from_int(node.lit_int)
     if k == NK.REAL:  return EValue.from_real(node.lit_real)
@@ -336,6 +340,7 @@ def eval_node(node: EvNode, scope: EvScope,
         name = node.str_val or ""
         entry = scope.lookup(name)
         if entry is None:
+            ho.note(f"{name} was never bound")
             return EValue.void()
         return entry.value
 
@@ -345,7 +350,14 @@ def eval_node(node: EvNode, scope: EvScope,
             return EValue.void()
         a = eval_node(node.children[0], scope, depth)
         b = eval_node(node.children[1], scope, depth)
-        return _binop(k, a, b)
+        result = _binop(k, a, b)
+        # the operation itself failed: both operands had values, and it gave z.
+        # A z operand is not a new failure; it was named where it arose.
+        if result.ev_tag is EvType.VOID and a.ev_tag is not EvType.VOID \
+                and b.ev_tag is not EvType.VOID:
+            by_zero = k is NK.DIV and (b.ev_int == 0 or b.ev_real == 0)
+            ho.note("division by zero" if by_zero else "operands do not combine")
+        return result
 
     if k == NK.IF:
         if len(node.children) < 3:
@@ -485,8 +497,10 @@ def eval_node(node: EvNode, scope: EvScope,
             if b is not None:
                 args = [eval_node(ch, scope, depth) for ch in node.children]
                 if len(args) != b.arity:
+                    ho.note("wrong number of arguments")
                     return EValue.void()
                 return b.call(args)
+            ho.note(f"{name} was never bound")
             return EValue.void()
 
         # Enforce the depth ceiling (floor(pi) = 3).
@@ -537,15 +551,19 @@ def eval_node(node: EvNode, scope: EvScope,
             cur  = args[midx] if midx < len(args) else EValue.void()
             cur_n = _measure_value(cur)
             if cur_n is None:
+                ho.note("anchor broken")
                 return EValue.void()
             if prev is not None:
                 prev_n = _measure_value(prev.value)
                 if prev_n is not None and cur_n >= prev_n:
                     # measure did not decrease — anchor broken
+                    ho.note("anchor broken")
                     return EValue.void()
             if own_depth >= E_ANCHORED_MAX_DEPTH:
+                ho.note("depth ceiling reached")
                 return EValue.void()
         elif own_depth >= E_DEPTH_CEILING:
+            ho.note("depth ceiling reached")
             return EValue.void()
 
         # create a local scope for the call
@@ -577,25 +595,35 @@ def _confidence_of(value: EValue, node: EvNode, scope: EvScope) -> int:
     if value.ev_tag is EvType.VOID:
         return 0
     from runtime import eval_confidence
-    return eval_confidence(node, scope)
+    with ho.probing():   # a re-read: the failures in it are already named
+        return eval_confidence(node, scope)
 
 
-def _failure_reason(node: EvNode, scope: EvScope) -> str:
-    """Why a void node failed, worded the way the AST evaluator words it.
-    Repairs are keyed on this text, so the two evaluators must agree."""
-    for ch in node.children:
-        if eval_node(ch, scope).ev_tag is EvType.VOID:
-            return _failure_reason(ch, scope)
-    if node.kind is NK.DIV and len(node.children) == 2:
-        d = eval_node(node.children[1], scope)
-        if (d.ev_tag is EvType.INT and d.ev_int == 0) or \
-           (d.ev_tag is EvType.REAL and d.ev_real == 0):
-            return "division by zero"
-    if node.kind is NK.VAR and scope.lookup(node.str_val or "") is None:
-        return f"{node.str_val} was never bound"
-    if node.kind is NK.Z:
-        return "declared unknown"
-    return "unverified"
+def _primary_assessment(op: str, primary_node: EvNode, scope: EvScope, depth: int):
+    """EVALUATE for heal and learn. The primary runs in its own cause frame, so
+    a z is named by the first failure that happened inside it, wherever that
+    was: in this expression, or in a called function body. A nested heal that
+    gave up hands its own reason up through _settle. Returns (primary, assessment)."""
+    with ho.cause_frame() as frame:
+        primary = eval_node(primary_node, scope, depth)
+    p_conf = _confidence_of(primary, primary_node, scope)
+    is_z = primary.ev_tag is EvType.VOID
+    if ho.trusted(p_conf):
+        reason = ""
+    elif is_z:
+        reason = frame[0] or "unverified"
+    else:
+        reason = "low confidence"
+    return primary, ho.evaluate(op, is_z, p_conf, reason)
+
+
+def _settle(a: "ho.Assessment", value: EValue, conf: int) -> EValue:
+    """The value a heal or learn returns. A z result is the failure it could not
+    repair, so the enclosing evaluation hears that failure's name, not a new one."""
+    result = _trusted(value, conf)
+    if result.ev_tag is EvType.VOID:
+        ho.note(a.reason or "unverified")
+    return result
 
 
 def _eval_heal(node: EvNode, scope: EvScope, depth: int) -> EValue:
@@ -605,74 +633,56 @@ def _eval_heal(node: EvNode, scope: EvScope, depth: int) -> EValue:
     from ir import _ast_to_ir
     from repair import get_registry
     from syntax import parse
-    import heal_order as ho
 
     primary_node, strategy_node, fallback_node = node.children
-    primary = eval_node(primary_node, scope, depth)
-    p_conf = _confidence_of(primary, primary_node, scope)
-    is_z = primary.ev_tag is EvType.VOID
-    trusted_now = ho.trusted(p_conf)
-    if trusted_now:
-        reason = ""
-    elif is_z:
-        with ho.probing():   # reading the reason re-runs children; not a new repair
-            reason = _failure_reason(primary_node, scope)
-    else:
-        reason = "low confidence"
-    a = ho.evaluate("heal", is_z, p_conf, reason)
-    if trusted_now:
-        ho.keep(a, p_conf)
-        return _trusted(primary, p_conf)
+    primary, a = _primary_assessment("heal", primary_node, scope, depth)
+    if ho.trusted(a.conf):
+        ho.keep(a, a.conf)
+        return _trusted(primary, a.conf)
 
-    strategy = eval_node(strategy_node, scope, depth)
+    # the strategy and the repair are the heal's own machinery: a failure in
+    # them is absorbed by the outcome, never noted in the enclosing evaluation
+    with ho.cause_frame():
+        strategy = eval_node(strategy_node, scope, depth)
     p = ho.plan(a, get_registry(), strategy)
     if p.action == ho.SUBSTITUTE:
         fixture_ast, perr = parse(p.fixture)
         if perr is not None or fixture_ast is None:
             ho.finish(a, ho.FAILED, 0, "archived fixture unparsable")
-            return EValue.void(0)
+            return _settle(a, EValue.void(), 0)
         fixture_node = _ast_to_ir(fixture_ast)
-        value = eval_node(fixture_node, scope, depth)
+        with ho.cause_frame():
+            value = eval_node(fixture_node, scope, depth)
         if value.ev_tag is EvType.VOID:
             ho.finish(a, ho.FAILED, 0, "archived fixture evaluated to z")
-            return EValue.void(0)
+            return _settle(a, EValue.void(), 0)
         conf = ho.substituted_confidence(a, p, _confidence_of(value, fixture_node, scope))
         if conf <= 0:
             ho.finish(a, ho.FAILED, 0, "repair left no confidence")
-            return EValue.void(0)
+            return _settle(a, EValue.void(), 0)
         ho.finish(a, ho.SUBSTITUTE, conf, p.why)
         return _trusted(value, conf)
 
-    fallback = eval_node(fallback_node, scope, depth)
+    with ho.cause_frame():
+        fallback = eval_node(fallback_node, scope, depth)
     conf = _confidence_of(fallback, fallback_node, scope)
     ho.finish(a, ho.FALLBACK, conf, p.why)
-    return _trusted(fallback, conf)
+    return _settle(a, fallback, conf)
 
 
 def _eval_learn(node: EvNode, scope: EvScope, depth: int) -> EValue:
     """learn (e) using (s) fix (f): e while it can execute; otherwise f, which
     is archived as the repair for e's failure once f itself can execute."""
     from repair import get_registry, recovery_base, strategy_key
-    import heal_order as ho
 
     primary_node, strategy_node, fixture_node = node.children
-    primary = eval_node(primary_node, scope, depth)
-    p_conf = _confidence_of(primary, primary_node, scope)
-    is_z = primary.ev_tag is EvType.VOID
-    trusted_now = ho.trusted(p_conf)
-    if trusted_now:
-        reason = ""
-    elif is_z:
-        with ho.probing():   # reading the reason re-runs children; not a new repair
-            reason = _failure_reason(primary_node, scope)
-    else:
-        reason = "low confidence"
-    a = ho.evaluate("learn", is_z, p_conf, reason)
-    if trusted_now:
-        ho.keep(a, p_conf)
-        return _trusted(primary, p_conf)
+    primary, a = _primary_assessment("learn", primary_node, scope, depth)
+    if ho.trusted(a.conf):
+        ho.keep(a, a.conf)
+        return _trusted(primary, a.conf)
 
-    fixture = eval_node(fixture_node, scope, depth)
+    with ho.cause_frame():
+        fixture = eval_node(fixture_node, scope, depth)
     f_conf = _confidence_of(fixture, fixture_node, scope)
     key = None
     if fixture.ev_tag is EvType.VOID:
@@ -680,20 +690,21 @@ def _eval_learn(node: EvNode, scope: EvScope, depth: int) -> EValue:
         action, detail, f_conf = ho.FAILED, "fixture evaluated to z; nothing archived", 0
     elif f_conf >= E_EXECUTE_FLOOR and not ho.quiet():
         # the repair is archived under the strategy it was learned with
-        key = strategy_key(eval_node(strategy_node, scope, depth))
+        with ho.cause_frame():
+            key = strategy_key(eval_node(strategy_node, scope, depth))
         if key is None:
             action, detail = ho.SUBSTITUTE, "not archived: strategy must be text"
         else:
-            get_registry().archive_repair(reason, node.str_val or "", strategy=key)
+            get_registry().archive_repair(a.reason, node.str_val or "", strategy=key)
             action = ho.LEARNED
             detail = f"archived '{node.str_val or ''}' for strategy '{key}'"
     else:
         action = ho.SUBSTITUTE
         detail = f"not archived: fixture confidence {f_conf} below the floor"
-    conf = min(recovery_base(is_z, p_conf), f_conf)
+    conf = min(recovery_base(a.is_z, a.conf), f_conf)
     ho.set_context(strategy=key, fixture=node.str_val or "", cost=0)
     ho.finish(a, action, conf, detail)
-    return _trusted(fixture, conf)
+    return _settle(a, fixture, conf)
 
 
 def _binop(k: NK, a: EValue, b: EValue) -> EValue:

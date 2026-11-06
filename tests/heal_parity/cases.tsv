@@ -21,3 +21,5 @@ five_plain_all	heal	div:5:0	plain	50	all
 zvar_plain_all	heal	zvar	plain	50	all
 learn_div_plain	learn	div:1:0	plain	7	empty
 learn_div_zfix	learn	div:1:0	plain	z	empty
+call_div_plain_all	heal	call:0	plain	50	all
+call_div_plain_empty	heal	call:0	plain	50	empty

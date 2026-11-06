@@ -139,6 +139,10 @@ typedef enum {
     OP_RECOVERY = 101,   /* query registry for repair of src0 using src1 */
     OP_ERR      = 102,
     OP_REPAIR_STATE = 103,  /* dest = action code of the last repair (EV_HEAL_*) */
+    OP_CAUSE_OPEN   = 104,  /* a heal's primary begins: push a cause frame        */
+    OP_CAUSE_CLOSE  = 105,  /* pop it; dest = its reason (TEXT), or void: drop    */
+    OP_NOTE         = 106,  /* name: a failure happened here; note it in the frame */
+    OP_SETTLE       = 107,  /* src0 void: hand src1's reason (TEXT) up the frame  */
 } EvOpcode;
 
 /* The order's outcome for one heal (evaluate → plan → execute). The codes are
@@ -294,8 +298,17 @@ EvReg ev_emit_const(EvBuilder *b, EValue lit, int32_t line);
 EvReg ev_emit_copy(EvBuilder *b, EvReg src, int32_t line);
 EvReg ev_emit_binop(EvBuilder *b, EvOpcode op,
                     EvReg src0, EvReg src1, int32_t line);
-EvReg ev_emit_recovery(EvBuilder *b, EvReg primary, EvReg strategy, int32_t line);
+EvReg ev_emit_recovery(EvBuilder *b, EvReg primary, EvReg strategy,
+                       EvReg reason, int32_t line);
 EvReg ev_emit_repair_state(EvBuilder *b, int32_t line);
+/* The cause frame of a heal (see OP_CAUSE_OPEN). Open before the primary is
+   lowered; close after it, which yields the reason; drop when a sub-evaluation
+   is absorbed by the heal. note names a failure; settle hands a z reason up. */
+void  ev_emit_cause_open(EvBuilder *b, int32_t line);
+EvReg ev_emit_cause_close(EvBuilder *b, EvReg primary, int32_t line);
+void  ev_emit_cause_drop(EvBuilder *b, int32_t line);
+void  ev_emit_note(EvBuilder *b, const char *reason, int32_t line);
+void  ev_emit_settle(EvBuilder *b, EvReg result, EvReg reason, int32_t line);
 EvReg ev_emit_call(EvBuilder *b, const char *name,
                    EvReg *args, int32_t nargs, int32_t line);
 void  ev_emit_return(EvBuilder *b, EvReg src, int32_t line);

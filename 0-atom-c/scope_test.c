@@ -114,6 +114,7 @@ int main(void) {
     ok("get_module returns scope", got_mod == math_mod);
     ok("module PI = π",
        fabs(ev_scope_get_value(got_mod,"PI").body.as_real - 3.14159265) < 1e-7);
+    ev_scope_free(math_mod);
     ev_arena_free(ma);
 
     /* ── Scope chain — local inherits from global ── */
@@ -148,6 +149,7 @@ int main(void) {
     ok("get_value 'b'",         bval.body.as_int == 32);
     EValue missing = ev_scope_get_value(local, "zzz");
     ok("get_value missing=void", missing.tag == EV_VOID);
+    ev_scope_free(local);
     ev_arena_free(la);
 
     /* ── Deletion / tombstones ── */
@@ -270,6 +272,7 @@ int main(void) {
         ev_arena_free(ta);
     }
 
+    ev_pool_clear(&pool);
     printf("\n=== EvScope: %d passed, %d failed ===\n\n", ok_n, fail_n);
     return fail_n == 0 ? 0 : 1;
 }

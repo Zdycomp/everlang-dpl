@@ -27,6 +27,16 @@ from profiler import Profiler
 PROFILE_PATH = Path.home() / ".ever" / "profile.json"
 
 
+def _save_profile(profiler) -> None:
+    """Persist the profile. A profile that cannot be written is reported, not
+    fatal: the program has already run and its output is already shown."""
+    try:
+        profiler.save()
+    except OSError as exc:
+        print(f"warning: profile not saved to {profiler.path}: {exc}",
+              file=sys.stderr)
+
+
 def _scaffold_note(scaffold: str) -> str:
     notes = {
         "full":    "Every value below shows its confidence out of 256 "
@@ -98,7 +108,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 print(f"  {line}")
 
     if profiler is not None:
-        profiler.save()
+        _save_profile(profiler)
 
     return 0
 
@@ -183,7 +193,7 @@ def cmd_repl(args: argparse.Namespace) -> int:
             print(l)
 
     if profiler is not None:
-        profiler.save()
+        _save_profile(profiler)
     return 0
 
 

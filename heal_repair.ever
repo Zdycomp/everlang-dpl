@@ -1,0 +1,3 @@
+let zero = 0
+let res = heal (1 / zero) using ("plain") fallback (50)
+show res

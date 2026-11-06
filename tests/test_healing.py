@@ -7,6 +7,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 for _path in (_HERE, os.path.join(_HERE, '..', '2-interpreter-python')):
     sys.path.insert(0, os.path.abspath(_path))
 
+import forgive
 from ever import E_CERTAIN, E_INTAKE, e_val
 from repair import E_REPAIR_PLAIN, RepairRegistry, use_registry
 from runtime import run_source
@@ -139,10 +140,6 @@ class TestHealing(unittest.TestCase):
         self.assertTrue(any("q" in message for message in analysis.errors), analysis.errors)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestStrategy(unittest.TestCase):
     """The strategy selects among archived repairs: a repair tied to it first,
     then a wildcard. A tied repair for another strategy is never a candidate."""
@@ -178,3 +175,81 @@ class TestStrategy(unittest.TestCase):
             self.assertEqual(reg.repairs[-1].get("strategy"), "plain")
             self.assertIn("res = 7", self._heal("plain")[0])
             self.assertIn("res = 50", self._heal("nope")[0])
+
+
+class TestCauseNaming(unittest.TestCase):
+    """A z is named by the first failure that happened under it: in the
+    expression, inside a called function, or inside a repair an inner heal
+    absorbed. A branch that never ran names nothing."""
+
+    RECORDS = [{"failure_text": "division by zero", "fixture_text": "1", "kind": 0}]
+
+    def test_failure_inside_a_called_function_is_named(self):
+        with _Archive(self.RECORDS):
+            r = run_source('def f(x) = 10 / x\nlet r = heal (f(0)) using ("plain") fallback (5)\nshow r')
+        self.assertTrue(r.ok, r.errors)
+        self.assertEqual(r.format_lines(), [f"r = 1 [{E_INTAKE - E_REPAIR_PLAIN}/256]"])
+        self.assertIn("heal#1 evaluate: z, reason 'division by zero', base 120", r.heal_trace)
+
+    def test_learn_through_a_call_archives_the_named_cause(self):
+        with _Archive([]) as reg:
+            r = run_source('def f(x) = 10 / x\nlet a = learn (f(0)) using ("plain") fix (7)\nshow a')
+            self.assertTrue(r.ok, r.errors)
+            self.assertEqual(reg.repairs[-1].get("failure_text"), "division by zero")
+            self.assertEqual(reg.repairs[-1].get("fixture_text"), "7")
+
+    def test_a_branch_that_never_ran_names_nothing(self):
+        with _Archive(self.RECORDS):
+            r = run_source('let zero = 0\nlet r = heal (if true then 4 else 1 / zero) using ("plain") fallback (5)\nshow r')
+        self.assertTrue(r.ok, r.errors)
+        self.assertEqual(r.format_lines(), ["r = 4 [256/256]"])
+
+    def test_a_declared_unknown_is_named(self):
+        with _Archive([{"failure_text": "declared unknown", "fixture_text": "9", "kind": 0}]):
+            r = run_source('let r = heal (z) using ("plain") fallback (5)\nshow r')
+        self.assertTrue(r.ok, r.errors)
+        self.assertEqual(r.format_lines(), [f"r = 9 [{E_INTAKE - E_REPAIR_PLAIN}/256]"])
+
+    def test_a_repair_absorbed_by_an_inner_heal_is_not_the_outer_cause(self):
+        # the inner heal absorbs the division and its repair is below the execute
+        # floor, so the outer heal sees low confidence, not a division by zero
+        with _Archive(self.RECORDS):
+            r = run_source('let zero = 0\nlet r = heal ((heal (1 / zero) using ("plain") fallback (3)) + 1) using ("plain") fallback (5)\nshow r')
+        self.assertTrue(r.ok, r.errors)
+        self.assertIn("heal#2 evaluate: confidence 112/256, reason 'low confidence', base 112", r.heal_trace)
+        self.assertEqual(r.format_lines(), ["r = 5 [256/256]"])
+
+
+class TestHealFormsAreNotCalls(unittest.TestCase):
+    """forgive.py heals missing commas inside calls and collections. A heal form
+    is neither: `heal (` is not a call, and `) using` is not two items."""
+
+    def test_nested_heal_gets_no_comma_inserted(self):
+        node, err, corrections = forgive.parse_forgiving(
+            'let q = heal (heal (1) using ("p") fallback (3)) using ("p") fallback (50)\nshow q')
+        self.assertIsNone(err)
+        self.assertEqual(corrections, [])
+
+    def test_heal_forms_inside_a_list_get_no_comma_inserted(self):
+        node, err, corrections = forgive.parse_forgiving(
+            'let xs = [heal (1) using ("p") fallback (3), heal (2) using ("p") fallback (4)]\nshow xs')
+        self.assertIsNone(err)
+        self.assertEqual(corrections, [])
+
+    def test_two_heal_forms_side_by_side_still_need_their_comma(self):
+        node, err, corrections = forgive.parse_forgiving(
+            'let xs = [heal (1) using ("p") fallback (3) heal (2) using ("p") fallback (4)]')
+        self.assertIsNone(err)
+        self.assertEqual([c.became for c in corrections], ["',' inserted"])
+
+    def test_nested_heal_runs_on_the_real_path(self):
+        # the inner repair is 112, below the execute floor of 128, so the outer
+        # heal does not trust it and takes its fallback
+        with _Archive([DIVIDE_BY_ZERO]):
+            r = run_source('let zero = 0\nlet q = heal (heal (1 / zero) using ("plain") fallback (3)) using ("plain") fallback (50)\nshow q')
+        self.assertTrue(r.ok, r.errors)
+        self.assertEqual(r.format_lines(), ["q = 50 [256/256]"])
+
+
+if __name__ == "__main__":
+    unittest.main()

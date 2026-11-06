@@ -6,10 +6,13 @@ Founder: Ricky (Dreid), Codric Enterprise.
 ## Before you touch anything
 
 ```
-python3 tests/run_all.py          # must be 0 skipped / 0 failed
+python3 tests/run_all.py          # must be 34 passed / 0 skipped / 0 failed
 ```
 
 If it isn't green before your change, stop and say so. Don't build on red.
+
+Read `tasks.md` and `lessons.md` at session start. They are the working
+memory of this repo — what is open, and what has already gone wrong.
 
 ## Hard rules
 
@@ -39,6 +42,70 @@ Law has follows from band being a function — reflexivity, symmetry and
 transitivity are not tested-and-hoped-for, they are consequences. If you
 touch the boundaries, the law is what you are editing, and four layers plus
 the SQL trigger have to agree afterwards: `python3 tests/test_zeroth.py`.
+
+**A verdict is an exit code, never a string.** `tests/run_all.py` classifies
+a suite by its exit status alone — 0 pass, `EXIT_SKIP` (77) skip, anything
+else fail. It used to classify by substring (`if "SKIP:" in out`), which read
+a suite's prose as its verdict: `test_zeroth.py` exits 0 having proved C,
+Python and SQL agree on all 257 band values, prints "1 skipped" for a
+toolchain it couldn't reach, and was recorded as SKIP — while any genuinely
+failing suite that mentioned `SKIP:` anywhere was downgraded to skip and
+dropped out of the exit code. A new suite signals "did not run" by exiting 77
+and by no other means. Skips are not free: the runner exits non-zero until
+34 passed / 0 skipped / 0 failed.
+
+## Workflow
+
+**Plan before any non-trivial change.** 3+ steps, or any architectural
+decision, gets a written plan first — in `tasks.md`, as checkable items.
+If the work goes sideways mid-stream, stop and re-plan rather than pushing
+through. Plan the verification too, not just the building.
+
+**Use subagents for breadth, keep the lead's context clean.** Research,
+exploration, and parallel analysis are subagent work. One task per subagent.
+The lead holds the plan and the verdict, not the file dumps.
+
+**Route by ownership.** The skills below own their files; work inside a
+boundary goes to that agent, and crossing a boundary is a handoff, not a
+convenience.
+
+| Skill | Owns | Hand to it |
+|---|---|---|
+| `tac-optimizer` | `form.{h,c}`, `form_lower.c`, `tac.{h,c}` | lowering, passes, TAC interpreter, call frames, the 11 forms |
+| `test-engineer` | `kitchen_sink.c`, `form_test.c`, `native_test.c`, `ev_test.h`, `tests/` | coverage, new `.ever` programs, harness work |
+| `memory-safety` | nothing — reads everything | ASAN/UBSan, leaks, use-after-free, arena and pool lifetimes |
+
+An agent that finds a bug outside its own files reports it with the failing
+assertion — expected vs got — and does not fix it.
+
+**Verification before done.** Never mark a task complete without proving it
+runs. Run the suite, read the logs, demonstrate the correct output. Diff your
+own change before presenting it. The question to ask is whether a staff
+engineer would approve this, not whether it appears to work.
+
+**Explain the why, or don't ship it.** Every landmine below exists because a
+change looked right and failed silently. If you can't say why a change is
+correct — which path validated it, which test would catch its inverse — it
+isn't ready, however green the run.
+
+**Non-trivial fixes get one elegance pass.** Ask whether there's a simpler
+shape, knowing what you now know. Skip this for obvious one-liners; don't
+over-engineer. Challenge your own work before presenting it.
+
+## Memory files
+
+Two files, same folder, same three parts each. Every session reads them at
+the start and updates them before reporting done. They are the reason a new
+session doesn't repeat a solved problem.
+
+`tasks.md` — **Decisions · Action items · Open questions.** Checkable items.
+Mark them complete as you go, not in a batch at the end.
+
+`lessons.md` — **What broke · Why it wasn't caught · The rule now.** Write an
+entry after ANY correction from the user, and after any bug that shipped
+green. A lesson that doesn't name the test which would have caught it is not
+finished. When a lesson hardens into a rule every agent must follow, promote
+it into the Landmines section here and leave a pointer behind.
 
 ## Landmines (each of these has already caused a bug)
 
@@ -78,7 +145,9 @@ worse than refusing — the CALL survives into the emitted code, and for a name 
 target-language builtin (R's own
 `sqrt()`, for instance) it can appear to work by coincidence while every other extern fails. `emit.py`'s
 `Emitter.emit()` checks for any
-`Extern` statement and raises before emitting anything.
+`Extern` statement and raises before emitting anything. That scan covers
+`prog.statements` only, which is complete because `syntax.py` admits `Extern`
+at top level alone — loosen the grammar and this check stops seeing it.
 
 **`and`/`or` must never route through the generic binop () runtime helper.** That helper receives both operands already
 evaluated, so it cannot short-circuit — and Ever's own semantics say a short-circuited side was never consulted, so its
@@ -115,29 +184,18 @@ ANNOTATION, DEFECT). The operator is DATA (`EvRole`, open enum). The shape is TY
 syntax should cost ZERO changes to `form.c`,
 `form_lower.c`, or any pass. If you're adding a form kind, you're probably wrong.
 
-## Every repair runs evaluate → plan → execute
-
-Any heal, learn, or archive-backed repair runs three phases, in this order, identically in every layer:
-
-1. **Evaluate.** Read the primary. Confidence at or above the execute floor: keep it and stop.
-2. **Plan.** Look up the archived repair for the failure reason before running anything. The strategy selects among them: a repair tied to that strategy first, then a wildcard (an archived repair with no `strategy`). A repair tied to another strategy is never a candidate. `learn` archives its repair under its own `using (…)` strategy. No repair, or one that cannot add trust (cost ≥ base), means the fallback.
-3. **Execute.** Run the chosen action. A repair that was chosen but cannot run (unparsable or `z` fixture) gives `z`, never the fallback. A repaired `0` or `false` is a success: branch on the outcome, never on the value's truthiness.
-
-Each phase writes a trace line: `heal_order.py` (`run_source(...).heal_trace`, `ever run --trace`), `OP_REPAIR_STATE` and `ev_interp_heal_trace` (C), `refix accept` (ReFix). A confidence re-read of a repair node is a probe: it must not trace or archive (`heal_order.probing()`).
-
 ## Verify before you report done
 
-The gate is `0 failed, 0 skipped`. A skip is a gap, and gaps are fixed, not reported as done. Toolchains installed
-outside the system paths are named in `EVER_TOOLCHAIN_PATH` (colon-separated bin directories), which the runner puts
-in front of `PATH`. The heal process is checked across layers by `tests/heal_parity_test.py`: Python, Java and C must
-agree on every case, so a change to the repair process is verified in all three.
-
 ```
-EVER_TOOLCHAIN_PATH=... python3 tests/run_all.py
+python3 tests/run_all.py
 gcc -std=c99 -g -fsanitize=address,undefined -o /tmp/t \
   0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c \
-  0-atom-c/tac.c 0-atom-c/repair.c 0-atom-c/scope.c 0-atom-c/ir.c \
-  0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && /tmp/t
+  0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c \
+  0-atom-c/tapestry.c -lm && /tmp/t
 ```
 
 ASAN must report zero errors AND zero leaks.
+
+Then: update `tasks.md` (mark what closed, add what opened) and write a
+`lessons.md` entry if anything went wrong on the way. A run is not reported
+done until both files reflect it.

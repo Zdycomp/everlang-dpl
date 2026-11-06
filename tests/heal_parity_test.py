@@ -85,6 +85,9 @@ def source_for(case):
     elif expr.startswith("nested:"):
         _, a, _b = expr.split(":")
         e = f"(({a} / zero) + 1)"
+    elif expr.startswith("call:"):
+        pre = "def f(x) = 10 / x\n"
+        e = f"f({expr[5:]})"
     elif expr == "zvar":
         pre = "let x = z\n"
         e = "x"
