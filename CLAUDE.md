@@ -25,6 +25,7 @@ Two JDKs are needed. `5-runtime-java` compiles with `--release 25`, and the `6-a
 - Single Java test: `mvn -f 5-runtime-java/pom.xml test -Dtest=SelfHealingAuditIntegrationTest`.
 - C++ phase: `make -C 1-phase-cpp test` (`make asan` for the sanitizer build).
 - Cross-language parity: `python3 ezr/tests/algebra_parity.py`.
+- Self-heal benchmark on real code (needs network, takes minutes, not in `run_all.py`): `python3 everlang_standalone/tests/heal_bench.py [language ...]`. Exits 1 if heal breaks, refuses or changes a valid file. Fixer regressions: `python3 ezr/tests/test_edapt.py`.
 
 ## Cross-phase contract: reinforcing the self-healing Archive
 `EArchive` (Python, in-process, no persistence) is reinforced — not replaced — by two independent backend phases, wired together by `everlang/core/reinforced_archive.py::ReinforcedArchive`:
