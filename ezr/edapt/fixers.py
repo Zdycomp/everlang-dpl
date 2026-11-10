@@ -109,19 +109,19 @@ def _regex_end(line: str, i: int) -> int:
     return -1
 
 
-def _mask(lines: List[str], syn: _Syntax,
-          unterminated: Optional[List[int]] = None,
-          open_ended: Optional[List[int]] = None) -> List[str]:
+def _mask(lines: List[str], syn: _Syntax
+          ) -> Tuple[List[str], List[int], List[int]]:
     """Return a parallel line list, same lengths and positions, where
     every character inside a string, char or regex literal is _FILL and
     every comment is blanked. Delimiters are kept. State carries across
     lines, so a docstring, template literal, text block or block comment
     is masked for its whole extent. _FILL is neither a word character
     nor a bracket, so a line that starts or ends inside a literal never
-    looks like code. Line numbers of strings that never close are
-    appended to `unterminated`, and of lines that end with a string
-    still open (it closes further down) to `open_ended`."""
+    looks like code. Also returns the line numbers of strings that never
+    close, and of lines that end with a string still open."""
     masked = []
+    unterminated: List[int] = []
+    open_ended: List[int] = []
     opened = 0            # line the open string started on
     in_block = False
     delim = None          # closing delimiter of the open string, if any
@@ -212,14 +212,13 @@ def _mask(lines: List[str], syn: _Syntax,
             i += 1
         if delim and not spans and not (escapes and line.endswith("\\")):
             delim = None   # an unterminated one-line string ends with its line
-            if unterminated is not None:
-                unterminated.append(opened)
+            unterminated.append(opened)
         masked.append("".join(out))
-        if delim and open_ended is not None:
+        if delim:
             open_ended.append(len(masked))
-    if delim and unterminated is not None:
+    if delim:
         unterminated.append(opened)
-    return masked
+    return masked, unterminated, open_ended
 
 
 _PAIRS = {")": "(", "]": "[", "}": "{"}
@@ -231,7 +230,7 @@ def _contexts(masked: List[str], literal_brace=None
     end: '' at top level, '(' or '[', '{' for a block, 'L' for a brace
     that `literal_brace(before, enclosing)` says holds data, not
     statements. Mismatched closers are ignored — diagnosis is
-    check_brackets' job."""
+    diagnose_brackets' job."""
     stack: List[str] = []
     starts, ends = [], []
     before = ""
@@ -260,16 +259,6 @@ def _next_code(masked: List[str], i: int) -> str:
         if m.strip():
             return m.strip()
     return ""
-
-
-def _bracket_balance(text: str) -> dict:
-    """Count of each bracket kind, open minus close, over CODE ONLY
-    (caller must pass masked text)."""
-    return {
-        "()": text.count("(") - text.count(")"),
-        "[]": text.count("[") - text.count("]"),
-        "{}": text.count("{") - text.count("}"),
-    }
 
 
 def _depth0(code: str, pattern: str) -> List[int]:
@@ -323,15 +312,15 @@ def fix_python(src: str) -> FixResult:
     fixes: List[Fix] = []
     out = list(lines)
 
-    broken: List[int] = []   # lines whose string never closes: not ours to fix
-    masked = _mask(out, syn, broken, broken)
+    masked, dead, cut = _mask(out, syn)
+    broken = set(dead + cut)   # lines that end inside a string: not ours to fix
     logical = _py_logical_starts(masked)
     for i, (raw, m) in enumerate(zip(out, masked)):
         code = m.rstrip()
         mobj = _PY_BLOCK_KW.match(code)
         if not mobj or not logical[i] or i + 1 in broken:
             continue
-        indent, kw, rest = mobj.groups()
+        _, kw, rest = mobj.groups()
         # A ':' outside every bracket means the header already has its
         # colon — `if x: continue` keeps its body on the same line.
         if _depth0(code, r":(?!=)"):
@@ -340,8 +329,7 @@ def fix_python(src: str) -> FixResult:
             continue  # `else x` is not a header that lost its colon
         if code.endswith(("(", "[", "{", ",", "\\")):
             continue  # continuation line, not a finished header
-        bal = _bracket_balance(code)
-        if bal["()"] != 0 or bal["[]"] != 0 or bal["{}"] != 0:
+        if any(code.count(o) != code.count(c) for c, o in _PAIRS.items()):
             continue  # unbalanced on this line — don't guess
         fixes.append(Fix(i + 1, f"'{kw}' line missing ':'",
                          "':' appended",
@@ -356,7 +344,7 @@ def fix_python(src: str) -> FixResult:
     # the wrong operator, and the colon pass above already healed it.
     # Only a '=' outside every bracket is touched: inside one it is a
     # keyword argument (`if f(x=1):`), which is legal.
-    masked2 = _mask(out, syn)
+    masked2 = _mask(out, syn)[0]
     logical = _py_logical_starts(masked2)
     for i, (raw, m) in enumerate(zip(out, masked2)):
         code = m.rstrip()
@@ -420,8 +408,8 @@ def _literal_brace(language: str):
 
 def _fix_semicolons(src: str, language: str) -> FixResult:
     lines = _lines(src)
-    broken: List[int] = []   # lines that end inside a string: not ours to fix
-    masked = _mask(lines, _SYNTAX[language], broken, broken)
+    masked, dead, cut = _mask(lines, _SYNTAX[language])
+    broken = set(dead + cut)   # lines that end inside a string: not ours to fix
     starts, ends = _contexts(masked, _literal_brace(language))
     rust = language == "rust"
     fixes: List[Fix] = []
@@ -516,9 +504,8 @@ def fix_kotlin(src: str) -> FixResult:
 # instead of inventing a closer.
 # ═══════════════════════════════════════════════
 
-def check_brackets(src: str, language: str) -> List[str]:
-    unterminated: List[int] = []
-    masked = _mask(_lines(src), _SYNTAX[language], unterminated)
+def diagnose_brackets(src: str, language: str) -> List[str]:
+    masked, unterminated, _ = _mask(_lines(src), _SYNTAX[language])
     stack: List[Tuple[str, int]] = []
     openers = set(_PAIRS.values())
     problems = [f"line {n}: string is never closed" for n in unterminated]
@@ -565,7 +552,3 @@ def fix(src: str, language: str) -> FixResult:
         raise ValueError(f"unsupported language {language!r}; have "
                          f"{', '.join(sorted(LANGUAGES))}")
     return LANGUAGES[language](src)
-
-
-def diagnose_brackets(src: str, language: str) -> List[str]:
-    return check_brackets(src, language)
