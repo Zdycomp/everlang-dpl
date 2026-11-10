@@ -20,12 +20,14 @@ Codric Enterprise · Ricky (Dreid) · 2026
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional
 
-from syntax import parse, Semantic, Program, Let, Show, FnDef, Extern
+from syntax import (parse, Semantic, Program, Let, Show, FnDef, Extern,
+                    Example, Anchor, Call)
 from forgive import parse_forgiving, Correction
-from ir import _ast_to_ir, NK, EvNode, E_CERTAIN, E_INTAKE
+from ir import _ast_to_ir, NK, EvNode, E_CERTAIN, E_INTAKE, E_EXECUTE_FLOOR
 from scope import (EvScope, make_global_scope, eval_node,
                    E_LOOP_MAX_ITERATIONS, SK)
 from evalue import EValue, EvType, EV_CERTAIN
@@ -257,7 +259,8 @@ def eval_confidence(node: Optional[EvNode], scope: EvScope) -> int:
         result = eval_node(node, scope)
         if result.ev_tag == EvType.VOID:
             return 0
-        return min(confs) if confs else E_CERTAIN
+        # the call is no more certain than the function that makes it (§4.3)
+        return min([entry.confidence] + confs)
 
     return 0
 
@@ -347,6 +350,83 @@ def run_source(source: str, profiler: Optional["Profiler"] = None,
     return result
 
 
+# ─────────────────────────────────────────────
+# Examples and anchors (SEMANTICS §4.2, §4.4)
+# ─────────────────────────────────────────────
+
+# Anchor 0 means unanchored (§1), so the first anchor is 1.
+_ANCHOR_IDS = itertools.count(1)
+
+
+def _same_value(a: EValue, b: EValue) -> bool:
+    """Equal as values: same tag and payload. Confidence is not part of it."""
+    if a.ev_tag != b.ev_tag:
+        return False
+    if a.ev_tag == EvType.LIST:
+        return len(a.ev_list) == len(b.ev_list) and all(
+            _same_value(x, y) for x, y in zip(a.ev_list, b.ev_list))
+    if a.ev_tag == EvType.RECORD:
+        return a.ev_record.keys() == b.ev_record.keys() and all(
+            _same_value(a.ev_record[k], b.ev_record[k]) for k in a.ev_record)
+    return (a.ev_bool, a.ev_int, a.ev_real, a.ev_text, a.ev_blob) == \
+           (b.ev_bool, b.ev_int, b.ev_real, b.ev_text, b.ev_blob)
+
+
+def _example_confidence(passed: int, total: int) -> int:
+    """c_f = floor(256 * (1 - u_f) * (p/t)), with u_f = ((256 - 120)/256)^p,
+    capped at 255 (SEMANTICS §4.2). No passing Example leaves it at 0."""
+    if passed == 0:
+        return 0
+    u = ((E_CERTAIN - E_INTAKE) / E_CERTAIN) ** passed
+    return min(E_CERTAIN - 1, int(E_CERTAIN * (1.0 - u) * (passed / total)))
+
+
+def _run_example(stmt: Example, g: EvScope, result: ProgramResult) -> None:
+    """`example f(a, ...) = v`: run the call through the real evaluator and
+    count it. A z, a wrong value, or a call past the ceiling is a failure."""
+    entry = g.lookup(stmt.name)
+    if entry is None or entry.kind != SK.FN:
+        result.errors.append(f"example references unknown function '{stmt.name}'")
+        return
+    if entry.refused:
+        return   # a refused function is z; evidence about it is not counted
+    got  = eval_node(_ast_to_ir(Call(stmt.name, stmt.args)), g)
+    want = eval_node(_ast_to_ir(stmt.expect), g)
+    if got.ev_tag != EvType.VOID and _same_value(got, want):
+        entry.examples_passed += 1
+    else:
+        entry.examples_failed += 1
+    total = entry.examples_passed + entry.examples_failed
+    entry.confidence = _example_confidence(entry.examples_passed, total)
+    entry.reason = ("" if entry.confidence > 0 else
+                    f"{entry.examples_passed}/{total} examples passed; "
+                    "definition kept")
+
+
+def _run_anchor(stmt: Anchor, g: EvScope, result: ProgramResult) -> None:
+    """`anchor f`: pin f's identity if the evidence earns it (SEMANTICS §4.4).
+    An uncleared function, or a recursive one with no decreasing measure, is
+    refused: it becomes z and says why."""
+    entry = g.lookup(stmt.name)
+    if entry is None or entry.kind != SK.FN:
+        result.errors.append(f"anchor references unknown function '{stmt.name}'")
+        return
+    if entry.anchor_id:
+        return   # already anchored: the identity is kept
+    if entry.confidence < E_EXECUTE_FLOOR:
+        _refuse(entry, "cannot anchor an unverified function")
+    elif entry.recursive and entry.measure is None:
+        _refuse(entry, "recursive function has no decreasing measure; "
+                       "confidence proves trust, not termination")
+    else:
+        entry.anchor_id = next(_ANCHOR_IDS)
+
+
+def _refuse(entry, reason: str) -> None:
+    """A refused anchor leaves the binding z, with the reason, for good."""
+    entry.confidence, entry.refused, entry.reason = 0, True, reason
+
+
 def _run_source(source: str, profiler: Optional["Profiler"] = None,
                 scope: Optional[EvScope] = None) -> ProgramResult:
     """Parse and execute a full .ever source string for real: through
@@ -399,9 +479,15 @@ def _run_source(source: str, profiler: Optional["Profiler"] = None,
     # before any statement runs, rather than executing as void.
     for stmt in prog.statements:
         cls = type(stmt).__name__
-        if cls in ("Show", "Extern"):
+        if cls in ("Show", "Extern", "Anchor"):
             continue
-        bad = _lowering_error(_ast_to_ir(stmt.value if cls == "Let" else stmt))
+        if cls == "Example":
+            # the arguments and the expected value lower like any expression
+            bad = next((b for b in (_lowering_error(_ast_to_ir(e))
+                                    for e in [*stmt.args, stmt.expect])
+                        if b is not None), None)
+        else:
+            bad = _lowering_error(_ast_to_ir(stmt.value if cls == "Let" else stmt))
         if bad is not None:
             result.errors.append(bad.error)
             return result
@@ -415,15 +501,15 @@ def _run_source(source: str, profiler: Optional["Profiler"] = None,
             fn_ir = _ast_to_ir(stmt)
             if fn_ir is not None:
                 eval_node(fn_ir, g)
-                # Attach the termination proof the semantic pass found.
-                # A function with a strictly-decreasing parameter is
-                # ANCHORED: its recursion is bounded by the measure, so
-                # the floor(pi)=3 ceiling does not apply to it.
-                measure = Semantic._measure(stmt)
-                if measure:
-                    e = g.lookup(stmt.name)
-                    if e is not None:
-                        e.measure = measure
+                # The static facts the semantic pass proved about the body:
+                # whether it recurses, and a parameter that strictly decreases
+                # in every self-call. Neither makes it anchored. Anchoring is
+                # earned by `anchor f` (SEMANTICS §4.4), and only an anchored
+                # function with a measure may recurse past floor(pi) (§4.6).
+                e = g.lookup(stmt.name)
+                if e is not None:
+                    e.recursive = Semantic._recursive(stmt)
+                    e.measure = Semantic._measure(stmt)
             continue
 
         if cls == "Extern":
@@ -436,6 +522,14 @@ def _run_source(source: str, profiler: Optional["Profiler"] = None,
             g.set(stmt.name, SK.EXTERN, EValue.void(), confidence=EV_CERTAIN)
             g.lookup(stmt.name).extern_fn = fn
             g.lookup(stmt.name).params = list(stmt.params)
+            continue
+
+        if cls == "Example":
+            _run_example(stmt, g, result)
+            continue
+
+        if cls == "Anchor":
+            _run_anchor(stmt, g, result)
             continue
 
         if cls == "Let":

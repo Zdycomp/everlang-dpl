@@ -144,7 +144,7 @@ class RepairRegistry:
 _active: Optional[RepairRegistry] = None
 
 
-def get_registry() -> RepairRegistry:
+def get_registry() -> Optional[RepairRegistry]:
     """The registry the evaluators consult, built on first use."""
     global _active
     if _active is None:

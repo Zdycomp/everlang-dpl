@@ -28,7 +28,7 @@ from evalue import (
     serialise as ev_serialise,
     deserialise as ev_deserialise,
 )
-from ir import EvNode, NK, E_EXECUTE_FLOOR
+from ir import EvNode, NK, E_EXECUTE_FLOOR, E_INTAKE
 import heal_order as ho
 
 
@@ -70,8 +70,13 @@ class ScopeEntry:
     anchor_id:   int          = 0
     node:        Optional[EvNode] = None    # fn / class body
     params:      List[str]    = field(default_factory=list)
-    measure:     Optional[str] = None        # anchored: decreasing param
+    measure:     Optional[str] = None        # decreasing param, a static fact (§4.5)
     extern_fn:   Optional[Any] = None        # SK.EXTERN: the loaded ctypes callable
+    recursive:   bool          = False       # the body calls itself (§4.4)
+    examples_passed: int       = 0           # Examples that held (§4.2)
+    examples_failed: int       = 0           # Examples that did not, or ran out of depth
+    refused:     bool          = False       # an anchor was refused (§4.4): z for good
+    reason:      str           = ""          # why it is z, when it is
 
     @property
     def is_fn(self)     -> bool: return self.kind == SK.FN
@@ -476,7 +481,8 @@ def eval_node(node: EvNode, scope: EvScope,
         params = node.params
         body   = node.children[0] if node.children else None
         if body:
-            scope.set_fn(name, body, params)
+            # a definition is a claim, so it begins at INTAKE, not certainty (§4.1)
+            scope.set_fn(name, body, params, conf=E_INTAKE)
         return EValue.void()
 
     if k == NK.CALL:
@@ -521,6 +527,11 @@ def eval_node(node: EvNode, scope: EvScope,
         # baselines this whole project was already built against.
         # Reverting to it, confirmed by full regression, not by a
         # second isolated probe.
+        # θ_f is z: a function with no trust left, or a refused anchor, does
+        # not execute (§4.3)
+        if entry.confidence <= 0:
+            ho.note(entry.reason or f"{name} is z")
+            return EValue.void()
         body   = entry.node
         params = entry.params
         args   = [eval_node(ch, scope, depth) for ch in node.children]
@@ -529,7 +540,7 @@ def eval_node(node: EvNode, scope: EvScope,
         # Unanchored recursion stops at floor(pi) = 3, because the
         # system will not compute what it cannot prove terminates.
         #
-        # An ANCHORED function has a parameter the semantic pass
+        # An anchored function (`anchor f` was accepted, §4.4) has a parameter the semantic pass
         # proved strictly decreases in every self-call. That proof is
         # a termination argument, so the ceiling lifts: the recursion
         # is bounded by the measure itself, not by an arbitrary limit.
@@ -544,7 +555,11 @@ def eval_node(node: EvNode, scope: EvScope,
         # bearing here.
         own_depth = _own_recursion_depth(scope, name)
 
-        anchored = entry.measure is not None and entry.measure in params
+        # Earned, not inferred: `anchor f` was accepted (anchor_id), and the
+        # static measure is a parameter (§4.6). The measure alone is a
+        # termination fact; it does not lift the ceiling.
+        anchored = (entry.anchor_id != 0 and entry.measure is not None
+                    and entry.measure in params)
         if anchored:
             midx = params.index(entry.measure)
             prev = scope.lookup(f"__anchor__{name}")
@@ -702,7 +717,7 @@ def _eval_learn(node: EvNode, scope: EvScope, depth: int) -> EValue:
         action = ho.SUBSTITUTE
         detail = f"not archived: fixture confidence {f_conf} below the floor"
     conf = min(recovery_base(a.is_z, a.conf), f_conf)
-    ho.set_context(strategy=key, fixture=node.str_val or "", cost=0)
+    ho.set_context(a, strategy=key, fixture=node.str_val or "", cost=0)
     ho.finish(a, action, conf, detail)
     return _settle(a, fixture, conf)
 

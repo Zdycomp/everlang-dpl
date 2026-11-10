@@ -9,6 +9,27 @@ lesson hardens into a rule every agent must follow, promote it into
 
 ---
 
+## The optimiser unbound function parameters
+
+**What broke.** `ev_pass_dead_regs` turned a parameter's LOAD in block 0 into
+a NOP whenever its register had no use. That LOAD is where `interp_func` binds
+the argument — it scans block 0 for a LOAD named after each parameter — and
+every reference in the body emits a LOAD of its own, so the binding LOAD
+usually has no register use. `def dbl(n) = if 1 < 2 then n * 2 else n; dbl(21)`
+returned 42 unoptimised and z optimised. `fact` kept working only because its
+own condition `n <= 1` reads `n` in block 0.
+
+**Why it wasn't caught.** `ks_pipeline_optimiser_safety` compares optimised
+against unoptimised on three global-body expressions — no function, no
+parameter. The recursion suites do optimise functions, but every one reads its
+parameter in the entry block. Found by the dead-code pass's probe, which ran a
+function through `OP_CALL` with a constant condition.
+
+**The rule now.** A pass that deletes instructions must know which ones the
+interpreter reads by name rather than by register: block-0 parameter LOADs are
+kept (`_is_param_load`, `tac.c`). The test that catches it is the hand-off in
+tasks.md: `dbl(21)` through `ev_interp_run`, optimised vs not. — 2026-11-07
+
 ## A patch written against a stale copy nearly overwrote a month of work
 
 **What broke.** Nothing shipped — this one was caught on the way in, and it is
@@ -159,6 +180,24 @@ inside another form and inside a list. `TestHealFormsAreNotCalls` in
 `tests/test_healing.py`. `_heal_form_at` mirrors `Parser._heal_ahead`; keep them
 the same rule.
 
+## A throwaway probe wrote into the real ReFix archive
+
+**What broke.** A review script ran `learn (1/zero) using ("p") fix (4)`
+through `runtime.run_source()` with no registry set. `RepairRegistry()`
+defaults to `7-refix-node/`, so the learn appended two repairs to the tracked
+`7-refix-node/repairs.jsonl`. The next Java run failed `RepairSuite`: "the
+ReFix archive loads (3 records, no warnings)" found 5. Restored from HEAD.
+
+**Why it wasn't caught.** The script was not a suite, so nothing isolated it.
+The suites isolate themselves (`_Archive`, `use_registry`); an ad-hoc run
+gets the default, which is a file in the repo. `RepairSuite`'s record count
+caught it, one run later.
+
+**The rule now.** Any run of `.ever` source that can `learn`, inside a suite
+or not, first calls `use_registry(RepairRegistry(archive_dir=<temp dir>))` and
+sets `EVER_REPAIR_STORE` to a temp dir. The test that catches a breach is
+`RepairSuite`'s ReFix record count. — 2026-11-07
+
 ## A parity matrix proves agreement only on the cases it holds
 
 **What broke.** A z reached from a called function, `heal (f(0))` with
@@ -238,3 +277,55 @@ have seen it; only running somewhere else could.
 
 **The rule now.** A suite builds its fixtures in `tempfile.mkdtemp`, never in
 the repo. All three now do. — fixed 2026-10
+
+## Three Go suites failed on the sandbox's cache, not on the code
+
+**What broke.** Backends (17 checks), Verification oracle (1) and Finality (1)
+failed with `failed to initialize build cache at ~/Library/Caches/go-build`.
+The gate counted them as code failures. With `GOCACHE` on a writable directory
+the same three suites pass: 85/0, 5/0, 8/0.
+
+**Why it wasn't caught.** The Go toolchain wrote to the home cache, and the
+sandbox refuses that path. Nothing in `run_all.py` gave the toolchains their own
+writable state, so one tree was green on one machine and red on another, and the
+suites reported the sandbox as a defect in the code.
+
+**The rule now.** `run_all.py` sets `GOCACHE` to `build/go-cache` (gitignored,
+inside the repo) unless one is exported. A suite's verdict is about the code:
+any state a toolchain writes goes under the repo's `build/` or the run's temp
+directory. The test that catches a regression is the gate itself, run where the
+home cache is not writable. — 2026-11-08
+
+## A heal's trace reported the outcome of a heal inside its fallback
+
+**What broke.** Five C checks in `heal_parity_test.py` (`fb_heal_substitute`,
+`fb_heal_fallback`, `fb_heal_keep`, `fb_heal_two_deep`, `fb_heal_call`) reported
+the inner heal's action for an outer heal that fell back. Python and Java report
+FALLBACK. Value and confidence were already right.
+
+**Why it wasn't caught.** The outer outcome was written when its repair began
+(`OP_RECOVERY`), before the fallback ran. The inner heal then wrote its own
+outcome, and the trace returns the last write. The nested cases were added the
+same day and caught it, but only once the action was compared; value and
+confidence had passed.
+
+**The rule now.** A heal's outcome is written again after its fallback arm has
+run (`OP_REPAIR_RESTORE`, `tac.c`). Any heal form is tested with a heal nested in
+its fallback (`cases.tsv`, `fb_heal_*`). — 2026-11-08
+
+## An integration backend that cannot carry confidence cannot fail on it
+
+**What broke.** Integration Backend B evaluates in Python and sends literal values
+to C, and IR literals carry no confidence, so every non-z value printed `[256/256]`.
+Backend A hardcoded 256 for every `let`. When function results moved to 120, both
+kept matching the old `.expected` files, and the suite did not notice.
+
+**Why it wasn't caught.** The expected confidence and the harness's confidence were
+both 256, so the comparison agreed with itself. Nothing had changed a confidence
+rule until now, so no run could have shown the gap.
+
+**The rule now.** A harness that prints a confidence prints what the runtime earned:
+`ev_interp_ret_conf` in C, `eval_confidence` in Python, never a constant. A backend
+that cannot carry confidence must say so in its output, not print 256. The test
+that catches a regression is the Integration suite. Fixed 2026-11-09: IR literals
+carry their confidence, and Backend B sends the one the binding earned. — 2026-11-09

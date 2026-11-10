@@ -149,9 +149,11 @@ def _protected_eq_positions(tokens: List[Token]) -> set:
                 elif tokens[j].kind is T.LPAR: depth -= 1
                 j -= 1
             # j now sits one before the matching '('
+            # `def NAME (...) =` defines; `example NAME (...) = v` is an
+            # Example. Both end their parameter (or argument) list before the =.
             if j >= 1 and tokens[j].kind is T.NAME \
                     and tokens[j - 1].kind is T.KW \
-                    and tokens[j - 1].text == "def":
+                    and tokens[j - 1].text in ("def", "example"):
                 protected.add(i)
     return protected
 

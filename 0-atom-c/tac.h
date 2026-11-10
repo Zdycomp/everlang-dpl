@@ -143,6 +143,7 @@ typedef enum {
     OP_CAUSE_CLOSE  = 105,  /* pop it; dest = its reason (TEXT), or void: drop    */
     OP_NOTE         = 106,  /* name: a failure happened here; note it in the frame */
     OP_SETTLE       = 107,  /* src0 void: hand src1's reason (TEXT) up the frame  */
+    OP_REPAIR_RESTORE = 108, /* src0 = EV_HEAL_* of this heal: re-record it after its fallback ran */
 } EvOpcode;
 
 /* The order's outcome for one heal (evaluate → plan → execute). The codes are
@@ -295,12 +296,19 @@ EvReg ev_next_reg(EvBuilder *b, int32_t type, int16_t conf);
 
 /* Emit instructions (all arena-alloc, return dest reg) */
 EvReg ev_emit_const(EvBuilder *b, EValue lit, int32_t line);
+/* A constant that stands for a value with an earned confidence (a literal IR
+   node carries it). ev_emit_const is this with E_CERTAIN. */
+EvReg ev_emit_const_conf(EvBuilder *b, EValue lit, int16_t conf, int32_t line);
 EvReg ev_emit_copy(EvBuilder *b, EvReg src, int32_t line);
 EvReg ev_emit_binop(EvBuilder *b, EvOpcode op,
                     EvReg src0, EvReg src1, int32_t line);
 EvReg ev_emit_recovery(EvBuilder *b, EvReg primary, EvReg strategy,
                        EvReg reason, int32_t line);
 EvReg ev_emit_repair_state(EvBuilder *b, int32_t line);
+/* This heal's own outcome, re-recorded once its fallback has run. A heal inside
+   the fallback records its outcome later, so without this the trace would
+   report the inner heal's action. */
+void  ev_emit_repair_restore(EvBuilder *b, EvReg outcome, int32_t line);
 /* The cause frame of a heal (see OP_CAUSE_OPEN). Open before the primary is
    lowered; close after it, which yields the reason; drop when a sub-evaluation
    is absorbed by the heal. note names a failure; settle hands a z reason up. */
@@ -359,11 +367,16 @@ EvModule *ev_lower_module(const char *name, EvNode *root);
 /* Pass 1: constant folding — evaluate compile-time-known ops */
 int ev_pass_const_fold(EvFunc *f);
 
-/* Pass 2: dead-register elimination — remove instructions whose
+/* Pass 2: dead-code elimination — a JUMP_IF on a CONST becomes a JUMP
+ * to the arm the interpreter would take, and blocks no longer reachable
+ * from block 0 are cleared. Runs after folding, before dead registers. */
+int ev_pass_dead_code(EvFunc *f);
+
+/* Pass 3: dead-register elimination — remove instructions whose
            dest reg is never used */
 int ev_pass_dead_regs(EvFunc *f);
 
-/* Pass 3: confidence propagation — fill every dest reg's confidence
+/* Pass 4: confidence propagation — fill every dest reg's confidence
            from its operands using the TAC propagation rules */
 int ev_pass_conf_prop(EvFunc *f);
 
@@ -389,6 +402,9 @@ EValue    ev_interp_run(EvInterp *ip);
 
 /* The heal trace of an interpreter: count and last outcome */
 EvHealTrace ev_interp_heal_trace(const EvInterp *ip);
+/* Runtime confidence of the value the last RETURN gave (0 for z). Read it
+   after ev_interp_run: a build-time register confidence is not what ran. */
+int16_t ev_interp_ret_conf(const EvInterp *ip);
 
 /* ─────────────────────────────────────────────
  * PRETTY PRINTER — for debugging and teaching

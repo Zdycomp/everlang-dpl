@@ -6,8 +6,11 @@ Founder: Ricky (Dreid), Codric Enterprise.
 ## Before you touch anything
 
 ```
-python3 tests/run_all.py          # must be 34 passed / 0 skipped / 0 failed
+python3 tests/run_all.py          # must end: N passed  0 skipped  0 failed  of N suites
 ```
+
+N is the suite count in `tests/run_all.py`, not a number to pin here: the last
+pinned count (34) went stale when the suites grew to 55.
 
 If it isn't green before your change, stop and say so. Don't build on red.
 
@@ -52,7 +55,7 @@ toolchain it couldn't reach, and was recorded as SKIP — while any genuinely
 failing suite that mentioned `SKIP:` anywhere was downgraded to skip and
 dropped out of the exit code. A new suite signals "did not run" by exiting 77
 and by no other means. Skips are not free: the runner exits non-zero until
-34 passed / 0 skipped / 0 failed.
+every suite has passed, with 0 skipped and 0 failed.
 
 ## Workflow
 
@@ -190,8 +193,8 @@ syntax should cost ZERO changes to `form.c`,
 python3 tests/run_all.py
 gcc -std=c99 -g -fsanitize=address,undefined -o /tmp/t \
   0-atom-c/kitchen_sink.c 0-atom-c/form.c 0-atom-c/form_lower.c \
-  0-atom-c/tac.c 0-atom-c/scope.c 0-atom-c/ir.c 0-atom-c/evalue.c \
-  0-atom-c/tapestry.c -lm && /tmp/t
+  0-atom-c/tac.c 0-atom-c/repair.c 0-atom-c/scope.c 0-atom-c/ir.c \
+  0-atom-c/evalue.c 0-atom-c/tapestry.c -lm && /tmp/t
 ```
 
 ASAN must report zero errors AND zero leaks.

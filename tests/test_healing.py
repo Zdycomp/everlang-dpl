@@ -1,7 +1,9 @@
+import json
 import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 for _path in (_HERE, os.path.join(_HERE, '..', '2-interpreter-python')):
@@ -249,6 +251,49 @@ class TestHealFormsAreNotCalls(unittest.TestCase):
             r = run_source('let zero = 0\nlet q = heal (heal (1 / zero) using ("plain") fallback (3)) using ("plain") fallback (50)\nshow q')
         self.assertTrue(r.ok, r.errors)
         self.assertEqual(r.format_lines(), ["q = 50 [256/256]"])
+
+
+class TestNestedHealsKeepTheirOwnRecord(unittest.TestCase):
+    """Each heal's trace lines and store records belong to that heal. A heal
+    nested in another's fallback or strategy runs between the outer heal's
+    PLAN and EXECUTE; it must not rename or re-describe the outer one."""
+
+    SOURCE = ('let zero = 0\n'
+              'let r = heal (z) using ("p") fallback '
+              '(heal (1 / zero) using ("p") fallback (7))\n'
+              'show r')
+
+    def _run(self):
+        with _Archive([DIVIDE_BY_ZERO]), tempfile.TemporaryDirectory() as store, \
+                mock.patch.dict(os.environ, {"EVER_REPAIR_STORE": store}):
+            result = run_source(self.SOURCE)
+            with open(os.path.join(store, "events.jsonl"), encoding="utf-8") as f:
+                events = [json.loads(line) for line in f]
+        self.assertTrue(result.ok, result.errors)
+        return result, events
+
+    def test_each_heal_has_exactly_its_own_execute_line(self):
+        result, _ = self._run()
+        outer = [t for t in result.heal_trace if t.startswith("heal#1 ")]
+        inner = [t for t in result.heal_trace if t.startswith("heal#2 ")]
+        self.assertEqual([t.split(":")[0] for t in outer],
+                         ["heal#1 evaluate", "heal#1 plan", "heal#1 execute"])
+        self.assertEqual([t.split(":")[0] for t in inner],
+                         ["heal#2 evaluate", "heal#2 plan", "heal#2 execute"])
+        self.assertIn("FALLBACK", outer[-1])
+        self.assertIn("SUBSTITUTE", inner[-1])
+
+    def test_each_heal_writes_its_own_event(self):
+        _, events = self._run()
+        # the inner heal finishes first
+        self.assertEqual([(e["action"], e["reason"], e["conf_in"]) for e in events],
+                         [("SUBSTITUTE", "division by zero", 0),
+                          ("FALLBACK", "declared unknown", 0)])
+        inner, outer = events
+        self.assertEqual((inner["strategy"], inner["fixture"], inner["cost"]),
+                         ("p", "1", E_REPAIR_PLAIN))
+        self.assertEqual((outer["strategy"], outer["fixture"], outer["cost"]),
+                         ("p", None, 0))
 
 
 if __name__ == "__main__":

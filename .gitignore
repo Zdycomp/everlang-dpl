@@ -45,3 +45,6 @@ node_modules/
 build/
 t_tac
 t_tac.dSYM/
+
+# Full JDK trees once staged by mistake (tasks.md: signatures/ ships to npm)
+*.jdk/

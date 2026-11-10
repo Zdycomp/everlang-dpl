@@ -95,6 +95,8 @@ class EvNode:
     children:    List["EvNode"]             = field(default_factory=list)
     keys:        List[str]                  = field(default_factory=list)
     error:       Optional[str]              = None
+    # literals: the confidence the value they stand for carries (serialised)
+    confidence:  int                        = 256
     # structural metrics, filled after parsing
     size:        int                        = 0
     depth:       int                        = 0
@@ -198,6 +200,12 @@ class EvNode:
 # Wire format — identical to ir.c ev_ir_serialise / ev_ir_deserialise
 # ─────────────────────────────────────────────
 
+# A literal carries the confidence of the value it stands for; every other
+# node's confidence is derived during lowering. Both sides agree on this set
+# (ir.c is_literal_kind).
+_LITERAL_KINDS = (NK.BOOL, NK.INT, NK.REAL, NK.TEXT)
+
+
 def serialise(n: EvNode) -> bytes:
     """EvNode → bytes. Same format as C ev_ir_serialise.
 
@@ -206,6 +214,8 @@ def serialise(n: EvNode) -> bytes:
     a pointer into it — or better, use the arena-copy path in abi.py.
     """
     out = bytes([n.kind]) + struct.pack("<i", n.line)
+    if n.kind in _LITERAL_KINDS:
+        out += struct.pack("<H", n.confidence)
 
     if n.kind == NK.BOOL:
         out += bytes([1 if n.lit_bool else 0])
@@ -239,6 +249,8 @@ def deserialise(buf: bytes, pos: int = 0) -> Tuple[EvNode, int]:
     line = struct.unpack_from("<i", buf, pos)[0]; pos += 4
 
     n = EvNode(kind=kind, line=line)
+    if kind in _LITERAL_KINDS:
+        n.confidence = struct.unpack_from("<H", buf, pos)[0]; pos += 2
 
     if kind == NK.BOOL:
         n.lit_bool = bool(buf[pos]); pos += 1

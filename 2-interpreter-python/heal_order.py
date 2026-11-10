@@ -31,9 +31,9 @@ import os
 import time
 from collections import deque
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Deque, Iterator, List, Optional
+from typing import Any, Deque, Dict, Iterator, List, Optional
 
 from ever import E_EXECUTE_FLOOR
 from repair import recovery_base, repair_confidence, strategy_key
@@ -50,11 +50,19 @@ STORE_ENV = "EVER_REPAIR_STORE"
 
 @dataclass(frozen=True)
 class Assessment:
+    """Everything one heal or learn knows about itself, from EVALUATE to EXECUTE.
+
+    A heal nested in this one's strategy or fallback runs between its PLAN and
+    its EXECUTE, so nothing about this heal may live in the module: its number
+    in the trace (`n`) and the strategy, fixture and cost its outcome is about
+    (`about`, filled by plan() or set_context()) travel with the assessment."""
     op: str
     is_z: bool
     conf: int
     reason: str
     base: int
+    n: int = 0
+    about: Dict[str, Any] = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True)
@@ -71,7 +79,6 @@ _probing = [0]
 _store: List[Optional[Path]] = [None]
 _run = ["py-run"]
 _seq = [0]
-_ctx = {"conf": 0, "reason": "", "strategy": None, "fixture": None, "cost": 0}
 
 
 def begin() -> None:
@@ -137,9 +144,9 @@ def cause_frame() -> Iterator[List[Optional[str]]]:
         _cause[0] = outer
 
 
-def _emit(op: str, phase: str, text: str) -> None:
+def _emit(a: Assessment, phase: str, text: str) -> None:
     if _probing[0] == 0:
-        _trace.append(f"{op}#{_count[0]} {phase}: {text}")
+        _trace.append(f"{a.op}#{a.n} {phase}: {text}")
 
 
 def _write(table: str, record: dict) -> None:
@@ -177,13 +184,15 @@ def trusted(conf: int) -> bool:
 
 def evaluate(op: str, is_z: bool, conf: int, reason: str) -> Assessment:
     """EVALUATE. Call once per heal or learn, before the strategy is read."""
+    n = 0
     if _probing[0] == 0:
         _count[0] += 1
-    a = Assessment(op, is_z, conf, reason, recovery_base(is_z, conf))
+        n = _count[0]
+    a = Assessment(op, is_z, conf, reason, recovery_base(is_z, conf), n,
+                   {"strategy": None, "fixture": None, "cost": 0})
     state = "z" if is_z else f"confidence {conf}/256"
-    _emit(op, "evaluate", f"{state}, reason '{reason}', base {a.base}")
+    _emit(a, "evaluate", f"{state}, reason '{reason}', base {a.base}")
     if not quiet():
-        _ctx.update(conf=conf, reason=reason, strategy=None, fixture=None, cost=0)
         if reason:
             _write("errors.jsonl", {
                 "v": 1, "error_id": _next_id("err"),
@@ -197,7 +206,7 @@ def evaluate(op: str, is_z: bool, conf: int, reason: str) -> Assessment:
 
 def keep(a: Assessment, conf: int) -> None:
     """EVALUATE found a trusted primary: the order stops here."""
-    _emit(a.op, "execute", f"{KEEP} → confidence {conf}/256")
+    _emit(a, "execute", f"{KEEP} → confidence {conf}/256")
     _event(a.op, "", None, KEEP, conf, conf, None, 0, "")
 
 
@@ -219,9 +228,8 @@ def plan(a: Assessment, registry, strategy) -> Plan:
         else:
             p = Plan(SUBSTITUTE, fixture, cost,
                      f"archived fixture '{fixture}', cost {cost}{under}")
-    _emit(a.op, "plan", f"{p.action} — {p.why}")
-    if not quiet():
-        _ctx.update(strategy=key, fixture=p.fixture, cost=p.cost)
+    _emit(a, "plan", f"{p.action} — {p.why}")
+    a.about.update(strategy=key, fixture=p.fixture, cost=p.cost)
     return p
 
 
@@ -230,16 +238,16 @@ def substituted_confidence(a: Assessment, p: Plan, value_conf: int) -> int:
     return repair_confidence(a.base, value_conf, p.cost)
 
 
-def set_context(strategy: Optional[str], fixture: Optional[str], cost: int) -> None:
+def set_context(a: Assessment, strategy: Optional[str], fixture: Optional[str],
+                cost: int) -> None:
     """For learn, which plans nothing: record the strategy, fixture and cost the
     outcome is about, before finish()."""
-    if not quiet():
-        _ctx.update(strategy=strategy, fixture=fixture, cost=cost)
+    a.about.update(strategy=strategy, fixture=fixture, cost=cost)
 
 
 def finish(a: Assessment, action: str, conf: int, detail: str = "") -> None:
     """EXECUTE. Record what the order actually did."""
     tail = f" · {detail}" if detail else ""
-    _emit(a.op, "execute", f"{action} → confidence {conf}/256{tail}")
-    _event(a.op, _ctx["reason"], _ctx["strategy"], action, _ctx["conf"], conf,
-           _ctx["fixture"], _ctx["cost"], detail)
+    _emit(a, "execute", f"{action} → confidence {conf}/256{tail}")
+    _event(a.op, a.reason, a.about["strategy"], action, a.conf, conf,
+           a.about["fixture"], a.about["cost"], detail)

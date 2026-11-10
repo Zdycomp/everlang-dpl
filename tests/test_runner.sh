@@ -4,8 +4,10 @@ set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 RUNNER_LIB=1 source ./run.sh
 
-# A scratch directory the sandbox allows: the system temp directory, else build/runner
-# in the project. Exits rather than return an empty path, which would send cp to /.
+# Sets SCRATCH to a fresh directory the sandbox allows: the system temp directory,
+# else build/runner in the project. Exits rather than leave SCRATCH empty, which
+# would send cp to /. Call it directly, never as $(scratch_dir): an exit inside a
+# command substitution ends only the subshell, and the caller carries on with "".
 scratch_dir(){
   local d=""
   d="$(mktemp -d "${TMPDIR:-/tmp}/ever-runner.XXXXXX" 2>/dev/null)" || d=""
@@ -16,7 +18,7 @@ scratch_dir(){
     echo "runner: no scratch directory could be created" >&2
     exit 1
   fi
-  printf '%s\n' "$d"
+  SCRATCH="$d"
 }
 
 failures=0
@@ -35,7 +37,7 @@ check "no pass counted" "$P" "0"
 check "no fail counted" "$F" "0"
 
 # --- 2. fake python3: passing test increments P
-TMP="$(scratch_dir)"
+scratch_dir; TMP="$SCRATCH"
 printf '#!/bin/sh\nexit 0\n' > "$TMP/python3"; chmod +x "$TMP/python3"
 PATH="$TMP:$PATH"
 have(){ command -v "$1" >/dev/null 2>&1; }
@@ -75,13 +77,28 @@ finish >/dev/null 2>&1; rc=$?
 check "finish returns 1 when only skips occurred" "$rc" "1"
 
 # --- 8. real C row: payload parses, gcc builds, binary runs (no fakes)
-CDIR="$(scratch_dir)"
+scratch_dir; CDIR="$SCRATCH"
 cp 0-atom-c/tapestry.h 0-atom-c/tapestry.c 0-atom-c/tapestry_test.c "$CDIR/"
 P=0; S=0; F=0; N=()
 run_suite "0|c|Layer 0 (C)|header|$CDIR|gcc|tapestry.c tapestry_test.c::tapestry_test::tapestry_test|2|" >/dev/null
 check "real C row passes through run_suite" "$P" "1"
 check "real C row not counted as failed" "$F" "0"
 rm -rf "$CDIR"
+
+# --- 9. no scratch directory: the self-test stops before it acts on an empty path.
+# A child run with mktemp broken must end at the first scratch_dir, not carry on.
+# EVER_RUNNER_CHILD keeps the child from running this section: if scratch_dir ever
+# regressed, the child would otherwise spawn a child of its own, without end.
+if [ -z "${EVER_RUNNER_CHILD:-}" ]; then
+  mkdir -p "$TMP/nomktemp"
+  printf '#!/bin/sh\nexit 1\n' > "$TMP/nomktemp/mktemp"; chmod +x "$TMP/nomktemp/mktemp"
+  out="$(EVER_RUNNER_CHILD=1 PATH="$TMP/nomktemp:$PATH" bash "${BASH_SOURCE[0]}" 2>&1)"; rc=$?
+  check "self-test exits 1 when no scratch directory can be made" "$rc" "1"
+  case "$out" in *"no scratch directory could be created"*) said=yes;; *) said=no;; esac
+  check "and says why" "$said" "yes"
+  case "$out" in *"- pass counted"*) acted=yes;; *) acted=no;; esac
+  check "and runs no check that needs the directory" "$acted" "no"
+fi
 
 rm -rf "$TMP"
 if [ "$failures" -gt 0 ]; then echo "runner self-test: $failures failure(s)"; exit 1; fi

@@ -173,6 +173,10 @@ struct EvNode {
     EvNodeKind  kind;
     int32_t     line;          /* source line, for error messages       */
 
+    /* Literal nodes carry the confidence of the value they stand for (serialised
+       after `line` for BOOL, INT, REAL and TEXT); E_CERTAIN unless told otherwise */
+    int16_t     confidence;
+
     /* Literal payload — which field is live depends on kind */
     union {
         int32_t  as_bool;      /* EV_NODE_BOOL                          */

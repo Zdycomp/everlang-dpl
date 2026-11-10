@@ -30,9 +30,47 @@ static EvNode *callee_def(EvArena *a) {
     return ev_node_def(a, "f", params, 1, body, 1);
 }
 
-/* builds the primary for an expr token: int:N, div:A:B, nested:A:B, call:B, zvar */
+static EvNode *primary(EvArena *a, const char *expr);
+static EvNode *fallback_term(EvArena *a, const char *tok);
+
+/* heal (<primary>) using ("<strategy>") fallback (<term>), as the parser builds it */
+static EvNode *heal_node(EvArena *a, EvNode *p, const char *strat, EvNode *fb) {
+    EvNode *h = ev_node_new(a, EV_NODE_HEAL, 1);
+    ev_node_add_child(h, p);
+    ev_node_add_child(h, ev_node_text(a, strat, 1));
+    ev_node_add_child(h, fb);
+    return h;
+}
+
+/* a nested heal token, heal/<expr>/<strategy>/<fallback>: the fallback part is
+   itself a term. Copies the token, because the parts are cut in place; the
+   node holds its own copies of every text. */
+static EvNode *nested_heal(EvArena *a, const char *tok) {
+    char buf[512];
+    snprintf(buf, sizeof buf, "%s", tok + 5);           /* past "heal/" */
+    char *strat = strchr(buf, '/');
+    if (!strat) return NULL;
+    *strat++ = '\0';
+    char *fb = strchr(strat, '/');
+    if (!fb) return NULL;
+    *fb++ = '\0';
+    EvNode *p = primary(a, buf);
+    EvNode *f = fallback_term(a, fb);
+    if (!p || !f) return NULL;
+    return heal_node(a, p, strat, f);
+}
+
+/* a fallback term: an integer, or a nested heal */
+static EvNode *fallback_term(EvArena *a, const char *tok) {
+    if (strncmp(tok, "heal/", 5) == 0) return nested_heal(a, tok);
+    return ev_node_int(a, atoll(tok), 1);
+}
+
+/* builds the primary for an expr token: int:N, div:A:B, nested:A:B, call:B,
+   zvar, or a nested heal heal/<expr>/<strategy>/<fallback> */
 static EvNode *primary(EvArena *a, const char *expr) {
     int64_t x = 0, y = 0;
+    if (strncmp(expr, "heal/", 5) == 0) return nested_heal(a, expr);
     if (sscanf(expr, "int:%lld", (long long *)&x) == 1) return ev_node_int(a, x, 1);
     if (sscanf(expr, "div:%lld:%lld", (long long *)&x, (long long *)&y) == 2)
         return div_node(a, x, y);
@@ -47,18 +85,15 @@ static EvNode *primary(EvArena *a, const char *expr) {
 }
 
 static void run_case(const char *name, const char *expr, const char *strat,
-                     int64_t fallback, EvArena *a) {
+                     const char *fallback, EvArena *a) {
     EvNode *p = primary(a, expr);
-    if (!p) { printf("%s\tERROR\texpr %s\t-\n", name, expr); return; }
-    EvNode *h = ev_node_new(a, EV_NODE_HEAL, 1);
-    ev_node_add_child(h, p);
-    ev_node_add_child(h, ev_node_text(a, strat, 1));
-    EvNode *fb = ev_node_int(a, fallback, 1);
+    EvNode *fb = fallback_term(a, fallback);
+    if (!p || !fb) { printf("%s\tERROR\texpr %s\t-\n", name, expr); return; }
     /* a call's callee must be in the module. Lowering registers it from this
        branch, which never runs: the condition is false. */
-    if (strncmp(expr, "call:", 5) == 0)
+    if (strstr(expr, "call:") || strstr(fallback, "call:"))
         fb = ev_node_if(a, ev_node_bool(a, 0, 1), callee_def(a), fb, 1);
-    ev_node_add_child(h, fb);
+    EvNode *h = heal_node(a, p, strat, fb);
     EvModule *m = ev_lower_module("heal_matrix", h);
     if (!m) { printf("%s\tERROR\tlowering\t-\n", name); return; }
     EvInterp *ip = ev_interp_new(m);
@@ -105,7 +140,7 @@ int main(int argc, char **argv) {
         snprintf(path, sizeof path, "%s/%s/repairs.jsonl", argv[1], fields[5]);
         g_repair_registry = ev_repair_registry_new(path);
         EvArena *a = ev_arena_new("heal_matrix");
-        run_case(fields[0], fields[2], fields[3], atoll(fields[4]), a);
+        run_case(fields[0], fields[2], fields[3], fields[4], a);
         ev_arena_free(a);
         ev_repair_registry_free(g_repair_registry);
         g_repair_registry = NULL;

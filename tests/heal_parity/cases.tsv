@@ -23,3 +23,12 @@ learn_div_plain	learn	div:1:0	plain	7	empty
 learn_div_zfix	learn	div:1:0	plain	z	empty
 call_div_plain_all	heal	call:0	plain	50	all
 call_div_plain_empty	heal	call:0	plain	50	empty
+fb_heal_substitute	heal	zvar	plain	heal/div:1:0/plain/7	all
+fb_heal_fallback	heal	zvar	plain	heal/div:1:0/nope/7	all
+fb_heal_keep	heal	zvar	plain	heal/int:100/plain/7	all
+fb_heal_two_deep	heal	zvar	plain	heal/zvar/plain/heal/div:1:0/plain/9	all
+fb_heal_unrun	heal	div:1:0	plain	heal/div:1:0/plain/7	all
+fb_heal_call	heal	zvar	plain	heal/call:0/plain/7	all
+primary_heal_fallback	heal	heal/zvar/plain/5	plain	6	all
+primary_heal_substitute	heal	heal/div:1:0/plain/5	plain	6	all
+primary_heal_keep	heal	heal/int:100/plain/5	plain	6	all

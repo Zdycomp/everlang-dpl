@@ -173,6 +173,34 @@ class Learn(Node):
     def __str__(self) -> str:
         return f"learn ({self.primary}) using ({self.strategy}) fix ({self.fixture})"
 
+
+@dataclass
+class Example(Node):
+    """`example f(a, ...) = v` — one witness that f(a, ...) is v.
+
+    Evidence, not a definition. A passing Example raises f's confidence
+    (SEMANTICS §4.2). A wrong value, a z, or a call past the depth ceiling
+    is a failure, and counts against f.
+    """
+    name: str
+    args: List[Node]
+    expect: Node
+    def children(self) -> List[Node]: return list(self.args) + [self.expect]
+    def shape(self) -> str: return f"example({self.name})"
+    def __str__(self) -> str:
+        args = ", ".join(str(a) for a in self.args)
+        return f"example {self.name}({args}) = {self.expect}"
+
+
+@dataclass
+class Anchor(Node):
+    """`anchor f` — pin f's identity (SEMANTICS §4.4). An anchored function
+    whose decreasing measure holds may recurse past floor(pi) (§4.6)."""
+    name: str
+    def children(self) -> List[Node]: return []
+    def shape(self) -> str: return f"anchor({self.name})"
+    def __str__(self) -> str: return f"anchor {self.name}"
+
 @dataclass
 class Num(Node):
     value: float          # an int for integer literals (exact), float for reals
@@ -622,7 +650,8 @@ class Parser:
             # LAST statement — this is exactly the original grammar's
             # "one expression, then EOF" rule, preserved for the case
             # it was written for.
-            if not isinstance(stmt, (Let, Show, FnDef, Extern)) and not self.at(T.EOF):
+            if not isinstance(stmt, (Let, Show, FnDef, Extern, Example, Anchor)) \
+                    and not self.at(T.EOF):
                 t = self.peek()
                 raise ParseError(f"unexpected {t.text!r} at line {t.line}")
         if len(statements) == 1 and isinstance(
@@ -642,6 +671,10 @@ class Parser:
             return self.showstmt()
         if self.at(T.KW, "extern"):
             return self.externstmt()
+        if self.at(T.KW, "example"):
+            return self.examplestmt()
+        if self.at(T.KW, "anchor"):
+            return self.anchorstmt()
         return self.expr()
 
     def externstmt(self) -> Extern:
@@ -735,6 +768,24 @@ class Parser:
         self.expect(T.RPAR)
         self.expect(T.EQ)
         return FnDef(name, params, self.expr())
+
+    def examplestmt(self) -> Example:
+        self.expect(T.KW, "example")
+        name = self.expect(T.NAME).text
+        self.expect(T.LPAR)
+        args: List[Node] = []
+        if not self.at(T.RPAR):
+            args.append(self.expr())
+            while self.at(T.COMMA):
+                self.take()
+                args.append(self.expr())
+        self.expect(T.RPAR)
+        self.expect(T.EQ)
+        return Example(name, args, self.expr())
+
+    def anchorstmt(self) -> Anchor:
+        self.expect(T.KW, "anchor")
+        return Anchor(self.expect(T.NAME).text)
 
     def expr(self) -> Node:
         if self.at(T.KW, "if"):
@@ -1103,6 +1154,25 @@ class Semantic:
 
             if cls == "Extern":
                 self.fns[stmt.name] = len(stmt.params)
+                continue
+
+            if cls == "Example":
+                # the function must be defined, and the example must match its arity
+                arity = self.fns.get(stmt.name)
+                if arity is None:
+                    errors.append(f"example references unknown function '{stmt.name}'")
+                elif arity != len(stmt.args):
+                    errors.append(f"example {stmt.name} takes {arity} argument(s), "
+                                  f"got {len(stmt.args)}")
+                for e in [*stmt.args, stmt.expect]:
+                    a = self.analyse(e, bound=bound)
+                    analyses.append(a)
+                    errors.extend(a.errors)
+                continue
+
+            if cls == "Anchor":
+                if stmt.name not in self.fns:
+                    errors.append(f"anchor references unknown function '{stmt.name}'")
                 continue
 
             if cls == "Let":
@@ -1498,6 +1568,16 @@ class Semantic:
         return param_types
 
     @staticmethod
+    def _recursive(fn: FnDef) -> bool:
+        """Does fn call itself? Structural, like _measure: it walks the AST,
+        so nesting that a text search would miss is still seen."""
+        def calls_self(n: Node) -> bool:
+            if isinstance(n, Call) and n.name == fn.name:
+                return True
+            return any(calls_self(c) for c in n.children())
+        return calls_self(fn.body)
+
+    @staticmethod
     def _measure(fn: FnDef) -> Optional[str]:
         """A parameter that strictly decreases in every self-call.
 
@@ -1707,7 +1787,7 @@ def eval_ast(node: Node, env: Dict[str, E],
 
         fixture = eval_ast(node.fixture, env, fns, depth, limit)
         if fixture.is_z:
-            ho.set_context(strategy=None, fixture=str(node.fixture), cost=0)
+            ho.set_context(a, strategy=None, fixture=str(node.fixture), cost=0)
             ho.finish(a, ho.FAILED, 0, "fixture evaluated to z; nothing archived")
             return fixture
 
@@ -1727,7 +1807,7 @@ def eval_ast(node: Node, env: Dict[str, E],
             detail = f"not archived: fixture confidence {fixture.confidence} below the floor"
         base = recovery_base(primary.is_z, primary.confidence)
         conf = min(base, fixture.confidence)
-        ho.set_context(strategy=key, fixture=str(node.fixture), cost=0)
+        ho.set_context(a, strategy=key, fixture=str(node.fixture), cost=0)
         ho.finish(a, action, conf, detail)
         return _at_confidence(fixture, conf)
 

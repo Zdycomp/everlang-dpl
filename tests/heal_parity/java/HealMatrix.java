@@ -27,7 +27,25 @@ public final class HealMatrix {
 
     static String cell(String s) { return s == null ? "-" : s; }
 
-    static EParticle primary(String expr) {
+    /** A nested heal, heal/<expr>/<strategy>/<fallback>: the same operator, the
+     *  same store and trace, so it is numbered and recorded as Python does it.
+     *  Its primary runs first and its fallback only if the plan asks for it. */
+    static EParticle nestedHeal(String token, RepairStore store, EverRepair.Trace tr) {
+        String[] p = token.split("/", 4);
+        EParticle inner = primary(p[1], store, tr);
+        EParticle strategyP = EParticle.valued("s", p[2], 256, EParticle.Lang.EVER);
+        return EverRepair.heal(inner, "x", () -> strategyP,
+                () -> fallback(p[3], store, tr), store, "matrix", tr);
+    }
+
+    /** A fallback term: an integer, or a nested heal. */
+    static EParticle fallback(String token, RepairStore store, EverRepair.Trace tr) {
+        if (token.startsWith("heal/")) return nestedHeal(token, store, tr);
+        return EParticle.valued("f", Long.valueOf(token), 256, EParticle.Lang.EVER);
+    }
+
+    static EParticle primary(String expr, RepairStore store, EverRepair.Trace tr) {
+        if (expr.startsWith("heal/")) return nestedHeal(expr, store, tr);
         if (expr.startsWith("int:"))
             return EParticle.valued("x", Long.valueOf(expr.substring(4)), 256, EParticle.Lang.EVER);
         if (expr.startsWith("div:")) {
@@ -86,12 +104,12 @@ public final class HealMatrix {
             EParticle strategyP = EParticle.valued("s", strategy, 256, EParticle.Lang.EVER);
             EParticle out;
             if (op.equals("heal")) {
-                EParticle fb = EParticle.valued("f", Long.valueOf(fallback), 256, EParticle.Lang.EVER);
-                out = EverRepair.heal(primary(expr), "x", () -> strategyP, () -> fb, store, "matrix", tr);
+                out = EverRepair.heal(primary(expr, store, tr), "x", () -> strategyP,
+                        () -> fallback(fallback, store, tr), store, "matrix", tr);
             } else {
                 EParticle fix = fallback.equals("z") ? EParticle.z("f", "fixture is z")
                         : EParticle.valued("f", Long.valueOf(fallback), 256, EParticle.Lang.EVER);
-                out = EverRepair.learn(primary(expr), "x", () -> strategyP, fallback, fix,
+                out = EverRepair.learn(primary(expr, store, tr), "x", () -> strategyP, fallback, fix,
                         store, "matrix", tr);
             }
 

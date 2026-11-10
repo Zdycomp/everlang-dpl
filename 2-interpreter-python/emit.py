@@ -287,6 +287,7 @@ func op(o string, a, b Val) Val {
 	return z()
 }
 
+func capc(v Val, c int) Val { if v.Conf > c { v.Conf = c }; return v }
 func truthy(v Val) bool { return v.Kind == "bool" && v.B }
 
 // A branch result can never be more certain than the condition that chose it. cond() returned the taken branch untouched, so `if z then 1 else 2` came back 2 at 256/256 where the reference says 2 at 0/256 — confidence manufactured out of an unknown.
@@ -377,7 +378,15 @@ func show(name string, v Val) {
 
     def fn(self, f):
         ps = ", ".join(f"{p} Val" for p in f.params)
-        return f"func {f.name}({ps}) Val {{\n\treturn {self.expr(f.body)}\n}}\n"
+        # a definition begins at INTAKE (SEMANTICS §4.1): its result is capped there
+        # an unanchored function nests at most floor(pi) = 3 activations deep (§4.6)
+        return (f"var _d_{f.name} int\n"
+                f"func {f.name}({ps}) Val {{\n"
+                f"\tif _d_{f.name} >= 3 {{ return z() }}\n"
+                f"\t_d_{f.name}++\n"
+                f"\tdefer func() {{ _d_{f.name}-- }}()\n"
+                f"\treturn capc({self.expr(f.body)}, 120)\n"
+                f"}}\n")
 
     def let(self, name, expr, tracked):
         if self._first_binding(name):
@@ -538,6 +547,16 @@ fn op(o: &str, a: Val, b: Val) -> Val {
     }
 }
 
+fn capc(v: Val, cap: i32) -> Val {
+    match v {
+        Val::Num(n, c)  => Val::Num(n, c.min(cap)),
+        Val::Txt(s, c)  => Val::Txt(s, c.min(cap)),
+        Val::Bool(b, c) => Val::Bool(b, c.min(cap)),
+        Val::List(i, c) => Val::List(i, c.min(cap)),
+        Val::Rec(k, i, c) => Val::Rec(k, i, c.min(cap)),
+        Val::Z => Val::Z,
+    }
+}
 fn truthy(v: &Val) -> bool { matches!(v, Val::Bool(true, _)) }
 
 // A branch result can never be more certain than the condition that chose it. cond() returned the taken branch untouched, so `if z then 1 else 2` came back 2 at 256/256 where the reference says 2 at 0/256 — confidence manufactured out of an unknown.
@@ -644,7 +663,16 @@ fn show(name: &str, v: &Val) {
 
     def fn(self, f):
         ps = ", ".join(f"{p}: Val" for p in f.params)
-        return f"fn {f.name}({ps}) -> Val {{\n    {self.expr(f.body)}\n}}\n"
+        # a definition begins at INTAKE (SEMANTICS §4.1): its result is capped there
+        # an unanchored function nests at most floor(pi) = 3 activations deep (§4.6)
+        return (f"thread_local! {{ static _D_{f.name}: std::cell::Cell<i32> = std::cell::Cell::new(0); }}\n"
+                f"fn {f.name}({ps}) -> Val {{\n"
+                f"    if _D_{f.name}.with(|d| d.get()) >= 3 {{ return Val::Z; }}\n"
+                f"    _D_{f.name}.with(|d| d.set(d.get() + 1));\n"
+                f"    let r = capc({self.expr(f.body)}, 120);\n"
+                f"    _D_{f.name}.with(|d| d.set(d.get() - 1));\n"
+                f"    r\n"
+                f"}}\n")
 
     def let(self, name, expr, tracked):
         return f"    let {name} = {expr};"
@@ -756,6 +784,7 @@ num <- function(x) mkval("num", n=x)
 txt <- function(x) mkval("txt", s=x)
 bl  <- function(x) mkval("bool", b=x)
 zz  <- function()  mkval("z", conf=0)
+capc <- function(v, c) { if (v$conf > c) v$conf <- c; v }
 
 lst <- function(...) {
   it <- list(...)
@@ -870,7 +899,19 @@ show_val <- function(name, v) {
 
     def fn(self, f):
         ps = ", ".join(f.params)
-        return f"{f.name} <- function({ps}) {{\n  {self.expr(f.body)}\n}}\n"
+        # a definition begins at INTAKE (SEMANTICS §4.1): its result is capped there
+        # an unanchored function nests at most floor(pi) = 3 activations deep (§4.6)
+        # R evaluates arguments lazily; force them first so a nested call in an
+        # argument counts against the caller, as it does in the reference
+        forced = "".join(f"  force({p})\n" for p in f.params)
+        return (f".depth_{f.name} <- 0\n"
+                f"{f.name} <- function({ps}) {{\n"
+                f"{forced}"
+                f"  if (.depth_{f.name} >= 3) return(zz())\n"
+                f"  .depth_{f.name} <<- .depth_{f.name} + 1\n"
+                f"  on.exit(.depth_{f.name} <<- .depth_{f.name} - 1)\n"
+                f"  capc({self.expr(f.body)}, 120)\n"
+                f"}}\n")
 
     def let(self, name, expr, tracked): return f"{name} <- {expr}"
     def show(self, name):  return f'show_val("{name}", {name})'
@@ -1096,7 +1137,14 @@ fun show(name: String, v: Val) {
 
     def fn(self, f):
         ps = ", ".join(f"{p}: Val" for p in f.params)
-        return f"fun {f.name}({ps}): Val =\n    {self.expr(f.body)}\n"
+        # a definition begins at INTAKE (SEMANTICS §4.1): its result is capped there
+        # an unanchored function nests at most floor(pi) = 3 activations deep (§4.6)
+        return (f"var _d_{f.name} = 0\n"
+                f"fun {f.name}({ps}): Val {{\n"
+                f"    if (_d_{f.name} >= 3) return Val.Z\n"
+                f"    _d_{f.name}++\n"
+                f"    try {{ return condv(120, {self.expr(f.body)}) }} finally {{ _d_{f.name}-- }}\n"
+                f"}}\n")
 
     def let(self, name, expr, tracked):
         if self._first_binding(name):
@@ -1199,6 +1247,7 @@ class JSEmitter(Emitter):
     def preamble(self, fns):
         f = "\n".join(self.fn(x) for x in fns)
         return '''// Ever value: carries a trust level, and z poisons what it touches.
+function capc(v, c) { return v.conf > c ? Object.assign({}, v, {conf: c}) : v; }
 function num(n) { return {kind: "num", n: n, conf: 256}; }
 function txt(s)  { return {kind: "txt", s: s, conf: 256}; }
 function bl(b)   { return {kind: "bool", b: b, conf: 256}; }
@@ -1313,7 +1362,14 @@ function show(name, v) {
 
     def fn(self, f):
         ps = ", ".join(f.params)
-        return f"function {f.name}({ps}) {{\n  return {self.expr(f.body)};\n}}\n"
+        # a definition begins at INTAKE (SEMANTICS §4.1): its result is capped there
+        # an unanchored function nests at most floor(pi) = 3 activations deep (§4.6)
+        return (f"let _d_{f.name} = 0;\n"
+                f"function {f.name}({ps}) {{\n"
+                f"  if (_d_{f.name} >= 3) return z();\n"
+                f"  _d_{f.name}++;\n"
+                f"  try {{ return capc({self.expr(f.body)}, 120); }} finally {{ _d_{f.name}--; }}\n"
+                f"}}\n")
 
     def let(self, name, expr, tracked):
         if self._first_binding(name):

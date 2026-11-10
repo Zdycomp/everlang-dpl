@@ -38,6 +38,64 @@ fast in this repo — cite the symbol, and the file, and let the number be a hin
 
 ## Action items
 
+### Dead-code elimination after constant folding (2026-11-07) — owner: tac-optimizer
+
+Found on reading: there is no folding in `form_lower.c` — it only lowers.
+Folding and dead-register removal are TAC passes in `tac.c` (`ev_optimise`),
+which every module from either lowering path goes through. The missing piece is
+the control-flow half: a folded condition still leaves its JUMP_IF and the arm
+it can never take. The pass goes in `tac.c` beside its siblings; `form_lower.c`
+and `form.c` need no change, and no form kind is added.
+
+- [x] `ev_pass_dead_code` in `tac.c`: a JUMP_IF whose condition is a CONST in
+      the same block becomes a JUMP to the arm the interpreter would take
+      (one truthiness helper shared with OP_JUMP_IF, z → unknown arm); blocks
+      unreachable from block 0 are cleared. HEAL is never folded.
+- [x] Run order in `ev_optimise`: fold → dead code → dead regs → conf prop.
+- [x] Verify: optimised vs unoptimised agree on value, tag AND confidence for
+      folded true/false/z/text conditions, nested and N-arm branches, through
+      both lowering paths and through a function called via `OP_CALL`
+      (`ev_interp_run`, not `ev_interp_call`). 18 programs, 68 checks, all
+      agree; the scratch probe also showed the pass absent on the old tac.c.
+- [x] Gate: kitchen sink (`ks_pipeline_optimiser_safety`) and every suite in
+      `run_all.py`; ASAN + UBSan zero errors, zero leaks. Same as baseline:
+      49 pass, 0 fail, 6 skip — the skips are javac/Go/Rust/Kotlin absent on
+      the machine that ran it, and none of those suites link `tac.c`.
+- [x] Scratch comes from the function arena, not calloc, so
+      `test_invariants.py`'s raw-allocation count for `tac.c` is unchanged.
+- [x] Found while verifying, fixed in the same file: `ev_pass_dead_regs` removed
+      a parameter's binding LOAD in block 0, so `def dbl(n) = if 1 < 2 then n*2
+      else n` returned z once optimised. See lessons.md.
+- [ ] Hand-off to test-engineer (owns `kitchen_sink.c`): add to
+      `ks_pipeline_optimiser_safety` (1) form-path cases `if 2 < 1 then 42 else
+      7`, `if z then 1 else 2`, a 3-arm match on `false` — compare tag, value
+      AND the result's confidence, optimised vs not, and assert the optimised
+      global body has no JUMP_IF left; (2) `def dbl(n) = if 1 < 2 then n * 2
+      else n; dbl(21)` through `ev_interp_run` — expected 42, got z before the
+      dead-regs fix. Today the suite compares tag and int only, on the node
+      path only, so neither bug could fail it.
+
+### Integration suite: Backend B cannot carry function confidence (2026-11-08, closed 2026-11-09)
+
+- The spec makes a function's result 120/256 (§4.1, §4.3). `tests/integration/`
+  `{06,07,08,11,13}.expected` still say `[256/256]` on function results. Backend A
+  (`tests/ev_integrate.py`, the Python evaluator) now computes 120, so it fails them.
+- Backend B does not run the program in C. It evaluates in Python and sends literal
+  values to C, and IR literals carry no confidence (`2-interpreter-python/ir.py`
+  `EvNode`, `serialise`). B therefore prints 256 for every non-z value, and updating
+  the .expected files makes B fail.
+- Decided 2026-11-09: carry confidence on IR literals. Wire format: a uint16 after
+  `line` for BOOL, INT, REAL and TEXT (`ir.py` `_LITERAL_KINDS`, `ir.c`
+  `is_literal_kind`). C lowering uses it (`ev_emit_const_conf`). Constant folding
+  takes the least confidence of its operands, and a branch on a literal with an
+  earned confidence is not folded. B sends each binding's earned confidence. The
+  five `.expected` files changed on function-result confidence only (20 lines).
+  Integration: ALL GOLD, with Backend A == B == expected.
+- Sandbox note, not a repo change: the sandbox refuses the Xcode `xcrun` cache under
+  `/var/folders`, so `gcc` fails with "couldn't create cache file". The gate runs
+  with a `gcc`/`g++` shim in `$TMPDIR/cc-shim` that calls the Command Line Tools
+  clang with `-isysroot`. A machine without that sandbox does not need it.
+
 ### Named repair process: heal and learn through calls (2026-11-03)
 
 - [x] forgive.py treats `heal (` as a call and `) using` as two items, so
@@ -73,14 +131,29 @@ fast in this repo — cite the symbol, and the file, and let the number be a hin
       Homebrew's `kotlin` formula depends on the latest `openjdk`, which is
       arm64-only; this Mac is x86_64 and already has `openjdk@21`, so kotlinc runs
       with `JAVA_HOME=/usr/local/opt/openjdk@21`. — 2026-11-04
-- [ ] Backends suite skips here: `Rscript` is not installed, so the gate is
-      54 passed / 1 skipped / 0 failed and exits 1. `brew install r` builds gcc
-      from source on this Intel Mac (no bottles) and failed with `ENOSPC`: the
-      data volume is 97% full, 6.7 GiB free. The earlier "stalled pid 7751 holds
-      the locks" note was wrong: that run had already died on a Homebrew
-      `NameError` and the locks were free. Owner: the user. Free roughly 15 GiB
-      (`brew cleanup` reclaims about 2 GiB of the 2.1 GiB cache), then
-      `brew install r`, then rerun the gate.
+- [x] Full regression gate has all toolchains and no skips. On 2026-11-06,
+      `python3 tests/run_all.py` reported 55 passed / 0 skipped / 0 failed.
+      Rust 1.99.1 is exposed from `~/.cargo/bin` through `EVER_TOOLCHAIN_PATH`.
+      R 4.6.2 was downloaded from CRAN, verified against its published SHA1
+      and Apple Developer ID signature, and installed in user space because
+      the system installer requires interactive admin authorization. A local
+      `~/.local/bin/Rscript` launcher runs the verified framework at
+      `~/.local/opt/r-4.6.2/R.framework`; set `R_HOME` to its `Resources`
+      directory and include `~/.local/bin` in `EVER_TOOLCHAIN_PATH`. A fresh
+      VS Code shell may omit that variable: the plain invocation in this
+      session skipped Rust and R (53 passed / 2 skipped). Exposing
+      `~/.cargo/bin:~/.local/bin` in `PATH` and `EVER_TOOLCHAIN_PATH`, with
+      `R_HOME=~/.local/opt/r-4.6.2/R.framework/Resources`, restored the full
+      55 passed / 0 skipped / 0 failed gate. Focused results: Backends 85/0/0;
+      Finality 8/0/0. The Java suites also need
+      `EVER_TOOLCHAIN_PATH=/usr/local/opt/openjdk@21/bin`: `/usr/bin/java` is a
+      stub, and without it they fail ("Unable to locate a Java Runtime"),
+      not skip. Rerun 2026-11-06 with that set: 55 passed / 0 skipped / 0 failed.
+      The C kitchen-sink ASan/UBSan build exits 0 with no sanitizer reports.
+  - [x] Confirm the existing Rust toolchain runs from `~/.cargo/bin`.
+  - [x] Install the verified CRAN R runtime in user space.
+  - [x] Run the focused Backends and Finality suites with zero skips.
+  - [x] Rerun the full gate; do not use `--allow-skip`.
 
 ### Finish the language: `example` and `anchor` get surface syntax (2026-10-28)
 
@@ -90,18 +163,37 @@ front door (`runtime.py` → `scope.py`) has no syntax for it and instead
 treats *any* decreasing measure as anchored — depth handed out, not earned.
 `example` and `anchor` are reserved keywords that nothing parses.
 
-- [ ] Syntax: `example f(a, …) = v` and `anchor f` statements in `syntax.py`
-      (AST nodes, parser, statement sequencing, Semantic pass).
-- [ ] Semantics in the runtime, exactly as §4: `def` at INTAKE 120;
+  Design, 2026-11-08 (Python front door first; C parity is its own line below):
+  - `syntax.py`: `Example(name, args, expect)` and `Anchor(name)` statements,
+    parsed in `statement()`, sequenced in `program()`, checked in the Semantic
+    pass (bound name, arity). `Semantic._recursive(fn)` sits beside `_measure`.
+  - `scope.py`: `ScopeEntry` gains `examples_passed`, `examples_failed`,
+    `recursive`, `refusal`. `def` binds at `E_INTAKE` (120). A call to a
+    function at confidence 0 is z. Anchored iff `anchor_id != 0` and the measure
+    is a parameter (§4.6): the measure alone no longer lifts the ceiling.
+  - `runtime.py`: `example` runs the call through `eval_node`; a z or a wrong
+    value is a failure (§4.2, formula exact). `anchor` refuses an uncleared
+    function (below `E_EXECUTE_FLOOR`) and a recursive one with no measure
+    (§4.4), each as z with a reason.
+  - `runtime.eval_confidence`: a user-function call is min(c_f, args, result).
+- [x] Syntax: `example f(a, …) = v` and `anchor f` statements in `syntax.py`
+      (AST nodes, parser, statement sequencing, Semantic pass). — 2026-11-08
+- [x] Semantics in the runtime, exactly as §4: `def` at INTAKE 120;
       [EXAMPLE] confidence; [ANCHOR-FN] / [ANCHOR-REC] / [ANCHOR-⊥];
       limit(θ_f) = ∞ only when anchored ∧ measure, else ⌊π⌋ = 3.
-- [ ] Remove the auto-anchor-by-measure in `runtime.py` / `scope.py`.
-- [ ] Test: §8 run as a real `.ever` program, every row of its table asserted.
+      `runtime.py` `_run_example` / `_run_anchor`; `scope.py` call path. — 2026-11-08
+- [x] Remove the auto-anchor-by-measure in `runtime.py` / `scope.py`. — 2026-11-08
+- [x] Test: §8 run as a real `.ever` program, every row of its table asserted.
+      `tests/test_anchor.py` (14 checks), gate suite "Anchor (SEMANTICS §8)". — 2026-11-08
 - [ ] SEMANTICS.md: grammar as built (EBNF) + §7 corrected to what is truly
       missing; parser docstring updated.
 - [ ] C parity: `tac.c` has no anchoring (every recursion capped at 3).
       Owner: `tac-optimizer` — tracked, not silently skipped.
-- [ ] `run_all.py` green (excluding toolchain skips on this machine), ASAN clean.
+- [x] `run_all.py` green: 56 passed, 0 skipped, 0 failed, 2026-11-09. Kitchen sink
+      ASan/UBSan clean, 0 leaks by the macOS `leaks` tool. Call results are capped at
+      INTAKE in C (`OP_CALL`, `ev_emit_call`) and in every transpiler, so the
+      Backends suite is green on the 120 rule and the per-function depth guard. The
+      gate runs with the gcc shim described in the Integration item.
 
 
 - [ ] **`tests/test_ceiling.py`** — the behavioural half of the depth contract.
@@ -121,6 +213,54 @@ treats *any* decreasing measure as anchored — depth handed out, not earned.
   of the two implementations, it is not an invariant, it is a convention."
   Owner: `test-engineer`.
 
+### Review of the staged heal_order change (2026-11-07)
+
+Gate, Linux VM with JDK 21, Go, Rust, Kotlin added: 54 passed / 1 skipped
+(Backends: no Rscript) / 0 failed. Notebook failed once with `sqlite3
+disk I/O error` writing `archive/notebook.db` on the VM's folder mount; with
+the DB in /tmp it passes. ASan/UBSan kitchen sink: 33/0, no reports. The two
+new `TestNestedHealsKeepTheirOwnRecord` tests fail against HEAD's
+`heal_order.py`/`scope.py`/`syntax.py` and pass now, so they catch the bug.
+
+- [ ] Unstage both `7-refix-node/{signatures,tests}/oracleJdk-27.jdk` trees
+      (772 files, a full JDK twice) before committing; they are already gone
+      from disk. `signatures/` is in package.json `files`, so it would also
+      ship to npm. Add `*.jdk/` to `.gitignore`.
+- [ ] `repair.py` `get_registry() -> Optional[RepairRegistry]` is wrong: it
+      never returns None, and `scope.py:698` / `syntax.py:1722` call
+      `.archive_repair` on it directly. Revert to `-> RepairRegistry`.
+- [x] `heal_parity/cases.tsv` has nested heals. A primary or fallback may be
+      `heal/<expr>/<strategy>/<fallback>`, the fallback part recursive; Python
+      (`_expr`, `_fallback`), Java (`nestedHeal`) and C (`nested_heal`) build it.
+      Nine cases: a heal in a fallback that substitutes, falls back, keeps, goes
+      two deep, never runs, or calls `f(0)`; and a heal as the primary that the
+      outer heal keeps, or does not trust at 112. Existing 24 cases build the
+      same source as before. Against HEAD's `heal_order.py`/`scope.py`/
+      `syntax.py` the new cases fail 10 Python-vs-Java checks (trace, events);
+      now Python and Java agree on all nine. heal_matrix under ASan/UBSan: 31
+      rows, no reports. — 2026-11-07
+- [x] `heal_parity_test.py` works in a fresh `build/heal-parity-*` per run. The
+      fixed `build/heal-parity` made every rerun die in `os.makedirs` wherever
+      the previous cleanup could not delete.
+- [x] **C reports the inner heal's action when a heal runs in a fallback.**
+      Owner: `tac-optimizer`. Failing: `heal_parity_test.py`, 5 checks, e.g.
+      `fb_heal_substitute: C agrees on the value, confidence and action` —
+      expected `1/112/FALLBACK` (Python and Java), got `1/112/SUBSTITUTE`.
+      Same in `fb_heal_fallback`, `fb_heal_keep` (got KEEP), `fb_heal_two_deep`,
+      `fb_heal_call`. Value and confidence agree. Cause: `OP_RECOVERY` sets
+      `ip->heal_action` for the outer heal, then the fallback block runs the
+      inner heal, which overwrites it; `ev_interp_heal_trace` returns the last
+      write. The lowered branch reads `OP_REPAIR_STATE` right after
+      `OP_RECOVERY`, so results are unaffected; only the reported outcome is
+      wrong. — closed 2026-11-08: `OP_REPAIR_RESTORE` (`tac.c`, `tac.h`) is
+      emitted at the end of a heal's fallback arm and records this heal's
+      outcome (FALLBACK) again, so the last write is the outer heal's.
+      `heal_parity_test.py` exits 0.
+- [ ] `notebook.py` `ARCHIVE` is hard-coded; allow an env override so the
+      suite can run where the repo sits on a mount sqlite cannot lock.
+- [ ] Root `probe.ever`, `probe_inferred.ever`, `heal_*.ever` are tracked
+      scratch, referenced nowhere.
+
 ## Closed since the last pass — verified in the code
 
 - [x] `ev_lower_module` no longer accepts an arena it discards. Signature is
@@ -134,7 +274,21 @@ treats *any* decreasing measure as anchored — depth handed out, not earned.
   directory instead of opening with `os.remove(DB)` — they now run where the
   repo's `.db` files are not deletable, which is how they failed before.
 
+- [x] **Go suites no longer depend on the home build cache.** Backends (17
+  checks), Verification oracle (1) and Finality (1) failed with `failed to
+  initialize build cache at ~/Library/Caches/go-build` under the sandbox, which
+  refuses that path. `tests/run_all.py` now defaults `GOCACHE` to `build/go-cache`
+  (gitignored) unless one is exported. With `GOCACHE` writable the three suites
+  passed: Backends 85/0/0, oracle 5/0/0, finality 8/0/0. — closed 2026-11-08
+  Gate on 2026-11-08, no environment overrides: 55 passed, 0 skipped, 0 failed.
+
 ## Open questions
+
+- Form path drops a confidence annotation at run time: an ATOM or
+  `ANN_CONF` with `confidence = 50` sets it on the returned EvReg copy in
+  `form_lower.c`, not on the emitted instruction, so `9@50 + 1` runs as 256.
+  Same before and after the dead-code pass. Is the instruction meant to carry
+  it (then `ev_emit_const`'s dest needs the value), or is ANN_CONF static-only?
 
 - `EV_ARENA_SLAB_SIZE` × `EV_ARENA_MAX_SLABS` caps a parse/execute cycle at
   4 MB with no partial release. A ceiling worth raising, or a limit worth
@@ -145,3 +299,13 @@ treats *any* decreasing measure as anchored — depth handed out, not earned.
   store *why* a crossing lost confidence, not only how much?
 - `8-finality` is new since the last pass and has no entry here. What does it
   own, and what is its gate?
+- FALLBACK carries the fallback literal's own confidence: `heal (z) using
+  ("p") fallback (5)` is `5 [256/256]`, and an enclosing heal KEEPs it. §9
+  says repairs never stack past the floor but is silent on FALLBACK. Is a
+  declared fallback meant to read as certain? (All three layers agree today.)
+
+- Should CLAUDE.md's verify block use `leaks` on macOS? AddressSanitizer's leak
+  check is unsupported here (`detect_leaks is not supported on this platform`),
+  so the ASan command shows no errors but not no leaks. `MallocStackLogging=1
+  leaks --atExit -- ./ks` reports 0 leaks for the kitchen sink on 2026-11-08, and
+  `1 leak for 64 total leaked bytes` on a deliberate leak, so it detects leaks here.

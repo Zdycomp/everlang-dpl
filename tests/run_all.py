@@ -25,6 +25,13 @@ ROOT = Path(__file__).parent.parent
 for _p in reversed([p for p in os.environ.get("EVER_TOOLCHAIN_PATH", "").split(os.pathsep) if p]):
     os.environ["PATH"] = os.path.expanduser(_p) + os.pathsep + os.environ["PATH"]
 
+# The Go suites share one build cache. Default it to build/ in the repo (gitignored,
+# writable by every suite) rather than the home cache, which a sandbox may refuse:
+# "failed to initialize build cache" failed three suites with no code defect. A
+# GOCACHE already exported still wins.
+os.environ.setdefault("GOCACHE", str(ROOT / "build" / "go-cache"))
+os.makedirs(os.environ["GOCACHE"], exist_ok=True)
+
 #: Exit code a suite uses to say "my toolchain is absent; I ran nothing".
 SKIP_EXIT = 77
 
@@ -92,6 +99,7 @@ SUITES = [
     ("Learn",           f"{sys.executable} 2-interpreter-python/test_learn.py", ()),
     ("RAG/MCP",        f"{sys.executable} tests/test_rag_mcp.py", ()),
     ("Invariants",     f"{sys.executable} tests/test_invariants.py", ()),
+    ("Anchor (SEMANTICS §8)", f"{sys.executable} tests/test_anchor.py", ()),
 ]
 
 

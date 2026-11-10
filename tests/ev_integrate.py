@@ -105,6 +105,7 @@ def run_backend_a(source: str) -> Tuple[List[str], int, Optional[str]]:
         from ir import _ast_to_ir, E_DEPTH_CEILING
         from scope import EvScope, make_global_scope, eval_node, SK
         from evalue import EValue, EvType
+        from runtime import eval_confidence
 
         def _parse_lenient(expr_src: str):
             ast, err = parse(expr_src)
@@ -156,7 +157,9 @@ def run_backend_a(source: str) -> Tuple[List[str], int, Optional[str]]:
                     continue
                 ir, _ = _parse_lenient(expr)
                 val = eval_node(ir, scope) if ir else EValue.void()
-                scope.set_var(name, val, conf=256)
+                # the confidence a binding earns, by the rule the front door uses
+                conf = eval_confidence(ir, scope) if ir else 0
+                scope.set_var(name, val, conf=conf)
                 continue
             m2 = re.match(r'^show\s+(\w+)$', line)
             if m2:
@@ -228,15 +231,9 @@ def _build_c_executor() -> Tuple[Optional[str], Optional[str]]:
                 ev_optimise(m->global_body);
                 EvInterp *ip=ev_interp_new(m);
                 EValue r=ev_interp_run(ip);
-                int16_t conf=256;
-                EvFunc *gb=m->global_body;
-                if(gb&&gb->nblocks>0){
-                    EvBlock *b=gb->blocks[gb->nblocks-1];
-                    for(int32_t j=b->len-1;j>=0;j--)
-                        if(!ev_reg_is_void(b->instrs[j].dest)){
-                            conf=b->instrs[j].dest.confidence;break;
-                        }
-                }
+                /* the confidence the value carried when it ran, not a build-time
+                   register confidence (which never saw a call's cap) */
+                int16_t conf=ev_interp_ret_conf(ip);
                 print_val(name,r,conf);
                 ev_interp_free(ip);ev_module_free(m);ev_arena_free(a);
             }
@@ -277,6 +274,7 @@ def run_backend_b(source: str) -> Tuple[List[str], int, Optional[str]]:
         from scope import EvScope, make_global_scope, eval_node
         from evalue import EValue, EvType
         import struct
+        from runtime import eval_confidence
 
         def _parse_lenient(expr_src):
             ast, err = parse(expr_src)
@@ -309,7 +307,9 @@ def run_backend_b(source: str) -> Tuple[List[str], int, Optional[str]]:
                     continue
                 ir = _parse_lenient(expr)
                 val = eval_node(ir, scope) if ir else EValue.void()
-                scope.set_var(name, val, conf=256)
+                # the confidence a binding earns, by the rule the front door uses
+                conf = eval_confidence(ir, scope) if ir else 0
+                scope.set_var(name, val, conf=conf)
                 continue
             m2 = re.match(r'^show\s+(\w+)$', line)
             if m2:
@@ -327,7 +327,10 @@ def run_backend_b(source: str) -> Tuple[List[str], int, Optional[str]]:
         for name in show_order:
             e = scope.lookup(name)
             val = e.value if e else EValue.void()
-            ir_bytes = ir_ser(_val_to_node(val))
+            node = _val_to_node(val)
+            # the confidence the binding earned, carried in the literal
+            node.confidence = e.confidence if e else 0
+            ir_bytes = ir_ser(node)
             packets.append((name, ir_bytes))
 
         if not packets:

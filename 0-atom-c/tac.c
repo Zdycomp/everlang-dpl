@@ -57,6 +57,7 @@ const char *ev_opcode_name(EvOpcode op) {
         case OP_CAUSE_CLOSE: return "CAUSE_CLOSE";
         case OP_NOTE:        return "NOTE";
         case OP_SETTLE:      return "SETTLE";
+        case OP_REPAIR_RESTORE: return "REPAIR_RESTORE";
         case OP_ERR:     return "ERR";
         default:         return "?";
     }
@@ -244,8 +245,11 @@ static EvInstr *_emit(EvBuilder *b, EvOpcode op, int32_t line) {
 }
 
 EvReg ev_emit_const(EvBuilder *b, EValue lit, int32_t line) {
+    return ev_emit_const_conf(b, lit, E_CERTAIN, line);   /* program constants are certain */
+}
+
+EvReg ev_emit_const_conf(EvBuilder *b, EValue lit, int16_t conf, int32_t line) {
     int32_t typ = lit.tag;
-    int16_t conf = E_CERTAIN;   /* program constants are certain */
     EvReg dest = ev_next_reg(b, typ, conf);
     EvInstr *ins = _emit(b, OP_CONST, line);
     if (!ins) return ev_reg_void();
@@ -306,6 +310,16 @@ EvReg ev_emit_repair_state(EvBuilder *b, int32_t line) {
     return dest;
 }
 
+/* The heal's own outcome (src0, EV_HEAL_*), re-recorded once its fallback has
+   run. A side effect with no value: dest stays void, so the dead-register pass
+   keeps it. */
+void ev_emit_repair_restore(EvBuilder *b, EvReg outcome, int32_t line) {
+    EvInstr *ins = _emit(b, OP_REPAIR_RESTORE, line);
+    if (!ins) return;
+    ins->src0 = outcome;
+    ins->src2 = ev_reg_void();
+}
+
 /* Cause frames. A heal names its primary's failure by the first failure noted
    while the primary runs, as the Python reference does. These emitters have
    no value of their own except the reason, so their destinations are void
@@ -340,8 +354,9 @@ void ev_emit_settle(EvBuilder *b, EvReg result, EvReg reason, int32_t line) {
 
 EvReg ev_emit_call(EvBuilder *b, const char *name,
                    EvReg *args, int32_t nargs, int32_t line) {
-    /* confidence of a call = min over all args (and fn itself unknown here) */
-    int16_t conf = E_CERTAIN;
+    /* confidence of a call = min over the function and its args. A definition
+       begins at INTAKE (SEMANTICS §4.1); C has no Examples yet, so it stays there. */
+    int16_t conf = E_INTAKE;
     for (int32_t i = 0; i < nargs; i++)
         if (args[i].confidence < conf) conf = args[i].confidence;
 
@@ -460,20 +475,20 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             return ev_reg_void();
 
         case EV_NODE_BOOL:
-            return ev_emit_const(b, ev_bool(n->lit.as_bool), n->line);
+            return ev_emit_const_conf(b, ev_bool(n->lit.as_bool), n->confidence, n->line);
 
         case EV_NODE_INT:
-            return ev_emit_const(b, ev_int(n->lit.as_int), n->line);
+            return ev_emit_const_conf(b, ev_int(n->lit.as_int), n->confidence, n->line);
 
         case EV_NODE_REAL:
-            return ev_emit_const(b, ev_real(n->lit.as_real), n->line);
+            return ev_emit_const_conf(b, ev_real(n->lit.as_real), n->confidence, n->line);
 
         case EV_NODE_TEXT:
             if (n->str && strlen(n->str) >= EV_INLINE_MAX) {
                 ev_lower_fail(b, "text literal exceeds the inline TEXT capacity");
                 return ev_reg_void();
             }
-            return ev_emit_const(b, ev_text(n->str ? n->str : ""), n->line);
+            return ev_emit_const_conf(b, ev_text(n->str ? n->str : ""), n->confidence, n->line);
 
         case EV_NODE_VAR:
             /* type and confidence unknown at lower time — resolved at runtime */
@@ -559,6 +574,10 @@ EvReg ev_lower_node(EvBuilder *b, const EvNode *n) {
             ev_emit_cause_open(b, n->line);
             EvReg fallback = ev_lower_node(b, n->children[2]);
             ev_emit_cause_drop(b, n->line);
+            /* A heal inside the fallback has recorded its own outcome by now, so
+               this heal's outcome (FALLBACK, the only one reaching this arm) is
+               recorded again, last. The trace reports it. */
+            ev_emit_repair_restore(b, state, n->line);
             ev_emit_store(b, phi_name, fallback, n->line);
             ev_emit_jump(b, merge_blk->id, n->line);
 
@@ -722,6 +741,21 @@ EvModule *ev_lower_module(const char *name, EvNode *root) {
  * OPTIMISATION PASSES
  * ───────────────────────────────────────────── */
 
+/* Which label a JUMP_IF takes for a given condition. Ever truthiness: a
+   bool is itself, a number is non-zero, text is non-empty. A z or
+   composite condition takes neither arm. The interpreter and the
+   dead-code pass both decide through this one function, so a folded
+   branch cannot pick a different arm from the one the run would take. */
+static int32_t _jump_if_label(const EvInstr *ins, const EValue *cond) {
+    switch (cond->tag) {
+        case EV_BOOL: return cond->body.as_bool       ? ins->true_label : ins->false_label;
+        case EV_INT:  return (cond->body.as_int != 0)  ? ins->true_label : ins->false_label;
+        case EV_REAL: return (cond->body.as_real != 0.0) ? ins->true_label : ins->false_label;
+        case EV_TEXT: return (cond->text[0] != '\0')   ? ins->true_label : ins->false_label;
+        default:      return ins->unknown_label;
+    }
+}
+
 /* Pass 1: constant folding — fold binary ops where both sources are CONST */
 int ev_pass_const_fold(EvFunc *f) {
     int changes = 0;
@@ -734,11 +768,12 @@ int ev_pass_const_fold(EvFunc *f) {
 
             /* Find preceding CONST instrs for src0 and src1 */
             EValue *cv0 = NULL, *cv1 = NULL;
+            int16_t cf0 = E_CERTAIN, cf1 = E_CERTAIN;
             for (int32_t ji = 0; ji < ii; ji++) {
                 EvInstr *prev = &blk->instrs[ji];
                 if (prev->op != OP_CONST) continue;
-                if (prev->dest.id == ins->src0.id) cv0 = &prev->literal;
-                if (prev->dest.id == ins->src1.id) cv1 = &prev->literal;
+                if (prev->dest.id == ins->src0.id) { cv0 = &prev->literal; cf0 = prev->dest.confidence; }
+                if (prev->dest.id == ins->src1.id) { cv1 = &prev->literal; cf1 = prev->dest.confidence; }
             }
             if (!cv0 || !cv1) continue;
             if (cv0->tag != EV_INT && cv0->tag != EV_REAL) continue;
@@ -774,7 +809,8 @@ int ev_pass_const_fold(EvFunc *f) {
                 ins->op      = OP_CONST;
                 ins->literal = folded;
                 ins->dest.type = folded.tag;
-                ins->dest.confidence = E_CERTAIN;
+                /* a fold is no more certain than its least certain operand */
+                ins->dest.confidence = (cf0 < cf1) ? cf0 : cf1;
                 changes++;
             }
         }
@@ -782,7 +818,126 @@ int ev_pass_const_fold(EvFunc *f) {
     return changes;
 }
 
-/* Pass 2: dead-register elimination */
+/* Pass 2: dead-code elimination — the control-flow half of folding.
+   Folding turns `1 < 2` into a CONST, but the JUMP_IF on it and the arm
+   it can never take survive. Two steps, each one answer-preserving:
+
+   (a) A JUMP_IF whose condition is a CONST defined earlier in the same
+       block always goes the same way, so it becomes a JUMP to that arm,
+       chosen by _jump_if_label (a z condition goes to the unknown arm,
+       as it does at run time). Registers are assigned once, so the CONST
+       is the only value the condition can hold.
+   (b) A block no longer reachable from block 0 is cleared. Control moves
+       only through JUMP, JUMP_IF and HEAL, and a block with no terminator
+       ends the function, so following those edges finds every block the
+       interpreter can enter.
+
+   HEAL is never folded: whether a heal trusts its primary depends on
+   confidence at run time. A cleared instruction loses its operands as
+   well as its opcode, so they stop counting as uses and the dead-register
+   pass that runs next removes what fed them — the condition's CONST
+   included. Block ids are labels, so blocks are emptied, never removed. */
+static void _instr_clear(EvInstr *ins) {
+    ins->op   = OP_NOP;
+    ins->dest = ins->src0 = ins->src1 = ins->src2 = ev_reg_void();
+    ins->literal = ev_void();
+    ins->name  = NULL;
+    ins->args  = NULL;
+    ins->nargs = 0;
+    ins->keys  = NULL;
+    ins->true_label = ins->false_label = ins->unknown_label = -1;
+}
+
+int ev_pass_dead_code(EvFunc *f) {
+    if (!f || f->nblocks <= 0) return 0;
+    int changes = 0;
+
+    /* (a) fold constant branches */
+    for (int32_t bi = 0; bi < f->nblocks; bi++) {
+        EvBlock *blk = f->blocks[bi];
+        for (int32_t ii = 0; ii < blk->len; ii++) {
+            EvInstr *ins = &blk->instrs[ii];
+            if (ins->op != OP_JUMP_IF || ev_reg_is_void(ins->src0)) continue;
+            const EvInstr *def = NULL;
+            for (int32_t ji = ii - 1; ji >= 0; ji--)
+                if (blk->instrs[ji].dest.id == ins->src0.id) {
+                    def = &blk->instrs[ji];
+                    break;
+                }
+            /* a literal with an earned confidence is not folded: taking the
+               branch would drop that confidence from the path */
+            if (!def || def->op != OP_CONST || def->dest.confidence != E_CERTAIN) continue;
+            int32_t lbl = _jump_if_label(ins, &def->literal);
+            if (lbl < 0 || lbl >= f->nblocks) continue; /* leave as the run would see it */
+            int32_t line = ins->line;
+            _instr_clear(ins);
+            ins->op = OP_JUMP;
+            ins->true_label = lbl;
+            ins->line = line;
+            changes++;
+        }
+    }
+
+    /* (b) clear what block 0 can no longer reach. The scratch comes from
+       the function's arena (ir.h RULE 1): a few bytes per block, zeroed,
+       released with the module. Out of arena, skip this step — keeping a
+       dead block is never wrong. */
+    unsigned char *seen = (unsigned char*)ev_arena_alloc(f->arena, (size_t)f->nblocks);
+    int32_t *work = (int32_t*)ev_arena_alloc(f->arena, (size_t)f->nblocks * sizeof(int32_t));
+    if (!seen || !work) return changes;
+    int32_t top = 0;
+    seen[0] = 1;
+    work[top++] = 0;
+    while (top > 0) {
+        EvBlock *blk = f->blocks[work[--top]];
+        for (int32_t ii = 0; ii < blk->len; ii++) {
+            const EvInstr *ins = &blk->instrs[ii];
+            int32_t to[3];
+            int32_t nto = 0;
+            if (ins->op == OP_JUMP) {
+                to[nto++] = ins->true_label;
+            } else if (ins->op == OP_JUMP_IF) {
+                to[nto++] = ins->true_label;
+                to[nto++] = ins->false_label;
+                to[nto++] = ins->unknown_label;
+            } else if (ins->op == OP_HEAL) {
+                to[nto++] = ins->true_label;
+                to[nto++] = ins->false_label;
+            }
+            for (int32_t k = 0; k < nto; k++)
+                if (to[k] >= 0 && to[k] < f->nblocks && !seen[to[k]]) {
+                    seen[to[k]] = 1;
+                    work[top++] = to[k];
+                }
+        }
+    }
+    for (int32_t bi = 0; bi < f->nblocks; bi++) {
+        if (seen[bi]) continue;
+        EvBlock *blk = f->blocks[bi];
+        for (int32_t ii = 0; ii < blk->len; ii++)
+            if (blk->instrs[ii].op != OP_NOP) {
+                int32_t line = blk->instrs[ii].line;
+                _instr_clear(&blk->instrs[ii]);
+                blk->instrs[ii].line = line;
+                changes++;
+            }
+    }
+    return changes;
+}
+
+/* Pass 3: dead-register elimination */
+/* A parameter's LOAD in the entry block is where interp_func binds the
+   argument (it scans block 0 for a LOAD named after each parameter).
+   Every reference in the body emits a LOAD of its own, so the binding
+   LOAD often has no register use — but removing it unbinds the
+   parameter, and a body that reads it only in a later block gets z. */
+static int _is_param_load(const EvFunc *f, const EvInstr *ins) {
+    if (ins->op != OP_LOAD || !ins->name) return 0;
+    for (int32_t i = 0; i < f->nparam; i++)
+        if (f->params[i] && strcmp(f->params[i], ins->name) == 0) return 1;
+    return 0;
+}
+
 /* Build a use-count array for each register id */
 int ev_pass_dead_regs(EvFunc *f) {
     /* count up to reg_counter registers */
@@ -817,6 +972,7 @@ int ev_pass_dead_regs(EvFunc *f) {
             if (ev_reg_is_void(ins->dest)) continue;
             if (ins->op == OP_CALL) continue; /* calls may have side-effects */
             if (ins->op == OP_STORE || ins->op == OP_DEF_FN) continue;
+            if (bi == 0 && _is_param_load(f, ins)) continue;
             if (uses[ins->dest.id] == 0) {
                 ins->op = OP_NOP;
                 changes++;
@@ -827,7 +983,7 @@ int ev_pass_dead_regs(EvFunc *f) {
     return changes;
 }
 
-/* Pass 3: confidence propagation. A computed register starts at its
+/* Pass 4: confidence propagation. A computed register starts at its
    build-time confidence and can only fall: it takes the minimum of its
    own value and every source. */
 int ev_pass_conf_prop(EvFunc *f) {
@@ -841,7 +997,7 @@ int ev_pass_conf_prop(EvFunc *f) {
             EvInstr *ins = &blk->instrs[ii];
             if (ev_reg_is_void(ins->dest)) continue;
             if (ins->op == OP_CONST)
-                conf[ins->dest.id] = E_CERTAIN;
+                conf[ins->dest.id] = ins->dest.confidence;
             else if (ins->op == OP_LOAD)
                 conf[ins->dest.id] = E_INTAKE;
             else
@@ -885,6 +1041,7 @@ int ev_pass_conf_prop(EvFunc *f) {
 int ev_optimise(EvFunc *f) {
     int total = 0;
     total += ev_pass_const_fold(f);
+    total += ev_pass_dead_code(f);
     total += ev_pass_dead_regs(f);
     total += ev_pass_conf_prop(f);
     return total;
@@ -956,6 +1113,10 @@ struct EvInterp {
     int32_t      heal_action;      /* EV_HEAL_* outcome of the last repair       */
     int16_t      heal_conf;        /* confidence of a substituted repair, else 0 */
 };
+
+int16_t ev_interp_ret_conf(const EvInterp *ip) {
+    return ip ? ip->ret_conf : 0;
+}
 
 EvHealTrace ev_interp_heal_trace(const EvInterp *ip) {
     EvHealTrace t = { 0, EV_HEAL_KEEP, 0 };
@@ -1271,6 +1432,11 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                     }
                     res = interp_func(ip, callee, call_args, call_conf, na, depth+1);
                     rc  = ip->ret_conf;
+                    /* A definition is a claim: it begins at INTAKE, and a call is
+                       no more certain than its function (SEMANTICS §4.1, §4.3).
+                       Examples and anchors are not in C yet, so every user
+                       function is capped here. */
+                    if (rc > E_INTAKE) rc = E_INTAKE;
                     break;
                 }
 
@@ -1290,18 +1456,10 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                     goto next_block;
 
                 case OP_JUMP_IF: {
-                    /* Ever truthiness: a bool is itself, a number is
-                       non-zero, text is non-empty. A z or composite
-                       condition takes neither arm. */
+                    /* truthiness lives in _jump_if_label, shared with the
+                       dead-code pass: z or composite takes neither arm */
                     EValue cond = reg_get(ip, ins->src0);
-                    int32_t lbl;
-                    switch (cond.tag) {
-                        case EV_BOOL: lbl = cond.body.as_bool ? ins->true_label : ins->false_label; break;
-                        case EV_INT:  lbl = (cond.body.as_int != 0) ? ins->true_label : ins->false_label; break;
-                        case EV_REAL: lbl = (cond.body.as_real != 0.0) ? ins->true_label : ins->false_label; break;
-                        case EV_TEXT: lbl = (cond.text[0] != '\0') ? ins->true_label : ins->false_label; break;
-                        default:      lbl = ins->unknown_label; break;
-                    }
+                    int32_t lbl = _jump_if_label(ins, &cond);
                     if (lbl >= 0 && lbl < f->nblocks)
                         next = f->blocks[lbl];
                     goto next_block;
@@ -1365,6 +1523,13 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                 case OP_REPAIR_STATE:
                     res = ev_int(ip->heal_action);
                     rc  = E_INTAKE;
+                    break;
+
+                case OP_REPAIR_RESTORE:
+                    /* only the fallback arm emits this, and that arm's outcome
+                       is EV_HEAL_FALLBACK, which carries no confidence */
+                    ip->heal_action = (int32_t)reg_get(ip, ins->src0).body.as_int;
+                    ip->heal_conf   = 0;
                     break;
 
                 case OP_CAUSE_OPEN:

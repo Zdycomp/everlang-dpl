@@ -14,8 +14,8 @@ every stored error. C must agree on the value, the confidence and the action.
 A disagreement is a failed check: the layers do not implement the same
 process, and the one that is wrong has to be fixed.
 
-Work happens under build/heal-parity, not the system temp directory, because
-some sandboxes deny that. It is removed when the run ends.
+Work happens under a fresh build/heal-parity-* directory, not the system temp
+directory, because some sandboxes deny that. It is removed when the run ends.
 
 Codric Enterprise · Ricky (Dreid) · 2026
 """
@@ -26,11 +26,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PARITY = os.path.join(HERE, "heal_parity")
-WORK = os.path.join(ROOT, "build", "heal-parity")
+# Each run gets a fresh directory here. A fixed path broke every later run on a
+# mount where the cleanup could not delete: makedirs met the last run's files.
+BUILD = os.path.join(ROOT, "build")
 sys.path.insert(0, os.path.join(ROOT, "2-interpreter-python"))
 
 from repair import RepairRegistry, use_registry  # noqa: E402
@@ -71,31 +74,50 @@ def prepare_archives(prepared):
                 os.path.join(refix, "repairs.jsonl"))
 
 
+def _expr(expr, pre):
+    """The .ever text for one primary token; adds the bindings it needs to pre.
+
+    A token is int:N, div:A:B, nested:A:B, call:B, zvar, or a nested heal
+    heal/<token>/<strategy>/<fallback>, whose fallback is itself a term."""
+    if expr.startswith("heal/"):
+        _, inner, strategy, fallback = expr.split("/", 3)
+        return (f'heal ({_expr(inner, pre)}) using ("{strategy}") '
+                f'fallback ({_fallback(fallback, pre)})')
+    if expr.startswith("int:"):
+        return expr[4:]
+    if expr.startswith("div:"):
+        _, a, _b = expr.split(":")
+        pre["zero"] = "let zero = 0"
+        return f"({a} / zero)"
+    if expr.startswith("nested:"):
+        _, a, _b = expr.split(":")
+        pre["zero"] = "let zero = 0"
+        return f"(({a} / zero) + 1)"
+    if expr.startswith("call:"):
+        pre["f"] = "def f(x) = 10 / x"
+        return f"f({expr[5:]})"
+    if expr == "zvar":
+        pre["x"] = "let x = z"
+        return "x"
+    raise ValueError(expr)
+
+
+def _fallback(fallback, pre):
+    """A fallback is an integer, z, or a nested heal."""
+    if fallback.startswith("heal/"):
+        return _expr(fallback, pre)
+    return fallback
+
+
 def source_for(case):
     """The .ever program for one case."""
-    expr = case["expr"]
-    pre = ""
-    if expr.startswith("div:") or expr.startswith("nested:"):
-        pre = "let zero = 0\n"
-    if expr.startswith("int:"):
-        e = expr[4:]
-    elif expr.startswith("div:"):
-        _, a, _b = expr.split(":")
-        e = f"({a} / zero)"
-    elif expr.startswith("nested:"):
-        _, a, _b = expr.split(":")
-        e = f"(({a} / zero) + 1)"
-    elif expr.startswith("call:"):
-        pre = "def f(x) = 10 / x\n"
-        e = f"f({expr[5:]})"
-    elif expr == "zvar":
-        pre = "let x = z\n"
-        e = "x"
-    else:
-        raise ValueError(expr)
+    pre = {}
+    e = _expr(case["expr"], pre)
+    fb = _fallback(case["fallback"], pre)
+    head = "".join(line + "\n" for line in pre.values())
     if case["op"] == "heal":
-        return f'{pre}let res = heal ({e}) using ("{case["strategy"]}") fallback ({case["fallback"]})\nshow res'
-    return f'{pre}let res = learn ({e}) using ("{case["strategy"]}") fix ({case["fallback"]})\nshow res'
+        return f'{head}let res = heal ({e}) using ("{case["strategy"]}") fallback ({fb})\nshow res'
+    return f'{head}let res = learn ({e}) using ("{case["strategy"]}") fix ({fb})\nshow res'
 
 
 def cell(v):
@@ -188,17 +210,18 @@ def c_rows(prepared, work):
 
 
 def main():
-    shutil.rmtree(WORK, ignore_errors=True)
-    prepared = os.path.join(WORK, "prepared")
+    os.makedirs(BUILD, exist_ok=True)
+    work = tempfile.mkdtemp(prefix="heal-parity-", dir=BUILD)
+    prepared = os.path.join(work, "prepared")
     os.makedirs(prepared)
     try:
         print("\n=== Heal parity — Python, Java and C, one process ===\n")
         prepare_archives(prepared)
         cases = read_cases()
 
-        py = {c["name"]: python_row(c, prepared, WORK) for c in cases}
-        jv = java_rows(prepared, WORK)
-        cv = c_rows(prepared, WORK)
+        py = {c["name"]: python_row(c, prepared, work) for c in cases}
+        jv = java_rows(prepared, work)
+        cv = c_rows(prepared, work)
 
         for c in cases:
             n = c["name"]
@@ -225,7 +248,7 @@ def main():
         print(f"\n=== Heal parity: {passed} passed, {failed} failed ===\n")
         return 0 if failed == 0 else 1
     finally:
-        shutil.rmtree(WORK, ignore_errors=True)
+        shutil.rmtree(work, ignore_errors=True)
 
 
 if __name__ == "__main__":

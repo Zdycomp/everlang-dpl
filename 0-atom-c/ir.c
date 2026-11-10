@@ -133,6 +133,7 @@ EvNode *ev_node_new(EvArena *a, EvNodeKind kind, int32_t line) {
     n->kind  = kind;
     n->line  = line;
     n->arena = a;
+    n->confidence = 256;   /* E_CERTAIN: a literal is certain unless told otherwise */
     return n;
 }
 
@@ -352,11 +353,18 @@ static void wr_str(uint8_t *buf, int32_t *p, const char *s) {
     memcpy(buf + *p, s, n); *p += n;
 }
 
+/* Literal kinds carry their confidence on the wire (ir.py _LITERAL_KINDS). */
+static int is_literal_kind(EvNodeKind k) {
+    return k == EV_NODE_BOOL || k == EV_NODE_INT ||
+           k == EV_NODE_REAL || k == EV_NODE_TEXT;
+}
+
 int32_t ev_ir_serialise(const EvNode *n, uint8_t *buf, int32_t cap) {
     if (!n || !buf || cap < 16) return -1;
     int32_t p = 0;
     WR8(buf, p, (uint8_t)n->kind);
     WR32(buf, p, n->line);
+    if (is_literal_kind(n->kind)) WR16(buf, p, (uint16_t)n->confidence);
 
     switch (n->kind) {
         case EV_NODE_BOOL: WR8(buf, p, (uint8_t)n->lit.as_bool);  break;
@@ -435,6 +443,7 @@ EvNode *ev_ir_deserialise(const uint8_t *buf, int32_t len,
     int32_t    line = (int32_t)rd32(buf, &p);
     EvNode *n = ev_node_new(a, kind, line);
     if (!n) return NULL;
+    if (is_literal_kind(kind)) n->confidence = (int16_t)rd16(buf, &p);
 
     switch (kind) {
         case EV_NODE_BOOL: n->lit.as_bool = rd8(buf, &p); break;
