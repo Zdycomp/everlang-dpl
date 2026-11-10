@@ -426,6 +426,7 @@ def _fix_semicolons(src: str, language: str) -> FixResult:
     rust = language == "rust"
     fixes: List[Fix] = []
     out = list(lines)
+    found: List[Tuple[int, int, bool]] = []   # line index, insert column, ASI hazard
 
     for i, (raw, m) in enumerate(zip(out, masked)):
         s = m.rstrip()
@@ -461,13 +462,26 @@ def _fix_semicolons(src: str, language: str) -> FixResult:
            re.search(r'[=]\s*[^=]', s) or \
            re.match(r'^\s*\w[\w.]*\s*\(.*\)\s*$', s) or \
            re.match(r'^\s*(var|let|const|val)\s+\w', s):
-            fixes.append(Fix(i + 1, "missing ';'", "';' appended",
-                             "this line ends a simple statement, and "
-                             "the language requires a terminator",
-                             form="SEMI_APPEND", kind=1,
-                             name="missing_semicolon"))
-            # Insert at the end of the code, ahead of any trailing comment.
-            out[i] = raw[:len(s)] + ";" + raw[len(s):]
+            found.append((i, len(s), nxt[:1] in ("(", "[", "`")))
+
+    # JavaScript inserts the terminator itself, so a file written without
+    # semicolons is valid as it stands and is left alone. Where the lines
+    # lacking one outnumber the lines that have one, only a line the next
+    # one would swallow (it starts with ( [ or `) is still healed: that is
+    # the one place the omission changes what the program means.
+    if language == "javascript":
+        have = sum(1 for m in masked if m.rstrip().endswith(";"))
+        if len(found) > have:
+            found = [f for f in found if f[2]]
+
+    for i, col, _ in found:
+        fixes.append(Fix(i + 1, "missing ';'", "';' appended",
+                         "this line ends a simple statement, and "
+                         "the language requires a terminator",
+                         form="SEMI_APPEND", kind=1,
+                         name="missing_semicolon"))
+        # Insert at the end of the code, ahead of any trailing comment.
+        out[i] = out[i][:col] + ";" + out[i][col:]
 
     return FixResult(_join(out, src), fixes)
 

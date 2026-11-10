@@ -117,14 +117,21 @@ with tempfile.TemporaryDirectory() as tmp:
 
 
 # ═══════════════════════════════════════════════
-print("\n[javascript: missing semicolons]")
-bad = "let x = 5\nlet y = 10\nconsole.log(x + y)\n"
+print("\n[javascript: semicolon-free code is left alone]")
+clean = "let x = 5\nlet y = 10\nconsole.log(x + y)\n"
 with tempfile.TemporaryDirectory() as tmp:
-    r0, out0 = runs_node(bad, tmp)
-    ok("original runs OK via ASI (sanity: JS tolerates this one)", True)
+    r0, out0 = runs_node(clean, tmp)
+    ok("original runs via ASI (sanity)", r0 and "15" in out0, out0)
+    result = fix(clean, "javascript")
+    ok("nothing is appended to a file written without semicolons",
+       result.code == clean and not result.fixes, str(result.fixes))
+
+print("\n[javascript: a missing semicolon in a file that uses them]")
+bad = "let x = 5;\nlet y = 10\nconsole.log(x + y);\n"
+with tempfile.TemporaryDirectory() as tmp:
     result = fix(bad, "javascript")
-    ok("fixer found the missing terminators", len(result.fixes) >= 2,
-       str(result.fixes))
+    ok("exactly the one missing terminator is found",
+       [f.line for f in result.fixes] == [2], str(result.fixes))
     r1, out1 = runs_node(result.code, tmp)
     ok("healed program still runs and computes correctly",
        r1 and "15" in out1, out1)
@@ -136,6 +143,8 @@ with tempfile.TemporaryDirectory() as tmp:
     r0, out0 = runs_node(bad, tmp)
     ok("this shape genuinely fails without a semicolon", r0 is False, out0)
     result = fix(bad, "javascript")
+    ok("only the swallowed line is healed",
+       [f.line for f in result.fixes] == [1], str(result.fixes))
     r1, out1 = runs_node(result.code, tmp)
     ok("healed version runs", r1, out1)
 
