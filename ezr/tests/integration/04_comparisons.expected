@@ -1,0 +1,5 @@
+lt = false [256/256]
+gt = true [256/256]
+eq = true [256/256]
+ne = true [256/256]
+le = true [256/256]

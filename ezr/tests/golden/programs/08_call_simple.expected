@@ -1,0 +1,2 @@
+AST:Call(f,[Num(42.0)])
+AST:Call(g,[Num(1.0),Num(2.0)])

@@ -1,0 +1,135 @@
+(* ====================================================================
+   EZR — CORE GRAMMAR
+
+   Emitted from the chart parser's rule table by
+   grammar_doc.py. Do not edit: edit the rules and
+   re-emit, or the document and the parser part company.
+
+   Closes the first entry of SEMANTICS.md section 7,
+   "Formal grammar (EBNF) | parsing is regex-based".
+
+   Codric Enterprise
+   ==================================================================== *)
+
+(* ---- syntax ---------------------------------------- *)
+
+program        = definitions
+                 | expression
+                 ;
+
+definitions    = definition
+                 | definitions , definition
+                 ;
+
+definition     = "def" , name , "(" , ")" , "=" , expression
+                 | "def" , name , "(" , parameters , ")" , "=" , expression
+                 ;
+
+parameters     = name
+                 | parameters , "," , name
+                 ;
+
+expression     = conditional
+                 | binding
+                 | comparison
+                 ;
+
+conditional    = "if" , expression , "then" , expression , "else" , expression
+                 ;
+
+binding        = "let" , name , "=" , expression , "in" , expression
+                 ;
+
+comparison     = additive , compare-op , additive
+                 | additive
+                 ;
+
+additive       = additive , "+" , multiplicative
+                 | additive , "-" , multiplicative
+                 | multiplicative
+                 ;
+
+multiplicative = multiplicative , "*" , unary
+                 | multiplicative , "/" , unary
+                 | unary
+                 ;
+
+unary          = "-" , unary
+                 | atom
+                 ;
+
+atom           = number
+                 | string
+                 | "true"
+                 | "false"
+                 | "(" , expression , ")"
+                 | name , "(" , ")"
+                 | name , "(" , arguments , ")"
+                 | "[" , "]"
+                 | "[" , arguments , "]"
+                 | name
+                 ;
+
+arguments      = expression
+                 | arguments , "," , expression
+                 ;
+
+(* ---- lexis ----------------------------------------- *)
+
+keyword        = "def" | "else" | "false" | "if" | "in" | "let" | "then" | "true" ;
+name           = ( letter | "_" ) , { letter | digit | "_" }
+                 (* and not a keyword *) ;
+number         = digit , { digit } , [ "." , digit , { digit } ] ;
+string         = '"' , { character - '"' - newline } , '"' ;
+boolean        = "true" | "false" ;
+comment        = "#" , { character - newline } ;
+
+(* ---- token kinds ----------------------------------- *)
+(*  Measured, not asserted: every kind below is one all   *)
+(*  four scanners assign. Which kind carries a bare '<'   *)
+(*  was the language's first open question.               *)
+
+   CMP     <  >  <=  >=  ==  !=
+   COMMA   ,
+   EQ      =
+   LBRACK  [
+   LPAR    (
+   OP      +  -  *  /
+   RBRACK  ]
+   RPAR    )
+   NUM     a number
+   STR     a string
+   NAME    a name that is not a keyword
+   KW      def  else  false  if  in  let  then  true
+   EOF     end of input
+
+(* ---- settled questions ----------------------------- *)
+
+   chained_comparison = False
+       Does 'a < b < c' parse?
+       generation 0; doctrine (PIPELINE.md, section 2): compare := additive [ CMP additive ] — the brackets are optional-once, not repeated, so 'a < b < c' is outside the published grammar.
+
+   cmp_kind = 'CMP'
+       Which token kind carries a bare '<' or '>'?
+       generation 0; doctrine (PIPELINE.md, section 2): compare := additive [ CMP additive ] — the published grammar names CMP as the class of the comparison operator, so a bare '<' that scans as OP cannot satisfy the rul
+
+   multi_definition = True
+       May one source text carry more than one definition?
+       generation 0; coverage gap: more than one definition in one namespace. Runtime: Lambda.globals holds ['double', 'triple'] simultaneously; double(4)=8, triple(4)=12. Syntax: no front end accepts 'def double(n) = n *
+
+   reserved_words = ['def', 'else', 'false', 'if', 'in', 'let', 'then', 'true']
+       Which words may an EZR program not use as a name?
+       generation 0; doctrine (PIPELINE.md, section 2): 'This is the whole language. Anything not derivable here is outside the grammar.' The rule is that a word is reserved when the grammar reaches it, and nothing else -
+
+   trailing_comma = False
+       May an argument or parameter list end with a comma?
+       generation 0; consensus: 16 of 16 independent witnesses, threshold pi=3 and two thirds
+
+   trailing_expression = False
+       May a run of definitions be followed by an expression?
+       generation 0; finding (law unambiguous): Allowing 'program := deflist [expr]' makes the grammar ambiguous. 'def f(n) = 1 - 1' has two derivations: a body of '1 - 1', or a body of '1' followed by the expression '- 1
+
+   unterminated_string_defect = 'unbounded'
+       Which binding defect classifies a string with no closing quote?
+       generation 0; doctrine (PIPELINE.md and SEMANTICS.md 1): PIPELINE.md classifies running out of input ('1 +') as Z(unbounded) and an illegal character ('a $ b') as Z(misbound). A string with no closing quote ran out
+

@@ -1,0 +1,7 @@
+let score = 85
+ever grade  = if score >= 90 then "A" else "B"
+ever passed = if score >= 60 then true else false
+ever bonus  = if score > 80 then score + 5 else score
+show grade
+show passed
+show bonus

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# The EZR runner, layer 5.
+#
+#   ./ezr program.ezr
+#   ./ezr -e 'let x = 5 in x + 1'
+#   echo 'def main() = 6 * 7' | ./ezr -
+#
+# JAVA_TOOL_OPTIONS is cleared for this one invocation. Some environments set
+# it to carry proxy and truststore settings, and the JVM announces it on
+# stderr at every start, which would corrupt the output that differential.py
+# compares against the Python runner. The EZR runtime opens no sockets, so
+# dropping it costs nothing.
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+[ -d "$DIR/out" ] || "$DIR/build.sh" >/dev/null
+# `env -u` removes it; setting it empty still makes the JVM print the banner.
+exec env -u JAVA_TOOL_OPTIONS java -cp "$DIR/out" com.codric.ezr.Ezr "$@"

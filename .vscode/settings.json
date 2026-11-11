@@ -1,0 +1,35 @@
+{
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [],
+  "python.analysis.extraPaths": [
+    "everlang_standalone",
+    "4-archive-sql",
+    "ezr/2-interpreter-python",
+    "ezr/7-forge"
+  ],
+  "python.terminal.activateEnvironment": false,
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/*.o": true,
+    "**/.pytest_cache": true
+  },
+  "search.exclude": {
+    "1-phase-cpp/bin": true,
+    "5-runtime-java/target": true,
+    "ezr/5-runtime-java/out": true
+  },
+  "files.associations": {
+    "*.ever": "plaintext",
+    "*.ezr": "plaintext",
+    "*.ebnf": "plaintext"
+  },
+  "C_Cpp.default.cStandard": "c99",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/ezr/0-atom-c",
+    "${workspaceFolder}/1-phase-cpp/src"
+  ],
+  "java.configuration.updateBuildConfiguration": "automatic"
+}

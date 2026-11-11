@@ -1,0 +1,22 @@
+{
+  "name": "4Ever / Everlang",
+  "build": { "dockerfile": "Dockerfile" },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-vscode.cpptools",
+        "vscjava.vscode-java-pack",
+        "shopify.ruby-lsp"
+      ],
+      "settings": {
+        "java.jdt.ls.java.home": "/usr/lib/jvm/jdk-25",
+        "java.configuration.runtimes": [
+          { "name": "JavaSE-25", "path": "/usr/lib/jvm/jdk-25", "default": true }
+        ]
+      }
+    }
+  },
+  "postCreateCommand": "python3 run_all.py --skip-native"
+}

@@ -1,0 +1,9 @@
+include README_PyPI.md
+include INSTALLATION.md
+include SEMANTICS_PLAN.md
+include LICENSE
+include PROGRESS.md
+recursive-include everlang_standalone *.py
+recursive-include everlang_standalone/everlang/biocomputing README.md
+recursive-include everlang_standalone/everlang/transpiler README.md
+recursive-include everlang_standalone/everlang/core README.md

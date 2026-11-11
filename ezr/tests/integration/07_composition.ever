@@ -1,0 +1,12 @@
+def inc(n)  = n + 1
+def dec(n)  = n - 1
+def double(n) = n * 2
+def halve(n)  = n / 2
+
+ever pipeline = double(inc(dec(21)))
+ever nested   = inc(inc(inc(inc(0))))
+ever chain    = halve(double(21))
+
+show pipeline
+show nested
+show chain

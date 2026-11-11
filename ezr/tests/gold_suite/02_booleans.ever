@@ -1,0 +1,19 @@
+# 02_booleans.ever
+# Boolean literals and comparison expressions.
+
+let x = 10
+let y = 3
+
+ever t1 = true
+ever f1 = false
+ever lt = x < y
+ever gt = x > y
+ever eq = x == x
+ever ne = x != y
+
+show t1
+show f1
+show lt
+show gt
+show eq
+show ne
