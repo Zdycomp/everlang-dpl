@@ -361,87 +361,67 @@ def fix_python(src: str) -> FixResult:
                              "have meant the comparison ==",
                              form="EQ_TO_CMP", kind=1,
                              name="equals_for_compare"))
-            for p in reversed(stray):
-                raw = raw[:p] + "==" + raw[p+1:]
-            out[i] = raw
+            out[i] = f"{indent}{kw} {healed_expr}:{tail}"
 
-    return FixResult(_join(out, src), fixes)
+    return FixResult("\n".join(out) + ("\n" if src.endswith("\n") else ""),
+                     fixes)
 
 
 # ═══════════════════════════════════════════════
-# C-FAMILY SHARED (JS / Rust / Java)
-# Missing statement-terminator semicolon. A ';' is appended only where
-# the line is a whole statement on its own: it starts and ends directly
-# inside a block (never inside ( ), [ ] or a data brace), and the next
-# line does not carry the expression on.
+# C-FAMILY SHARED (JS / Go / Rust / Java / Kotlin)
+# Missing statement-terminator semicolon, and stray = in a condition.
+# Each language's own comment/string syntax is passed in.
 # ═══════════════════════════════════════════════
 
-_HEADER_KW = re.compile(
-    r'^\s*(if|else|for|while|switch|func|fn|function|class|interface|'
-    r'struct|enum|impl|trait|package|import|@\w+|public\s+(class|interface)|'
-    r'private\s+(class|interface))\b')
-# A line starting with one of these continues the statement before it.
-_CONTINUES = re.compile(
-    r'^([.?:*/%&|^<>=,)\]{]|[+-](?![+-])|'
-    r'(else|where|as|instanceof|in|of|throws|extends|implements)\b)')
-_DANGLING = re.compile(
-    r'\b(new|typeof|instanceof|in|of|void|delete|throw|extends|case|else|'
-    r'do|as|await|yield)$')
-_LITERAL_BEFORE = {
-    "javascript": (set("=(,[?|&"),
-                   {"return", "const", "let", "var", "import", "export",
-                    "case", "typeof", "in", "of", "yield", "await", "new",
-                    "throw", "default"}),
-    "java":       (set("=(,[]"), {"return"}),
-    "rust":       (set("=(,[!"), set()),
-}
+_STMT_END = re.compile(r'[\w\)\]"\'`]\s*$')
+_BLOCK_ENDERS = re.compile(r'[{}]\s*$')
+_ALREADY_TERMINATED = re.compile(
+    r'[;,{}\(\[:]\s*$|^\s*(//|/\*|\*|#|@)|^\s*$')
+
+def _needs_semicolon(line: str) -> bool:
+    s = line.rstrip()
+    if not s:
+        return False
+    if _ALREADY_TERMINATED.search(s):
+        return False
+    if _BLOCK_ENDERS.search(s):
+        return False
+    # a line that is clearly a control-flow header, not a statement
+    if re.match(r'^\s*(if|else|for|while|switch|function|fn|func|'
+               r'class|interface|struct|enum|impl|package|import|'
+               r'public|private|protected|@\w+)\b.*[^;{}]$', s) \
+       and s.endswith((")",  "")) and "(" in s and not s.endswith(";"):
+        # heuristic guard: only treat as a statement if it looks like
+        # an assignment, call, or return — not a bare control header
+        if not re.search(r'^\s*(if|else|for|while|switch)\b', s):
+            return True
+        return False
+    return _STMT_END.search(s) is not None
 
 
-def _literal_brace(language: str):
-    chars, words = _LITERAL_BEFORE[language]
-    def is_literal(before: str, enclosing: str) -> bool:
-        if before == ":":   # `key: {` nests data; `case 1: {` opens a block
-            return enclosing in ("L", "(", "[")
-        return before in chars or before in words
-    return is_literal
-
-
-def _fix_semicolons(src: str, language: str) -> FixResult:
-    lines = _lines(src)
-    masked, dead, cut = _mask(lines, _SYNTAX[language])
-    broken = set(dead + cut)   # lines that end inside a string: not ours to fix
-    starts, ends = _contexts(masked, _literal_brace(language))
-    rust = language == "rust"
+def _fix_cfamily_semicolons(src: str, line_comment: str,
+                            block: Optional[Tuple[str, str]],
+                            eligible_kw: Tuple[str, ...]) -> FixResult:
+    lines = src.splitlines()
+    masked = _mask_strings_and_comments(lines, line_comment, block)
     fixes: List[Fix] = []
     out = list(lines)
-    found: List[Tuple[int, int, bool]] = []   # line index, insert column, ASI hazard
 
     for i, (raw, m) in enumerate(zip(out, masked)):
         s = m.rstrip()
-        if not s or i + 1 in broken:
+        if not s:
             continue
-        if starts[i] not in ("", "{") or ends[i] not in ("", "{"):
-            continue  # inside a call, an array or an object/struct literal
         if re.search(r'[;{}\(\[,:]\s*$', s):
             continue
-        if _HEADER_KW.match(s):
+        if re.match(r'^\s*(//|/\*|\*)', s):
             continue
-        if re.match(r'^\s*[.?:+\-/%&|^<>=,)\]}#]', s):
-            continue  # the tail of a longer expression, or an attribute
+        if re.match(r'^\s*(if|else|for|while|switch|func|fn|function|'
+                   r'class|interface|struct|enum|impl|package|import|'
+                   r'@\w+|public\s+(class|interface)|private\s+'
+                   r'(class|interface))\b', s):
+            continue
         if not re.search(r'[\w\)\]"\'`]\s*$', s):
             continue
-        if _DANGLING.search(s):
-            continue  # ends on a word that needs an operand
-        nxt = _next_code(masked, i)
-        if _CONTINUES.match(nxt):
-            continue  # the statement carries on to the next line
-        if rust:
-            if "$" in s or "=>" in s:
-                continue  # macro_rules body, or a match arm
-            if re.match(r'^\s*(pub(\([^)]*\))?\s+)?\w+\s*:(?!:)', s):
-                continue  # a struct field
-            if nxt.startswith("}") and not re.match(r'^\s*let\b', s):
-                continue  # a block's tail expression is its value
         # only fire for lines that look like a complete simple
         # statement: assignment, declaration, call, or return —
         # the same shape every C-family "missing semicolon" example
@@ -497,18 +477,20 @@ def fix_kotlin(src: str) -> FixResult:
 
 
 # ═══════════════════════════════════════════════
-# Bracket balance and unterminated strings — reported, never guessed,
-# for every language (SEMANTICS.md §9.4). Closing an unclosed bracket
-# or string requires knowing where the author intended it to end; that
-# is structure, not a slip, so Edapt states the imbalance precisely
-# instead of inventing a closer.
+# Bracket balance — reported, never guessed, for every language.
+# Closing an unclosed bracket requires knowing where the author
+# intended it to end; that is structure, not a slip, so Edapt states
+# the imbalance precisely instead of inventing a closing brace.
 # ═══════════════════════════════════════════════
 
-def diagnose_brackets(src: str, language: str) -> List[str]:
-    masked, unterminated, _ = _mask(_lines(src), _SYNTAX[language])
+def check_brackets(src: str, line_comment: str,
+                   block: Optional[Tuple[str, str]] = None) -> List[str]:
+    lines = src.splitlines()
+    masked = _mask_strings_and_comments(lines, line_comment, block)
     stack: List[Tuple[str, int]] = []
-    openers = set(_PAIRS.values())
-    problems = [f"line {n}: string is never closed" for n in unterminated]
+    pairs = {")": "(", "]": "[", "}": "{"}
+    openers = set(pairs.values())
+    problems = []
     for lineno, m in enumerate(masked, start=1):
         for ch in m:
             if ch in openers:
