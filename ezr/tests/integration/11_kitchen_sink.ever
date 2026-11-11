@@ -1,0 +1,91 @@
+# ── KITCHEN SINK: every surface construct Ever currently has ──
+# Companion to 0-atom-c/kitchen_sink.c. That file tests the runtime;
+# this one tests the LANGUAGE, written in the language.
+
+# ── data types: one binding of each ──
+let i_zero    = 0
+let i_neg     = -42
+let i_big     = 1000000
+let r_half    = 0.5
+let t_empty   = ""
+let t_words   = "Ever"
+let b_true    = true
+let b_false   = false
+ever unknown  = z
+
+# ── arithmetic, including identities and zero ──
+ever add_id   = i_big + 0
+ever mul_id   = 42 * 1
+ever mul_zero = 42 * 0
+ever sub_self = 42 - 42
+ever div_real = 1 / 2
+
+# ── every comparison operator, at and around equality ──
+ever lt_true  = 3 < 9
+ever lt_eq    = 3 < 3
+ever gt_true  = 9 > 3
+ever gte_eq   = 3 >= 3
+ever lte_eq   = 3 <= 3
+ever eq_neg   = -1 == -1
+ever neq_true = 3 != 9
+
+# ── functions: arity one, two, and composition ──
+def square(n)   = n * n
+def diff(a, b)  = a - b
+def inc(n)      = n + 1
+def dec(n)      = n - 1
+
+ever sq        = square(7)
+ever order     = diff(50, 8)
+ever order_rev = diff(8, 50)
+ever composed  = square(inc(dec(7)))
+ever chained   = inc(inc(inc(inc(38))))
+
+# ── branching: literal, expression, and nested on both arms ──
+ever br_lit    = if b_true then 42 else 0
+ever br_expr   = if 10 > 5 then 6 + 36 else 0
+ever br_mixed  = if b_false then 1 else 99   # both arms numeric — real type discipline
+ever br_nest_t = if true then (if false then 1 else 42) else 0
+ever br_nest_e = if false then 1 else (if true then 42 else 2)
+
+# ── recursion at the depth ceiling and one step past it ──
+def fact(n) = if n <= 1 then 1 else n * fact(n - 1)
+ever f1 = fact(1)
+ever f2 = fact(2)
+ever f3 = fact(3)
+ever f4 = fact(4)
+
+show i_zero
+show i_neg
+show r_half
+show t_empty
+show t_words
+show b_true
+show b_false
+show unknown
+show add_id
+show mul_id
+show mul_zero
+show sub_self
+show div_real
+show lt_true
+show lt_eq
+show gt_true
+show gte_eq
+show lte_eq
+show eq_neg
+show neq_true
+show sq
+show order
+show order_rev
+show composed
+show chained
+show br_lit
+show br_expr
+show br_mixed
+show br_nest_t
+show br_nest_e
+show f1
+show f2
+show f3
+show f4

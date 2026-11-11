@@ -1,0 +1,92 @@
+{
+  "note": "Written by the forge. Each entry is a question the language had left open and the generation that settled it.",
+  "questions": {
+    "chained_comparison": {
+      "asks": "Does 'a < b < c' parse?",
+      "answer": false,
+      "generation": 0,
+      "witnesses": [
+        "PIPELINE.md, section 2"
+      ],
+      "rationale": "doctrine (PIPELINE.md, section 2): compare := additive [ CMP additive ] \u2014 the brackets are optional-once, not repeated, so 'a < b < c' is outside the published grammar."
+    },
+    "cmp_kind": {
+      "asks": "Which token kind carries a bare '<' or '>'?",
+      "answer": "CMP",
+      "generation": 0,
+      "witnesses": [
+        "PIPELINE.md, section 2"
+      ],
+      "rationale": "doctrine (PIPELINE.md, section 2): compare := additive [ CMP additive ] \u2014 the published grammar names CMP as the class of the comparison operator, so a bare '<' that scans as OP cannot satisfy the rule the project already printed."
+    },
+    "multi_definition": {
+      "asks": "May one source text carry more than one definition?",
+      "answer": true,
+      "generation": 0,
+      "witnesses": [
+        "stage-4 runtime"
+      ],
+      "rationale": "coverage gap: more than one definition in one namespace. Runtime: Lambda.globals holds ['double', 'triple'] simultaneously; double(4)=8, triple(4)=12. Syntax: no front end accepts 'def double(n) = n * 2\\ndef triple(n) = n * 3' \u2014 the published rule is program := fndef | expr, one only. SEMANTICS.md 7 lists the module system as missing and describes the namespace it is missing from as 'one flat global namespace' \u2014 a namespace the runtime already populates and the grammar cannot address."
+    },
+    "reserved_words": {
+      "asks": "Which words may an EZR program not use as a name?",
+      "answer": [
+        "def",
+        "else",
+        "false",
+        "if",
+        "in",
+        "let",
+        "then",
+        "true"
+      ],
+      "generation": 0,
+      "witnesses": [
+        "PIPELINE.md, section 2"
+      ],
+      "rationale": "doctrine (PIPELINE.md, section 2): 'This is the whole language. Anything not derivable here is outside the grammar.' The rule is that a word is reserved when the grammar reaches it, and nothing else -- the incumbent reserved nineteen against a syntax that did not exist. Six when the core was frozen; eight now that `let ... in` is in the grammar. `let` was already in the incumbent's list, among the words the forge found unreachable, so this is that reservation finally earning itself."
+    },
+    "trailing_comma": {
+      "asks": "May an argument or parameter list end with a comma?",
+      "answer": false,
+      "generation": 0,
+      "witnesses": [
+        "L1-regex-master x P1-recdescent",
+        "L1-regex-master x P2-pratt",
+        "L1-regex-master x P3-shunting",
+        "L1-regex-master x P4-earley",
+        "L2-handrolled x P1-recdescent",
+        "L2-handrolled x P2-pratt",
+        "L2-handrolled x P3-shunting",
+        "L2-handrolled x P4-earley",
+        "L3-dfa x P1-recdescent",
+        "L3-dfa x P2-pratt",
+        "L3-dfa x P3-shunting",
+        "L3-dfa x P4-earley",
+        "L4-trie x P1-recdescent",
+        "L4-trie x P2-pratt",
+        "L4-trie x P3-shunting",
+        "L4-trie x P4-earley"
+      ],
+      "rationale": "consensus: 16 of 16 independent witnesses, threshold pi=3 and two thirds"
+    },
+    "trailing_expression": {
+      "asks": "May a run of definitions be followed by an expression?",
+      "answer": false,
+      "generation": 0,
+      "witnesses": [
+        "law:unambiguous"
+      ],
+      "rationale": "finding (law unambiguous): Allowing 'program := deflist [expr]' makes the grammar ambiguous. 'def f(n) = 1 - 1' has two derivations: a body of '1 - 1', or a body of '1' followed by the expression '- 1' under prefix minus. The chart parser reports overbound; the three deterministic parsers resolve it greedily and never mention it. Dropping the trailing expression removes the ambiguity and still closes the coverage gap, which was about holding several definitions in one namespace and never about a trailing expression."
+    },
+    "unterminated_string_defect": {
+      "asks": "Which binding defect classifies a string with no closing quote?",
+      "answer": "unbounded",
+      "generation": 0,
+      "witnesses": [
+        "PIPELINE.md and SEMANTICS.md 1"
+      ],
+      "rationale": "doctrine (PIPELINE.md and SEMANTICS.md 1): PIPELINE.md classifies running out of input ('1 +') as Z(unbounded) and an illegal character ('a $ b') as Z(misbound). A string with no closing quote ran out of input; it is not a character the language rejects."
+    }
+  }
+}

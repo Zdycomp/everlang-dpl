@@ -8,43 +8,46 @@ The thesis is a multi-phase, cross-platform language ecosystem — Python fronte
 
 | Phase | Dir | Reality |
 |---|---|---|
-| Python runtime | `everlang_standalone/` | A working "DPL / Everlang" package: a 4-stage confidence pipeline, a quantum/entanglement module, a biocomputing (DNA) module including a real lexer/parser pair, a 6-language template generator (`transpiler/`) that also accepts user-registered languages, a DPL frontend (`frontend/`: `Supercodalexer` → `QuantificationUltraParser` → `MegaExecuter`, grammar in its README), and its unittest suite. This is the actual substance of the repo. |
-| C++ analysis | `1-phase-cpp/` | One native CLI, `verify_particle` — a safety-verification gate, not a general analysis phase. Gates every `ReinforcedArchive` write, including each per-language transpiler rendering (one call per language, not a bundled multi-language blob). |
-| Java runtime | `5-runtime-java/` | Two read-only JDBC auditors — `SelfHealingAudit` (repairs) and `TranspileAudit` (transpiler output) — not a general IR execution runtime. |
-| SQL archive | `4-archive-sql/` | A real SQLite persistence layer (`SqlArchive` + `schema.sql`, including `transpilations` and `custom_template_versions`) reinforcing the in-process `EArchive`. |
-| `2-interpreter-python/`, `SEMANTICS.md`, `tests/golden/`, `tests/gold_suite/` | — | Do not exist. Do not invent behavior for them. |
+| Python frontend (lexer, parser, checker, validator, evaluator) | `2-interpreter-python/` | **Not at the root yet.** The ExR lineage's frontend is `ezr/2-interpreter-python/`. `everlang_standalone/` (DPL v5.0 runtime: `core/`, `containers/`, `quantum/`, `biocomputing/`, `pipeline.py`) is the Python frontend's current home; `biocomputing/sequencer.py` is a lexer/parser pair (`DnaLexer`/`DnaParser`) in its own right. |
+| C++ analysis / safety verification | `1-phase-cpp/` | **Present.** `verify_particle`: a native CLI safety gate (confidence range, value-length bounds) that `ReinforcedArchive` shells out to before persisting a write. See `1-phase-cpp/README.md` for the exact CLI contract. |
+| Java execution runtime | `5-runtime-java/` | **Present, narrow scope.** `SelfHealingAudit`: a read-only JDBC auditor that re-derives expected `emulate_repair` outcomes from the documented formula and flags drift from what's persisted in `tapestry.db`. It is not (yet) a general IR execution runtime — see `5-runtime-java/README.md`. |
+| SQL archive / `tapestry.db` | `4-archive-sql/` | **Present.** `archive_db.py`'s `SqlArchive` persists boundary markers, repairs, evolved vectors, and rejected writes into SQLite per `schema.sql`. `core/archive.py`'s in-process `EArchive` is unchanged and still the only Archive everlang_standalone depends on directly; `everlang/core/reinforced_archive.py`'s `ReinforcedArchive` is the opt-in bridge that reinforces it with the C++ and SQL phases (falls back to plain `EArchive` behavior if either is unavailable). |
+| Kotlin DNA port + Android app | `6-android-kotlin/` | **Present.** Gradle project: `core` (Kotlin port of `everlang_standalone/everlang/biocomputing`, checked against Python golden vectors), `predict` (order-k base predictor), `fuzz` (port of `tests/fuzz_harness.py`), and `app` (Android; included only when `local.properties` has `sdk.dir` or with `-Pandroid`, never compiled in the cloud env). `tools/determinism_check.sh` runs the JVM suites N times and requires identical outcome digests. |
+| Specs | `ezr/SEMANTICS.md`, `ezr/CORE.md`, `ezr/ABI.md`, `ezr/PIPELINE.md` | Present under `ezr/` (ExR lineage). Do not invent semantics beyond them. |
+| Golden tests / `run_all.py` | `ezr/tests/golden/`, `ezr/tests/gold_suite/` | Present under `ezr/`. Root `run_all.py` runs each phase's suite (Python, SQL, C++, Java, Kotlin) and the ezr lineage's 29-suite gate (`ezr/tests/run_all.py`). |
 
-Don't assume the target architecture's generality from the thesis sentence — verify against the table above and the phase's own README before writing code that depends on a phase doing more than it currently does.
+Toolchains available in the cloud env: python3.11, gcc/g++, java/javac, maven/gradle (Maven Central is reachable). Create a target directory only when the user asks for that phase.
+
+Two JDKs are needed. `5-runtime-java` compiles with `--release 25`, and the `6-android-kotlin` build (Gradle 8.14.3, Kotlin plugin 2.2.0) fails to configure on JDK 25. Keep JDK 21 as the system default and install `openjdk-25-jdk-headless` alongside it. The options and the plan to reach one JDK are in `docs/adr/ADR-001-jdk-21-vs-25.md`.
 
 ## Commands
+- Full gate (repo root): `python3 run_all.py`; Python+SQL only: `python3 run_all.py --skip-native`. `run_all.py` runs `5-runtime-java` on a JDK 25 when one is installed (`/usr/lib/jvm/java-25-*`); the container's `JAVA_HOME` is JDK 21 and fails with class file version 69.
+- Kotlin phase (from `6-android-kotlin/`): `./gradlew :core:test :predict:test :fuzz:test`; determinism: `tools/determinism_check.sh 3`.
+- ezr lineage gate (29 suites, must read 29 passed / 0 failed): `python3 ezr/tests/run_all.py`.
+- Single Python test (from `everlang_standalone/`): `python3 -m unittest tests.test_algebra.TestLaws.test_uncertainty_endpoints`.
+- Single Java test: `mvn -f 5-runtime-java/pom.xml test -Dtest=SelfHealingAuditIntegrationTest`.
+- C++ phase: `make -C 1-phase-cpp test` (`make asan` for the sanitizer build).
+- Cross-language parity: `python3 ezr/tests/algebra_parity.py`.
+- Self-heal benchmark on real code (needs network, takes minutes, not in `run_all.py`): `python3 everlang_standalone/tests/heal_bench.py [language ...]`. Exits 1 if heal breaks, refuses or changes a valid file. Fixer regressions: `python3 ezr/tests/test_edapt.py`.
 
-**Run everything** (repo root):
-```bash
-python3 run_all.py              # all four phases' own test suites, gates on all
-python3 run_all.py --skip-native  # Python + SQL only, skips g++/mvn
-```
+## Cross-phase contract: reinforcing the self-healing Archive
+`EArchive` (Python, in-process, no persistence) is reinforced — not replaced — by two independent backend phases, wired together by `everlang/core/reinforced_archive.py::ReinforcedArchive`:
+1. **C++ safety gate** (`1-phase-cpp/bin/verify_particle`): every write is checked natively (confidence in [0,256], value non-empty and ≤4096 bytes) before being trusted. Contract: `verify_particle <confidence>` with the value on stdin; prints `VALID` or `INVALID:<REASON>` (see `1-phase-cpp/README.md`).
+2. **SQL persistence** (`4-archive-sql/archive_db.py::SqlArchive`): durable SQLite storage (`tapestry.db`, gitignored) for boundary markers, repairs, evolved vectors, and anything the C++ gate rejected (`rejected_writes`).
+3. **Java audit** (`5-runtime-java`'s `SelfHealingAudit`): independent, read-only; re-derives expected repair outcomes from the same formula as `EArchive.emulate_repair` and flags any row in `tapestry.db` that doesn't match.
 
-**Python** (`everlang_standalone/`, the actual package):
-```bash
-cd everlang_standalone
-python3 main.py                          # CLI demo: pipeline, entanglement swap, DNA compiler
-python3 -m unittest discover tests       # full suite
-python3 -m unittest tests.test_dna_sequencer -v   # a single test module
-python3 -m pyflakes .                    # lint
-```
+Both the C++ and SQL legs are optional at runtime — if either is missing/unbuilt, `ReinforcedArchive` degrades to plain `EArchive` behavior rather than failing. Run `python3 run_all.py` (or `--skip-native` for Python+SQL only) to exercise all four phases together.
 
-**C++** (`1-phase-cpp/`):
-```bash
-cd 1-phase-cpp
-make          # builds bin/verify_particle (g++ -std=c++17 -Wall -Wextra -Werror -O2)
-make test     # builds + runs tests/test_verify_particle (its own main(), no framework)
-make asan     # bin/verify_particle_asan, -fsanitize=address,undefined
-```
+**Real self-heal (`EArchive.heal`, per `ezr/SEMANTICS.md` §9).** `everlang/core/heal.py` runs ezr's `forgive.py` on Ever source and ezr's edapt fixers on Python, JavaScript, Go, Rust, Java and Kotlin; without `ezr/` a language is refused, never emulated. Every repair is archived as a Failure/Fixture pair charged 8 (plain) or 32 (inferred) from 256; §9.4 cases (unclosed brackets, unterminated strings) are refused as boundary markers. `repair_candidates()` and `propose_rules()` admit a rule at 128 only when 3 distinct sources agree and replay is unanimous. Vocabulary ids 1–7 in `everlang/core/vocabulary.py` must match `ezr/4-archive-sql/repair.sql` (`tests/test_heal.py` checks). `emulate_repair` is unchanged because the Java audit re-derives its formula.
 
-**SQL** (`4-archive-sql/`):
-```bash
-python3 -m unittest discover -s 4-archive-sql/tests -t .   # from the repo root
-```
+## Rules (non-negotiable)
+1. **Boundary awareness.** Identify the target phase before writing code. Never bleed Python interpretation rules into C++ or vice versa; phases communicate only through the IR and documented file/CLI contracts.
+2. **Tests gate every change.** Run `python3 run_all.py` from the repo root (all six legs must pass). `--skip-native` runs the Python+SQL legs only, if g++/mvn aren't available. Don't build on red.
+2a. **Hooks.** `.claude/hooks/run-tests.sh` runs after each Write/Edit of a Python file under `everlang_standalone/` and blocks on test or pyflakes failures. `.claude/hooks/session-start.sh` checks toolchains and runs the `everlang_standalone` unit tests.
+3. **TAC preservation.** Changes to `ir.py`, `tac.c`, or any optimizer must keep basic blocks well-formed (single entry, terminator-ended, valid jump targets) and evaluation frames consistent.
+4. **No invented features.** Behavior must trace to `ezr/SEMANTICS.md` or existing code/README. Memory-safety (ownership, lifetimes, bounds) must be explicit at compile time.
+5. **Stay minimal and match surrounding style.**
+6. **Terse replies.** No explanations, recaps or narration. Do the work; report the result in one line.
 
 **Java** (`5-runtime-java/`):
 ```bash

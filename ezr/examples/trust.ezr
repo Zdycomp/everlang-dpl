@@ -1,0 +1,7 @@
+# Confidence is part of the value, and `show` reports it.
+# A list is no more trusted than the least-trusted thing in it.
+#   ezrun.py ../examples/trust.ezr
+
+def describe(n) = let half = n / 2 in
+                  if half > 10 then "big" else "small"
+def main()      = show(describe(30))

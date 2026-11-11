@@ -1,0 +1,16 @@
+key	value	note
+markov.H_rate	1.7790602361290393537	bits/base, entropy rate of the order-2 source
+markov.H_order1	1.9140314362230586584	bits/base, H(X_t | X_t-1) under the stationary law
+markov.top1_order1	0.38082647521817595682	best top-1 accuracy from one symbol of context
+markov.top1_order2	0.44429189111425282102	best top-1 accuracy from two symbols of context
+markov.pi_min	0.035917297377867747520	smallest stationary probability of a pair state
+uniform.bits	2	bits/base, uniform symbols
+uniform.top1	0.25	top-1 accuracy, uniform symbols
+tandem.floor.0	0	bits/base, entropy rate of period-16 repeat, substitution rate 0
+tandem.top1.0	1	top-1 ceiling, period-16 repeat, substitution rate 0
+tandem.floor.0.01	0.096642760903122734639	bits/base, entropy rate of period-16 repeat, substitution rate 0.01
+tandem.top1.0.01	0.99	top-1 ceiling, period-16 repeat, substitution rate 0.01
+tandem.floor.0.05	0.36564508215201393784	bits/base, entropy rate of period-16 repeat, substitution rate 0.05
+tandem.top1.0.05	0.95	top-1 ceiling, period-16 repeat, substitution rate 0.05
+tandem.floor.0.10	0.62749184366139683940	bits/base, entropy rate of period-16 repeat, substitution rate 0.10
+tandem.top1.0.10	0.90	top-1 ceiling, period-16 repeat, substitution rate 0.10

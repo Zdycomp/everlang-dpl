@@ -1,0 +1,4 @@
+{
+  "note": "Repairs the forge made to its own front ends. Each entry records what raised, what the other witnesses agreed the answer should be, and the input that exposed it. Nothing here is deleted; a superseded repair is marked, not removed.",
+  "repairs": []
+}

@@ -1,0 +1,8 @@
+# 06_strings.ever
+# String values flow through both backends.
+
+let name = "Ever"
+let lang = "Tapestry"
+
+show name
+show lang

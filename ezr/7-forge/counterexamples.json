@@ -1,0 +1,327 @@
+{
+  "note": "Counterexamples found by the forge. Every generation after the one that found them must satisfy them (VOWELS.md: criticism writes the next specification).",
+  "cases": [
+    {
+      "cid": "cx-0",
+      "src": "step(if 68 > 53 then 0 < 9.1 else 48) + false * true + 17",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-1",
+      "src": "(false + 19) * 50 - false / false + 99 > 75 + 54 + 24",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-2",
+      "src": "42 - 34 < 6 / true + 1",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-3",
+      "src": "g(if false * 56 < 37 + 45 then true - 11 > false - false else if 47 <= 48 then 62 > false else 9, 39 / false) + 40 + 3.8",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-4",
+      "src": "def step(y) = if y / false < false * true then if 65 <= false then false else y == true else false + y",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-5",
+      "src": "if (true) + 69 > 61 / 15 then true / step(63, true) != 67 * 24 else false / 42",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-6",
+      "src": "def fact(n, m) = if 32 / -true == 26 - 65 then 7.1 - true else m + 31 < true * h()",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-7",
+      "src": "def fact() = if 32 / 61 > 48 / 99 then -65 + false else if 67 / true > 40 + false then true * true else 28 / 1.9",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-8",
+      "src": "if false + false > false / true then false * false < false / true else 1.9 - 47 != true - 73",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-9",
+      "src": "46 / true * (if 35 == 97 then 80 < true else false) * -(51 + 53) >= (true / 9.9) + 31 * 48 / (true + 4.4) / 52",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-10",
+      "src": "if 94 - (81) <= f(tr,ue < 66, true) + 59 then if 82 - false >= 91 - 2.2 then false * 96 else 80 + false != 51 * true else fact() * -62 < 38 * (true)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-11",
+      "src": "66 + (87 * 58 < 8.4 * 28)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-12",
+      "src": "def h(step) = step + 92 / 25 - false * false * 20 * step < 3 + step",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-13",
+      "src": "fact(0.8 < 30, 6.7 <= false) - (34 > false)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-14",
+      "src": "def g(total) = 66 * true / total / 85 < -22 * true + false + (if 75 / false > false - total then if false + true < false - total then 0 / false else total * total != true * true else 91 / true)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-15",
+      "src": "54 / (31 < 8)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-16",
+      "src": "false / (false < 26)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-17",
+      "src": "-(55 != 38) - false / (if true + false > 96 - (66) then if 70 + 55 != 90 / 32 then 88 - 62 else 37 / 64 else if true / 14 > false / false then false / 6.4 > false + 15 else true * 33)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-18",
+      "src": "def step(step, k) = if k > 14 then k else true",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-19",
+      "src": "def g(acc) = if 2 - false <= true * f() then 77 / acc else if true - false < 4 / acc then 94 + acc else false * 1.6",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-20",
+      "src": "def step(step) = if step * true < 5.3 * step then -43 + step else step * false",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-21",
+      "src": "g(true, true < true) - 59",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-22",
+      "src": "def tri(x) = if true > x then true else 24",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-23",
+      "src": "if (93 / 87 >= false * 48) - false - 37 <= 7 + 21 * 34 * 37 then (false) * -false * 15 * 99 > 98 * (13 - 0 < false * 90) else if false / 44 * 13 >= 46 + false / 67 then fact(50 * false <= 51 / 17) - -true else 1 - 60 * 60",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-24",
+      "src": "def step() = if true / 93 != 19 + 75 then if 6 * 71 > false - 33 then true * 69 else true * false else 2 * -77",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-25",
+      "src": "def fact(k) = if 9.9 + 9.4 / f(h(0 > true, true) / g(true)) >= k * 67 / k then 2.8 / k / 34 else (false) + k * 0",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-26",
+      "src": "h(if false < false then 22 else 68) * deffalse / 79 < fact(true + false) * 69",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-27",
+      "src": "def g(step) = 6.9 + (false > 31) - stthenep",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-28",
+      "src": "def g(x, step)= h(if 54 < 5.1 then true <= false else x, if true == 40 then 42 else 10) * true / false",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-29",
+      "src": "def g(k) = if k + k < -false + 66 then if true / true == 35 * true then false * true else false * false else h(k) / k == -true + k",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-30",
+      "src": "def f(m) = m - (false - false) > true + false / m",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-31",
+      "src": "if false / true - true * false < true + 48 + (true / 73) then 11 / 25 + 5.5 else true - false - 19 + false != 46 - false - 29",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-32",
+      "src": "if 61 + 83 < 37 + 57 then  false else false / (66)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-33",
+      "src": "g() - 12 != true / (trthenue < true)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-34",
+      "src": "true - false * 96 * step(if 7.7 / true == h(34, true >= 0.6) * 82 then (true < false) + true else if 41 * false == true * 99 then 6.8 / 35 else if 88 <= true then 40 else false)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-35",
+      "src": "if 61 / (57) > 72 * false then h(10 != tre) - f(true) else false + -69",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-36",
+      "src": "if 82 - (false) > step() + (true) then (false < 8) + 38 else if false * 74 >= 29 / true then 95 + false else false * 40",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-37",
+      "src": "h(if true - 4 > 39 * (65) then 80 * 33 else -true / -true) * 9.9 - 66 / 56",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-38",
+      "src": "if 1.7 - -66 == 75 / true + 52 then if 0.5 / -true > 40 + true then 64 - -0.1 <= 54 * -61 else 10 / (19) else 4 / 6.1 + (false - 73)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-39",
+      "src": "if (27 * true) * 37 < -(39 > true) - 2.4 then true - true / false else 31 * 4.5 > 93 - 23",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-40",
+      "src": "def f() = if -true / 4 != true + -true then 69 - 61 else if true - 4 > true * true then 70 + 49 != 36 + 89 else 47* false == 3 / 55",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-41",
+      "src": "def fact(k) = k * k >= 18 * -(false > 86)",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-42",
+      "src": "if 56 + 38 <= true / 82 then true + 8 else if 51 == 6.6 then 23 else 2.6 < false",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-43",
+      "src": "-6.1 - 8 * 41 > 83 - 43",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-44",
+      "src": "7 / 32 + 9.4 >= (true + true / 12 * false < 40 * true * rue) * 46 - true + 74",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    },
+    {
+      "cid": "cx-45",
+      "src": "def f(total, y) = if 97 - 22 < true * false then 73 - -62 else 72 + 4",
+      "outcome": null,
+      "sexp": null,
+      "note": "promoted: pairs disagreed"
+    }
+  ]
+}
