@@ -189,6 +189,66 @@ with tempfile.TemporaryDirectory() as tmp:
 
 
 # ═══════════════════════════════════════════════
+# Valid code must come back untouched. Each case below is a shape real
+# code uses that an earlier fixer edited, broke or refused
+# (found by everlang_standalone/tests/heal_bench.py).
+print("\n[no false positives on valid code]")
+VALID = {
+    "python": [
+        ("docstring line starting with a keyword",
+         'def f():\n    """Fill\n    for missing values.\n    if not simplified\n    """\n    return 1\n'),
+        ("one-line if body", "for x in range(3):\n    if not x: continue\n    print(x)\n"),
+        ("trailing comment after the colon", 'if __name__ == "__main__":  # entry\n    pass\n'),
+        ("comprehension spread over lines",
+         "xs = [a\n      for a in range(9)\n      if a % 2]\n"),
+        ("keyword argument in a condition", "def f(x=0):\n    return x\nif f(x=1):\n    pass\n"),
+        ("brackets and = inside strings", 'if x == ")=(":\n    y = "]"\n' .replace("if x", "x = 1\nif x")),
+    ],
+    "javascript": [
+        ("object literal", "const o = {\n  a: f(1),\n  has16m: level >= 3\n};\n"),
+        ("chained call", "const r = fetch(u)\n  .then(x => x.json());\n"),
+        ("regex and template with brackets",
+         "const a = s.replace(/[\"'(]/g, `\\\\'`);\nconst b = `x ${ `y(` } z`;\n"),
+        ("statement ending on an operator word", "var d = new\nFoo();\n"),
+    ],
+    "rust": [
+        ("attribute", '#![doc(html_root_url = "https://docs.rs/x")]\nfn main() {}\n'),
+        ("tail expression is the block value", "fn f() -> u32 {\n    g()\n}\n"),
+        ("string continued over lines", 'const S: &str = "\\\nf failed";\n'),
+        ("struct literal and match arm",
+         "fn f() -> P {\n    match 1 {\n        _ => g()\n    };\n    P {\n        a: 1,\n        b: h(2)\n    }\n}\n"),
+    ],
+    "java": [
+        ("statement spread over lines",
+         'class T {\n    void f() {\n        System.out.println("T=" + g()\n                + 1);\n        boolean m = a == b\n                && c;\n    }\n}\n'),
+        ("trailing comment after the semicolon", "class T {\n    int x = f();  // extra safe\n}\n"),
+        ("text block", 'class T {\n    String s = """\n        VALUES (1, \'a\')\n        x = y(\n        """;\n}\n'),
+    ],
+    "go": [("rune and raw string holding brackets", "package main\nvar a = '('\nvar b = `)}`\n")],
+    "kotlin": [("line separator inside a string", 'val s = "a b\u0085c"\n')],
+}
+for lang, cases in VALID.items():
+    for name, src in cases:
+        result = fix(src, lang)
+        ok(f"{lang}: {name} untouched", result.code == src and not result.fixes,
+           str([f.line1() for f in result.fixes]))
+        ok(f"{lang}: {name} not refused", diagnose_brackets(src, lang) == [],
+           str(diagnose_brackets(src, lang)))
+
+print("\n[fixes land ahead of a trailing comment]")
+result = fix("if x > 5  # big\n    pass\n", "python")
+ok("python colon goes before the comment", result.code.startswith("if x > 5:  # big"), result.code)
+result = fix("class T {\n    int x = 5  // five\n}\n", "java")
+ok("java semicolon goes before the comment", "int x = 5;  // five" in result.code, result.code)
+
+print("\n[unterminated string: reported, never edited (SEMANTICS 9.4)]")
+for lang, src in (("python", 'if keep == "last:\n    pass\n'),
+                  ("javascript", 'var res = ", lastI = 0\n')):
+    ok(f"{lang}: reported", any("never closed" in p for p in diagnose_brackets(src, lang)))
+    ok(f"{lang}: left alone", fix(src, lang).code == src)
+
+
+# ═══════════════════════════════════════════════
 print("\n[language detection]")
 ok("detects .py",  detect_language("foo.py")  == "python")
 ok("detects .js",  detect_language("foo.js")  == "javascript")

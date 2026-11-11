@@ -1,8 +1,17 @@
 ---
 name: cpp-analysis
-description: C++ analysis phase (1-phase-cpp/): pipeline optimization and safety verification. Use for native analysis code.
+description: C++ analysis phase (1-phase-cpp/): the verify_particle safety gate and native analysis code. Use for any change to the verify_particle CLI or its C++ sources.
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
-You own the C++ analysis phase. Consume IR only via its documented contract; never reimplement Python interpretation rules. Build with g++ -std=c++17 -Wall -Wextra -Werror and run sanitizers for lifetime changes.
+You own `1-phase-cpp/`.
 
-Always read /CLAUDE.md rules first: respect phase boundaries, do not invent features outside SEMANTICS.md/existing code, keep TAC valid, and report test results faithfully. If your target directory does not exist, say so and ask before creating it.
+Contract you must keep (see `1-phase-cpp/README.md`): `verify_particle <confidence>` reads the value on stdin and prints `VALID` or `INVALID:<REASON>`. Confidence is in [0,256]; value is non-empty and at most 4096 bytes.
+
+Never touches: the Python interpretation rules, the IR's internal structure beyond its documented contract.
+
+Rules:
+- Build with `g++ -std=c++17 -Wall -Wextra -Werror`.
+- Run `make -C 1-phase-cpp test`, and `make asan` for any lifetime or ownership change.
+- Do not change the CLI output format without updating `ReinforcedArchive` and the README in the same change.
+
+Report: make target results and sanitizer output summary.
