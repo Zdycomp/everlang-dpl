@@ -1,0 +1,102 @@
+# DPL Frontend: Supercodalexer → Quantification Ultra Parser → MegaExecuter
+
+A lexer, parser and executor for DPL source text — the syntax `SuperTranspiler`'s
+own `DPL` template already emits — so a program can be read, run through the
+confidence model, and fanned out to every transpiler target.
+
+## Grammar
+
+```
+program     := { line } EOF
+line        := [ statement ] ( NEWLINE | EOF )
+statement   := declaration | collision
+declaration := "particle" IDENT ":" "E" "<" IDENT ">" "=" value "@" "confidence" "(" INT ")"
+value       := STRING | scalar | "[" item { "," item } "]"
+scalar      := INT | NUMBER | "true" | "false"
+item        := STRING | scalar                (every item of one list is the same kind)
+collision   := "collide" IDENT IDENT [ "->" IDENT ]
+
+IDENT    := [A-Za-z_][A-Za-z0-9_]*        (except the keywords particle, collide, confidence)
+INT      := [0-9]+
+NUMBER   := '-'? [0-9]+ ( '.' [0-9]+ )? ( [eE] [+-]? [0-9]+ )?     (when not a plain INT)
+STRING   := '"' { any char except '"', '\', newline  |  '\"'  |  '\\'  |  '\n'  |  '\r' } '"'
+comment  := '#' to end of line            (ignored)
+```
+
+`true` and `false` are ordinary identifiers that mean a boolean only in value
+position, so a particle may still be named `true`.
+
+Spaces and tabs separate tokens; `\r\n` is read as `\n`. A declaration line has
+the same shape as `SuperTranspiler`'s `DPL` rendering, and `SuperTranspiler`
+escapes `\`, `"`, newline and carriage return in DPL values (`escape_dpl_value`),
+so any DPL rendering reads back to the same value and renders identically again.
+The other five built-in languages escape their own string literals too (see the
+transpiler README).
+
+## Semantics
+
+- **declaration** creates `EParticle(value, confidence)` bound to `IDENT`. A
+  confidence above 256 is clamped by `EParticle` and reported as a warning.
+- A **quoted value** is a string and renders through `SuperTranspiler.transpile`'s
+  string templates, exactly as before typed values existed.
+- Any **other value** is typed (`everlang/transpiler/typed.py`): a number with
+  `.` or an exponent is a `Float`, other numbers are an `Int`, `true`/`false` a
+  `Bool`, and a list is `List<Str|Int|Float|Bool>`. The particle holds the
+  Python value (`85.5`, `True`, `["tcp", "udp"]`) and the declaration renders
+  through `SuperTranspiler.transpile_typed`: native types and literals in every
+  built-in language (`var cpu float64 = 85.5`, `[]string{"tcp", "udp"}`), with
+  custom languages skipped. Numbers are canonicalised (`1.50` → `1.5`, `007` →
+  `7`). An Int outside ±(2^63-1), a Float that overflows, an empty list, a list
+  inside a list, and a list mixing kinds (including `[1, 2.5]`) are parse errors.
+  A typed DPL rendering reads back to the same value and renders identically.
+- **collision** runs `PhaseEngine.collide(a, b)` on two bound particles and records
+  the outcome (`Z_CONTAGION`, `EXCEL`, `EXPEL`, `REPEL`). With `-> name`, the
+  resulting particle is bound to `name` and can be collided again.
+- Binding a name twice, or colliding an unbound name, is an error for that
+  statement only; execution continues.
+
+## Outputs
+
+| Stage | Output |
+|---|---|
+| `Supercodalexer` | Tokens `(kind, text, line, col)`, and one diagnostic for **every** bad character, unterminated string, or unknown escape — not just the first. |
+| `QuantificationUltraParser` | The program's statements, plus every syntax error in the file. Each error carries a fix hint. Parsing resumes at the next line after an error. |
+| `MegaExecuter` | Per declaration: the particle and its rendering in every transpiler language (built-in and custom; built-in only for a typed value). Per collision: a trace entry (operands, outcome, reason, result). Runtime diagnostics. With a `ReinforcedArchive`, renderings go through `transpile_and_archive` (`transpile_typed_and_archive` for a typed value) and collisions through `log_boundary_marker`, so they are C++-gated and persisted. |
+
+## Speed
+
+`baseline.py` is a textbook reference implementation of the same language: a
+character-by-character lexer, a recursive-descent parser, and a visitor-dispatch
+executor. The Mega stages produce identical tokens, statements, diagnostics and
+results (`tests/test_frontend.py` checks this on random input), so the only
+difference is speed:
+
+| Stage | How it's faster | Measured vs baseline (10k lines) |
+|---|---|---|
+| Supercodalexer | Whole well-formed lines matched by one regex; token tuples built in C via `zip`/`map`; per-token master regex only for other lines | 4.2–4.9× |
+| Quantification Ultra Parser | Declarations the lexer already verified (`TokenStream.declaration_starts`) are built from known offsets; otherwise a 14-kind list comparison; recursive descent only for the rest | 1.5–2.8× |
+| MegaExecuter | All active templates compiled into one generated f-string function, which skips every escaper when the value has nothing to escape; direct type dispatch | 2.1–3.0× |
+| **End to end** | | **2.9–3.8×** |
+
+These ratios are for string declarations. A typed declaration always takes the
+per-token lexer path and the recursive-descent parser, so a program made mostly
+of typed values gains less.
+
+The upper ends rose when the baseline started escaping the value in all six
+languages for every declaration, while MegaExecuter checks once and skips the
+escapers for a value that needs none, so part of the gain is the baseline getting
+slower. Typical end-to-end runs are 3.6–3.8×; one run in eight reached 4.2×,
+which is timing noise, not a result.
+
+End to end does not reach 4×. The parser and executor are dominated by work any
+implementation must do — building `Declaration` nodes, constructing `EParticle`s,
+rendering every language, building result records — which is about two thirds
+of MegaExecuter's time. Getting past ~3.8× needs native code or giving up
+byte-identical eager output.
+
+`python3 -m everlang.frontend.bench [lines]` prints current ratios. The unit
+test enforces regression floors with headroom for timing noise: lexer ≥3×,
+end to end ≥2×.
+
+The DPL benchmark lives in this package rather than `benchmarks/`, because
+`.claude/settings.json` denies edits under `everlang_standalone/benchmarks/`.

@@ -1,5 +1,6 @@
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -45,6 +46,10 @@ class TestReinforcedArchiveFallback(unittest.TestCase):
         a = self.plain.calculate_evolve_vector(1.0, 2.0, 4.0)
         b = self.reinforced.calculate_evolve_vector(1.0, 2.0, 4.0)
         self.assertEqual(a, b)
+
+    def test_typed_transpile_works_without_backends(self):
+        rendered = self.reinforced.transpile_typed_and_archive("cpu", 85.5, None, 200)
+        self.assertEqual(rendered["C_CLANG"], "const double cpu = 85.5;")
 
     def test_calculate_evolve_vector_noop_matches(self):
         a = self.plain.calculate_evolve_vector(1.0, 0.0, 4.0)
@@ -123,6 +128,180 @@ class TestReinforcedArchiveIntegration(unittest.TestCase):
         rows = self._rows("evolved_vectors")
         self.assertEqual(len(rows), 1)
         self.assertAlmostEqual(rows[0][1], vector)
+
+    def test_transpile_and_archive_persists_every_language(self):
+        rendered = self.archive.transpile_and_archive("txRate", "0.025", "float", 190)
+        self.assertEqual(len(rendered), 6)  # DPL, KOTLIN, RUST, C_CLANG, GO, GROOVY
+        rows = self._rows("transpilations")
+        self.assertEqual(len(rows), 6)
+        # columns: id, name, val, type_spec, confidence, target_language, rendered_code, created_at
+        persisted_by_lang = {r[5]: r[6] for r in rows}
+        self.assertEqual(persisted_by_lang, rendered)
+        self.assertEqual(self._rows("rejected_writes"), [])
+
+    def _versioned_rows(self, language):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute(
+                "SELECT rendered_code, template_version FROM transpilations "
+                "WHERE target_language=? ORDER BY id",
+                (language,),
+            ).fetchall()
+        finally:
+            conn.close()
+
+    def test_builtin_renderings_have_no_template_version(self):
+        self.archive.transpile_and_archive("x", "v", "T", 200)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            versions = {r[0] for r in conn.execute("SELECT template_version FROM transpilations")}
+        finally:
+            conn.close()
+        self.assertEqual(versions, {None})
+
+    def test_custom_renderings_are_stamped_with_their_template_version(self):
+        self.assertEqual(self.archive.register_language("toml", '{name} = "{val}"'), 1)
+        self.archive.transpile_and_archive("k", "v", "T", 200)
+        self.assertEqual(self.archive.register_language("TOML", '[{name}]\nvalue = "{val}"'), 2)
+        self.archive.transpile_and_archive("k", "v", "T", 200)
+        self.assertEqual(self._versioned_rows("TOML"), [
+            ('k = "v"', 1),
+            ('[k]\nvalue = "v"', 2),
+        ])
+
+    def test_unregister_retires_template_but_keeps_archived_rows(self):
+        self.archive.register_language("TOML", '{name} = "{val}"')
+        self.archive.transpile_and_archive("k", "v", "T", 200)
+        self.assertTrue(self.archive.unregister_language("TOML"))
+        self.assertEqual(self.archive.template_versions, {})
+        self.assertEqual(self._versioned_rows("TOML"), [('k = "v"', 1)])
+        conn = sqlite3.connect(self.db_path)
+        try:
+            history = conn.execute(
+                "SELECT version, active FROM custom_template_versions WHERE language='TOML'"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(history, [(1, 0)])
+
+    def test_failed_save_leaves_language_unregistered(self):
+        def boom(**_):
+            raise RuntimeError("disk on fire")
+        self.archive._sql.save_custom_template = boom
+        with self.assertRaises(RuntimeError):
+            self.archive.register_language("TOML", '{name} = "{val}"')
+        self.assertNotIn("TOML", self.archive.custom_languages)
+
+    def test_sqlite_failure_degrades_to_unversioned_in_memory_template(self):
+        def locked(**_):
+            raise sqlite3.OperationalError("database is locked")
+        self.archive._sql.save_custom_template = locked
+        self.assertIsNone(self.archive.register_language("TOML", '{name} = "{val}"'))
+        self.assertFalse(self.archive.sql_available)
+        self.assertIn("TOML", self.archive.custom_languages)
+        self.assertEqual(self.archive.template_versions, {})
+
+    def test_builtin_name_rejected_before_anything_is_saved(self):
+        with self.assertRaises(ValueError):
+            self.archive.register_language("dpl", '{name} = "{val}"')
+        self.assertEqual(self._rows("custom_template_versions"), [])
+
+    def test_restart_reloads_active_version(self):
+        self.archive.register_language("TOML", '{name} = "{val}"')
+        self.archive.register_language("TOML", '[{name}] = "{val}"')
+        reopened = ReinforcedArchive(sql_db_path=self.db_path)
+        self.addCleanup(reopened.close)
+        self.assertEqual(reopened.template_versions, {"TOML": 2})
+        reopened.transpile_and_archive("k", "v", "T", 200)
+        self.assertEqual(self._versioned_rows("TOML"), [('[k] = "v"', 2)])
+
+    def test_typed_renderings_are_archived_with_their_kind_and_literal(self):
+        rendered = self.archive.transpile_typed_and_archive("protocols", ["tcp", "udp"], None, 200)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT target_language, val, type_spec, rendered_code, value_kind, template_version "
+                "FROM transpilations").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 6)
+        self.assertEqual({r[0]: r[3] for r in rows}, rendered)
+        self.assertEqual({r[1:3] + r[4:] for r in rows}, {('["tcp", "udp"]', "List", "List<Str>", None)})
+        self.assertEqual(rendered["GO"], 'var protocols []string = []string{"tcp", "udp"}')
+
+    def test_typed_path_rejects_plain_strings_without_writing(self):
+        with self.assertRaises(ValueError):
+            self.archive.transpile_typed_and_archive("s", "text", None, 200)
+        self.assertEqual(self._rows("transpilations"), [])
+
+    def test_typed_path_skips_custom_languages(self):
+        self.archive.register_language("TOML", '{name} = "{val}"')
+        rendered = self.archive.transpile_typed_and_archive("n", 3, None, 200)
+        self.assertNotIn("TOML", rendered)
+        self.assertEqual(len(self._rows("transpilations")), 6)
+
+    def test_oversized_typed_rendering_is_rejected(self):
+        self.archive.transpile_typed_and_archive("big", ["X" * 5000], None, 200)
+        self.assertEqual(self._rows("transpilations"), [])
+        self.assertEqual(len(self._rows("rejected_writes")), 6)
+
+    def test_transpile_and_archive_rejects_oversized_rendering(self):
+        # A huge value makes every rendered snippet exceed verify_particle's
+        # 4096-byte-per-call budget, so every language is rejected, not persisted.
+        huge = "X" * 5000
+        rendered = self.archive.transpile_and_archive("n", huge, "T", 200)
+        self.assertEqual(len(rendered), 6)  # transpiler itself is unaffected
+        self.assertEqual(self._rows("transpilations"), [])
+        rejected = self._rows("rejected_writes")
+        self.assertEqual(len(rejected), 6)
+        for row in rejected:
+            self.assertEqual(row[1], "transpilations")
+            self.assertIn("VALUE_TOO_LONG", row[2])
+
+
+@unittest.skipUnless(SQL_DIR.is_dir(), "4-archive-sql phase not present")
+class TestReinforcedArchiveTemplateVersionConcurrency(unittest.TestCase):
+    def test_every_row_matches_the_template_version_it_is_stamped_with(self):
+        db_path = str(Path(tempfile.mkdtemp()) / "race.db")
+        archive = ReinforcedArchive(cpp_binary_path="/nonexistent/verify_particle", sql_db_path=db_path)
+        self.addCleanup(archive.close)
+        archive.register_language("TOML", 'v0 {name} = "{val}"')
+        errors = []
+
+        def editor():
+            try:
+                for i in range(1, 30):
+                    archive.register_language("TOML", f'v{i} {{name}} = "{{val}}"')
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        def writer(idx):
+            try:
+                for j in range(30):
+                    archive.transpile_and_archive(f"n{idx}_{j}", "v", "T", 100)
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        threads = [threading.Thread(target=editor)] + [threading.Thread(target=writer, args=(k,)) for k in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+
+        conn = sqlite3.connect(db_path)
+        try:
+            history = dict(conn.execute(
+                "SELECT version, template FROM custom_template_versions WHERE language='TOML'").fetchall())
+            rows = conn.execute(
+                "SELECT name, val, type_spec, confidence, rendered_code, template_version "
+                "FROM transpilations WHERE target_language='TOML'").fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 90)
+        for name, val, type_spec, conf, code, version in rows:
+            expected = history[version].format(name=name, val=val, type_spec=type_spec, conf=conf)
+            self.assertEqual(code, expected)
 
 
 if __name__ == "__main__":

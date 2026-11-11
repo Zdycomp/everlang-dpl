@@ -33,3 +33,76 @@ CREATE TABLE IF NOT EXISTS rejected_writes (
     payload TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+CREATE TABLE IF NOT EXISTS transpilations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    val TEXT NOT NULL,
+    type_spec TEXT NOT NULL,
+    confidence INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 256),
+    target_language TEXT NOT NULL,
+    rendered_code TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    template_version INTEGER CHECK (template_version IS NULL OR template_version >= 1),
+    -- NULL: rendered by a string template. Otherwise a typed rendering (built-in
+    -- languages only) whose val is the value's canonical DPL literal.
+    value_kind TEXT CHECK (value_kind IS NULL OR (value_kind IN ('Int', 'Float', 'Bool', 'List<Str>', 'List<Int>', 'List<Float>', 'List<Bool>') AND template_version IS NULL))
+);
+
+CREATE TABLE IF NOT EXISTS kmer_indices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    index_id TEXT NOT NULL UNIQUE,
+    kmer_size INTEGER NOT NULL CHECK (kmer_size = 11),
+    unique_kmers INTEGER NOT NULL CHECK (unique_kmers > 0),
+    total_kmers INTEGER NOT NULL CHECK (total_kmers >= unique_kmers),
+    genome_length INTEGER NOT NULL,
+    shard_id INTEGER NOT NULL DEFAULT 0,
+    shard_count INTEGER NOT NULL DEFAULT 1,
+    verified_by_cpp INTEGER NOT NULL CHECK (verified_by_cpp IN (0,1)) DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    CONSTRAINT shard_valid CHECK (shard_id < shard_count)
+);
+
+CREATE TABLE IF NOT EXISTS sequence_queries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    index_id TEXT NOT NULL,
+    query_sequence TEXT NOT NULL,
+    query_length INTEGER NOT NULL,
+    top_k INTEGER NOT NULL,
+    min_coverage REAL NOT NULL,
+    match_count INTEGER NOT NULL,
+    total_time_ms REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    FOREIGN KEY(index_id) REFERENCES kmer_indices(index_id)
+);
+
+CREATE TABLE IF NOT EXISTS sequence_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id INTEGER NOT NULL,
+    reference_position INTEGER NOT NULL,
+    kmer_matches INTEGER NOT NULL,
+    coverage REAL NOT NULL CHECK (coverage BETWEEN 0.0 AND 1.0),
+    confidence INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 256),
+    match_strength TEXT NOT NULL CHECK (match_strength IN ('exact', 'high', 'medium', 'low')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    FOREIGN KEY(query_id) REFERENCES sequence_queries(id)
+);
+
+-- Append-only history: a version row is never updated except to clear `active`,
+-- so every transpilations row stamped with (target_language, template_version)
+-- stays re-renderable by 5-runtime-java after the template is edited or retired.
+CREATE TABLE IF NOT EXISTS custom_template_versions (
+    language TEXT NOT NULL,
+    version INTEGER NOT NULL CHECK (version >= 1),
+    template TEXT NOT NULL,
+    active INTEGER NOT NULL CHECK (active IN (0,1)) DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    PRIMARY KEY (language, version)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_template_one_active
+    ON custom_template_versions(language) WHERE active = 1;
+
+CREATE INDEX IF NOT EXISTS idx_kmer_indices_shard ON kmer_indices(shard_id, shard_count);
+CREATE INDEX IF NOT EXISTS idx_sequence_queries_index ON sequence_queries(index_id);
+CREATE INDEX IF NOT EXISTS idx_sequence_matches_query ON sequence_matches(query_id);

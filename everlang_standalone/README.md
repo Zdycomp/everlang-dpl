@@ -10,31 +10,44 @@
    - `QuaternaryTranslationLayer` (`quaternary.py`): base-4 encoding `A=00, T=01, C=10, G=11`; `bytes_to_DNA` / `DNA_to_bytes` round-trip bytes (4 bases per byte).
    - `BioPhaseEngine` (`dna_engine.py`): hybridization affinity score 0–256 (fraction of positions where the input base is the complement of the gate base, scaled by 256; length mismatch or empty gate scores 0). A displacement succeeds only if affinity >= 180 (about 70%) and particle confidence > 128.
    - `VibeDnaCompiler` (`vibe_compiler.py`): three `VibeChildCell`s (Child_Alpha1, Child_Beta2, Child_Omega3). `execute_vibe_pulse_cycle(cycle)` builds a 4-byte payload per cell, compiles it to DNA, decodes it back for a parity check, runs a displacement against the complementary gate (cycles 2 and 3 inject a mutated/noisy gate for Child_Beta2), then raises cell confidence by 10 on success or lowers it by 30 on failure.
-4. **Multi-Threaded & Multi-Core Benchmarks**: CPU stress, 300-snippet multi-language healing, financial feed, and LLM/agent loop scripts under `benchmarks/`.
+4. **DNA Lexer/Parser (v5.1)**: `everlang/biocomputing/sequencer.py` — `DnaLexer` tokenizes a raw sequence (invalid bases keep their index instead of being dropped), `DnaParser` "spins out pairings" (Watson-Crick `BasePair`s, grouped into `Codon` triplets), `DnaSequencer.run()` ties both together.
+5. **SuperTranspiler generator (v5.1)**: `everlang/transpiler/super_transpiler.py` renders one `(name, value, type)` into six target languages (DPL, Kotlin, Rust, C, Go, Groovy) from a template table — promoted from `benchmarks/ez_micro_containers.py`'s original 5-language version.
+6. **Reinforced Archive (v5.1)**: `everlang/core/reinforced_archive.py`'s `ReinforcedArchive` wraps `EArchive` with two optional backend phases — `1-phase-cpp`'s `verify_particle` (native safety gate) and `4-archive-sql`'s `SqlArchive` (durable persistence) — reinforcing every boundary-marker write, repair, evolved vector, and transpiler rendering. See the repo-root `CLAUDE.md` for the full cross-phase contract.
+7. **DPL frontend**: `everlang/frontend/` reads DPL source text — `Supercodalexer` → `QuantificationUltraParser` → `MegaExecuter` — and runs it through `EParticle`/`PhaseEngine`, rendering every declaration to all transpiler languages. Grammar, outputs, and measured speed vs a textbook baseline are in `everlang/frontend/README.md`.
+8. **Multi-Threaded & Multi-Core Benchmarks**: CPU stress, 300-snippet multi-language healing, 10,000-word lexer/parser/generator volume benchmark, financial feed, and LLM/agent loop scripts under `benchmarks/`.
 
 ## Directory Structure
 ```
 everlang_standalone/
 ├── README.md                          # Package documentation & CLI commands
 ├── main.py                            # CLI demo: pipeline, entanglement swap, vibe DNA compiler
-├── everlang/                          # Core Framework Engine (v5.0.0)
+├── everlang/                          # Core Framework Engine (v5.1.0)
 │   ├── pipeline.py                    # EZPipeline (4-stage pipeline)
-│   ├── core/                          # Particle, PhaseEngine, ExpectGate, EArchive
+│   ├── core/                          # Particle, PhaseEngine, ExpectGate, EArchive, ReinforcedArchive
 │   ├── containers/                    # 4 Micro-Containers (Syntax, Phase, Governor, Corpus)
 │   ├── quantum/                       # Superrelativity & Entanglement Swap
-│   └── biocomputing/                  # DNA / strand-displacement simulation
-│       ├── quaternary.py              # QuaternaryTranslationLayer (A=00,T=01,C=10,G=11)
-│       ├── dna_engine.py              # BioPhaseEngine (affinity 0-256, threshold 180)
-│       └── vibe_compiler.py           # VibeChildCell, VibeDnaCompiler (pulse cycles)
-├── tests/                             # Unit test suite (21 tests)
-│   ├── test_everlang_core.py          # Core tests incl. 100-thread race condition stress test
-│   └── test_everlang_v5.py            # Biocomputing (v5) tests
-└── benchmarks/                        # Benchmark & Suite Scripts
+│   ├── biocomputing/                  # DNA / strand-displacement simulation + lexer/parser
+│   │   ├── quaternary.py              # QuaternaryTranslationLayer (A=00,T=01,C=10,G=11)
+│   │   ├── dna_engine.py              # BioPhaseEngine (affinity 0-256, threshold 180)
+│   │   ├── vibe_compiler.py           # VibeChildCell, VibeDnaCompiler (pulse cycles)
+│   │   └── sequencer.py               # DnaLexer, DnaParser, DnaSequencer
+│   ├── transpiler/                    # SuperTranspiler: 6-language syntax generator
+│   │   └── super_transpiler.py
+│   └── frontend/                      # DPL lexer → parser → executor (+ textbook baseline, bench)
+├── tests/                              # Unit test suite (~93 tests)
+│   ├── test_everlang_core.py           # Core tests incl. 100-thread race condition stress test
+│   ├── test_everlang_v5.py             # Biocomputing (v5) tests
+│   ├── test_biocomputing.py            # quaternary/dna_engine/vibe_compiler coverage
+│   ├── test_dna_sequencer.py           # lexer/parser tests
+│   ├── test_super_transpiler.py        # transpiler template tests
+│   └── test_reinforced_archive.py      # cross-phase bridge tests (fallback + real C++/SQL)
+└── benchmarks/                         # Benchmark & Suite Scripts
     ├── ez_financial_feed_simulation.py
     ├── ez_autonomous_agent_loop.py
     ├── ez_llm_agent_loop.py
     ├── ez_cpu_stress_test.py
     ├── ez_300_code_healing_benchmark.py
+    ├── ez_10000_vocabulary_grammar_benchmark.py
     ├── ez_micro_containers.py
     └── ez_container_ci_service.py
 ```
@@ -49,7 +62,7 @@ when launched from any other working directory.
 # Run standalone CLI demo (pipeline, entanglement swap, biocomputing)
 python3 main.py
 
-# Run unit tests (21 tests, including 100-thread concurrency test)
+# Run unit tests (~93 tests, including 100-thread concurrency test)
 python3 -m unittest discover tests
 
 # Lint
@@ -57,6 +70,9 @@ python3 -m pyflakes .
 
 # Run 1,000,000-op High-CPU multi-core benchmark
 python3 benchmarks/ez_cpu_stress_test.py
+
+# Run the 10,000-word lexer/parser/sequencer/generator volume benchmark
+python3 benchmarks/ez_10000_vocabulary_grammar_benchmark.py
 
 # Run 300-snippet multi-language code healing benchmark
 python3 benchmarks/ez_300_code_healing_benchmark.py
