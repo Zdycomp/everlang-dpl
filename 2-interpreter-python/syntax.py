@@ -343,7 +343,7 @@ class Field(Node):
 
 @dataclass
 class ForRange(Node):
-    """`for NAME = start to end [by step] { body }` — a loop bounded
+    """`for NAME = start to end [by step] do body` — a loop bounded
     by a known start and end, so it needs no anchoring proof: the
     range itself is the termination argument."""
     var:   str
@@ -363,7 +363,7 @@ class ForRange(Node):
 
 @dataclass
 class ForIn(Node):
-    """`for NAME in list { body }` — bounded by the list's own length,
+    """`for NAME in list do body` — bounded by the list's own length,
     which is already known before the loop starts."""
     var:  str
     seq:  Node
@@ -375,7 +375,7 @@ class ForIn(Node):
 
 @dataclass
 class While(Node):
-    """`while cond { body }` — the one open-ended loop. Not anchored
+    """`while cond do body` — the one open-ended loop. Not anchored
     by a proof; guarded by a fixed iteration backstop the same way
     E_ANCHORED_MAX_DEPTH backstops anchored recursion."""
     cond: Node

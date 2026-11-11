@@ -223,7 +223,8 @@ def build_cells() -> List[Cell]:
 # ═════════════════════════════════════════════
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ARCHIVE = os.path.join(HERE, "..", "archive", "notebook.db")
+ARCHIVE = (os.environ.get("EVER_NOTEBOOK_ARCHIVE")
+           or os.path.join(HERE, "..", "archive", "notebook.db"))
 
 
 def open_archive() -> Optional[sqlite3.Connection]:

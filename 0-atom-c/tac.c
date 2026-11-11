@@ -145,6 +145,9 @@ static EvFunc *func_new(EvArena *arena, const char *name,
     f->reg_counter = EV_REG_FIRST;
     f->confidence  = E_CERTAIN;
     f->arena       = arena;
+    f->active = 0; f->anchor_id = 0; f->measure = -1; f->has_last = 0;
+    f->last_measure = 0.0; f->examples_passed = 0; f->examples_failed = 0;
+    f->refused = 0; f->reason[0] = '\0';
     f->block_cap   = 8;
     f->nblocks     = 0;
     f->blocks      = (EvBlock**)ev_arena_alloc(arena,
@@ -695,6 +698,7 @@ EvFunc *ev_lower_func(EvModule *m, const EvNode *fn_node) {
     int32_t     np      = fn_node->param_count;
 
     EvFunc  *f   = ev_module_add_func(m, name, params, np);
+    if (f) f->confidence = E_INTAKE;   /* a definition begins at INTAKE (§4.1) */
     EvBlock *blk = f ? ev_func_new_block(f) : NULL;
     if (!blk) {
         module_fail(m, "out of arena memory while lowering");
@@ -1055,7 +1059,10 @@ int ev_optimise(EvFunc *f) {
 #define E_DEPTH_CEILING 3
 #endif
 
-#define EV_MAX_DEPTH  8
+/* The hard backstop on call depth. It matches scope.py's E_ANCHORED_MAX_DEPTH,
+   so an anchored recursion runs as deep in C as it does in Python. Unanchored
+   recursion never gets near it: it stops at E_DEPTH_CEILING. */
+#define EV_MAX_DEPTH  512
 
 typedef struct { const char *name; EValue val; int16_t conf; } EvNamedSlot;
 
@@ -1251,6 +1258,65 @@ void ev_interp_free(EvInterp *ip) {
 static EValue interp_func(EvInterp *ip, EvFunc *f, EValue *args,
                           const int16_t *arg_conf, int32_t nargs, int depth);
 
+#ifndef E_ANCHORED_MAX_DEPTH
+#define E_ANCHORED_MAX_DEPTH 512   /* scope.py's backstop; the frame table is smaller */
+#endif
+
+/* The call gate (SEMANTICS §4.3, §4.6). OP_CALL and the Examples runner both
+   pass through here, so an Example takes exactly the path a real call takes.
+   A function with no trust left, or a refused anchor, does not execute. An
+   anchored function may recurse while its measure strictly decreases. An
+   unanchored one may nest floor(pi) activations of itself. Depth is counted per
+   function, as scope.py counts it, not by the shared call depth. EV_MAX_DEPTH
+   stays as the hard backstop. */
+static EValue gated_call(EvInterp *ip, EvFunc *callee, EValue *args,
+                         const int16_t *arg_conf, int32_t nargs, int depth,
+                         int16_t *out_conf) {
+    *out_conf = 0;
+    if (callee->confidence <= 0) {
+        cause_note(ip, callee->refused ? callee->reason : "function is z");
+        return ev_void();
+    }
+    if (depth >= EV_MAX_DEPTH) {
+        cause_note(ip, "depth ceiling reached");
+        return ev_void();
+    }
+    int    anchored = callee->anchor_id != 0 && callee->measure >= 0
+                      && callee->measure < nargs;
+    double cur = 0.0;
+    if (anchored) {
+        const EValue *mv = &args[callee->measure];
+        if (mv->tag == EV_INT)       cur = (double)mv->body.as_int;
+        else if (mv->tag == EV_REAL) cur = mv->body.as_real;
+        else { cause_note(ip, "anchor broken"); return ev_void(); }
+        if (callee->has_last && cur >= callee->last_measure) {
+            cause_note(ip, "anchor broken");
+            return ev_void();
+        }
+        if (callee->active >= E_ANCHORED_MAX_DEPTH) {
+            cause_note(ip, "depth ceiling reached");
+            return ev_void();
+        }
+    } else if (callee->active >= E_DEPTH_CEILING) {
+        cause_note(ip, "depth ceiling reached");
+        return ev_void();
+    }
+
+    int    had_last = callee->has_last;
+    double prev     = callee->last_measure;
+    if (anchored) { callee->has_last = 1; callee->last_measure = cur; }
+    callee->active++;
+    EValue res = interp_func(ip, callee, args, arg_conf, nargs, depth + 1);
+    callee->active--;
+    callee->has_last     = had_last;
+    callee->last_measure = prev;
+
+    if (res.tag != EV_VOID)
+        *out_conf = (ip->ret_conf < callee->confidence)
+                        ? ip->ret_conf : callee->confidence;
+    return res;
+}
+
 static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                             int depth) {
     EvBlock *cur = start_blk;
@@ -1400,28 +1466,7 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                         res = ev_void();
                         break;
                     }
-                    /* Language rule: unanchored recursion may not
-                       exceed depth ceiling floor(pi) = 3. Beyond it the
-                       call yields z.
-                       CORRECTED BACK from a `depth + 1 >= ceiling`
-                       version added earlier this session. That version
-                       was validated only against ev_interp_call(), an
-                       entry point that skips this very gate for the
-                       outermost invocation — it calls interp_func()
-                       directly. No real .ever program calls that way;
-                       every call, including the first, is an ordinary
-                       expression evaluated through this OP_CALL case.
-                       Under THAT path — the one that actually runs
-                       real programs — the plain `depth >= ceiling`
-                       check below is correct and matches the Python
-                       evaluator (scope.py) exactly, confirmed by full
-                       regression rather than an isolated probe.
-                       EV_MAX_DEPTH remains as a hard backstop. */
-                    if (depth >= E_DEPTH_CEILING ||
-                        depth >= EV_MAX_DEPTH) {
-                        cause_note(ip, "depth ceiling reached");
-                        res = ev_void(); break;
-                    }
+                    /* The call gate lives in gated_call (SEMANTICS §4.3, §4.6). */
 
                     int32_t na = ins->nargs;
                     EValue  call_args[na > 0 ? na : 1];
@@ -1430,13 +1475,10 @@ static EValue interp_block(EvInterp *ip, EvFunc *f, EvBlock *start_blk,
                         call_args[ai] = reg_get(ip, ins->args[ai]);
                         call_conf[ai] = reg_conf_get(ip, ins->args[ai]);
                     }
-                    res = interp_func(ip, callee, call_args, call_conf, na, depth+1);
-                    rc  = ip->ret_conf;
-                    /* A definition is a claim: it begins at INTAKE, and a call is
-                       no more certain than its function (SEMANTICS §4.1, §4.3).
-                       Examples and anchors are not in C yet, so every user
-                       function is capped here. */
-                    if (rc > E_INTAKE) rc = E_INTAKE;
+                    int16_t call_out = 0;
+                    res = gated_call(ip, callee, call_args, call_conf, na,
+                                     depth, &call_out);
+                    rc  = call_out;
                     break;
                 }
 
@@ -1625,27 +1667,126 @@ static EValue interp_func(EvInterp *ip, EvFunc *f, EValue *args,
     return result;
 }
 
+/* ── SEMANTICS §4 on the C side ─────────────────────────────────────────── */
+
+EvFunc *ev_module_func(EvModule *m, const char *fname) {
+    if (!m || !fname) return NULL;
+    for (int32_t i = 0; i < m->nfuncs; i++)
+        if (strcmp(m->funcs[i]->name, fname) == 0) return m->funcs[i];
+    return NULL;
+}
+
+void ev_module_set_measure(EvModule *m, const char *fname, int32_t param_index) {
+    EvFunc *f = ev_module_func(m, fname);
+    if (f) f->measure = param_index;
+}
+
+/* c_f = floor(256 * (1 - u_f) * (p/t)), u_f = ((256 - 120)/256)^p, capped at 255
+   (§4.2). Python computes the same expression with the same libm pow. */
+static int16_t example_confidence(int32_t passed, int32_t total) {
+    if (passed <= 0 || total <= 0) return 0;
+    double u = pow((double)(E_CERTAIN - E_INTAKE) / (double)E_CERTAIN,
+                   (double)passed);
+    double c = floor((double)E_CERTAIN * (1.0 - u)
+                     * ((double)passed / (double)total));
+    if (c > E_CERTAIN - 1) c = E_CERTAIN - 1;
+    return (int16_t)c;
+}
+
+/* Equal as values; confidence is not part of it. A z is never equal. Lists and
+   records are not compared by Examples on the C side yet. */
+static int same_value(const EValue *a, const EValue *b) {
+    if (a->tag != b->tag) return 0;
+    switch (a->tag) {
+        case EV_INT:  return a->body.as_int == b->body.as_int;
+        case EV_REAL: return a->body.as_real == b->body.as_real;
+        case EV_BOOL: return a->body.as_bool == b->body.as_bool;
+        case EV_TEXT: return strcmp(a->text, b->text) == 0;
+        default:      return 0;
+    }
+}
+
+/* `example f(args) = expect`: run the call through the gate and count it. A z,
+   a wrong value, or a call past the ceiling is a failure against f. */
+int ev_module_example(EvModule *m, const char *fname, const EValue *args,
+                      const int16_t *arg_conf, int32_t nargs, EValue expect) {
+    EvFunc *f = ev_module_func(m, fname);
+    if (!f || f->refused) return 0;   /* a refused function is z */
+    EvInterp *ip = ev_interp_new(m);
+    if (!ip) return 0;
+    EValue  call_args[nargs > 0 ? nargs : 1];
+    int16_t call_conf[nargs > 0 ? nargs : 1];
+    for (int32_t i = 0; i < nargs; i++) {
+        call_args[i] = args[i];
+        call_conf[i] = arg_conf ? arg_conf[i] : E_CERTAIN;
+    }
+    int16_t out = 0;
+    EValue got = gated_call(ip, f, call_args, call_conf, nargs, 0, &out);
+    ev_interp_free(ip);
+    int passed = got.tag != EV_VOID && same_value(&got, &expect);
+    if (passed) f->examples_passed++; else f->examples_failed++;
+    int32_t total = f->examples_passed + f->examples_failed;
+    f->confidence = example_confidence(f->examples_passed, total);
+    if (f->confidence <= 0)
+        snprintf(f->reason, sizeof f->reason,
+                 "%d/%d examples passed; definition kept",
+                 (int)f->examples_passed, (int)total);
+    else
+        f->reason[0] = '\0';
+    return passed;
+}
+
+static int32_t g_anchor_ids = 0;   /* anchor 0 means unanchored (§1) */
+
+static int func_recursive(const EvFunc *f) {
+    for (int32_t b = 0; b < f->nblocks; b++) {
+        const EvBlock *blk = f->blocks[b];
+        for (int32_t i = 0; i < blk->len; i++)
+            if (blk->instrs[i].op == OP_CALL && blk->instrs[i].name &&
+                    strcmp(blk->instrs[i].name, f->name) == 0)
+                return 1;
+    }
+    return 0;
+}
+
+static void refuse(EvFunc *f, const char *reason) {
+    f->confidence = 0;
+    f->refused    = 1;
+    snprintf(f->reason, sizeof f->reason, "%s", reason);
+}
+
+/* `anchor f` (§4.4): pin the identity if the evidence earns it. An uncleared
+   function, or a recursive one with no decreasing measure, is refused. */
+int ev_module_anchor(EvModule *m, const char *fname) {
+    EvFunc *f = ev_module_func(m, fname);
+    if (!f) return 0;
+    if (f->anchor_id) return 1;
+    if (f->refused) return 0;
+    if (f->confidence < E_EXECUTE_FLOOR)
+        refuse(f, "cannot anchor an unverified function");
+    else if (func_recursive(f) && f->measure < 0)
+        refuse(f, "recursive function has no decreasing measure; "
+                  "confidence proves trust, not termination");
+    else
+        f->anchor_id = ++g_anchor_ids;
+    return f->anchor_id != 0;
+}
+
 EValue ev_interp_call(EvInterp *ip, const char *fn_name,
                        EValue *args, int32_t nargs) {
     if (!ip || !fn_name) return ev_void();
     if (E_DEPTH_CEILING <= 0) return ev_void();
-    for (int32_t i = 0; i < ip->module->nfuncs; i++) {
-        if (strcmp(ip->module->funcs[i]->name, fn_name) == 0) {
-            /* depth=1: matches a real top-level `fact(n)` expression,
-               which enters fact's body at depth 1 (the global body's
-               own OP_CALL check runs at depth 0 first). Calling this
-               at depth=0 let one extra level of recursion through
-               versus every real program's actual entry path.
-               Host-supplied arguments enter at E_INTAKE. */
-            int16_t conf_in[nargs > 0 ? nargs : 1];
-            for (int32_t a = 0; a < nargs; a++) conf_in[a] = E_INTAKE;
-            ip->failed = 0;
-            EValue r = interp_func(ip, ip->module->funcs[i], args, conf_in,
-                                   nargs, 1);
-            return ip->failed ? ev_void() : r;
-        }
-    }
-    return ev_void();
+    EvFunc *f = ev_module_func(ip->module, fn_name);
+    if (!f) return ev_void();
+    /* The gate a top-level call in a real program passes (OP_CALL at depth 0),
+       so the outermost activation is counted like any other. Host-supplied
+       arguments enter at E_INTAKE. */
+    int16_t conf_in[nargs > 0 ? nargs : 1];
+    for (int32_t a = 0; a < nargs; a++) conf_in[a] = E_INTAKE;
+    ip->failed = 0;
+    int16_t out = 0;
+    EValue r = gated_call(ip, f, args, conf_in, nargs, 0, &out);
+    return ip->failed ? ev_void() : r;
 }
 
 EValue ev_interp_run(EvInterp *ip) {

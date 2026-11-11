@@ -1382,12 +1382,54 @@ EV_SUITE_TAGGED(ks_pipeline_optimiser_safety, "ks", "ks_pipeline") {
 
         ASSERT_EQ_INT(ru.tag,         ro.tag);
         ASSERT_EQ_INT(ru.body.as_int, ro.body.as_int);
+        /* optimisation must not change the confidence either */
+        ASSERT_EQ_INT(ev_interp_ret_conf(iu), ev_interp_ret_conf(io));
 
         ev_interp_free(iu); ev_module_free(mu);
         ev_interp_free(io); ev_module_free(mo);
         ev_arena_free(u); ev_arena_free(o);
     }
     ev_arena_free(a);
+}
+
+EV_SUITE_TAGGED(ks_pipeline_optimiser_param_load, "ks", "ks_pipeline") {
+    /* The dead-register pass once removed a parameter's binding LOAD in block 0,
+       because the body reads n only through later LOADs, and `dbl(21)` returned z.
+       Run through ev_interp_run, optimised and not, the answer is 42 at INTAKE. */
+    EvArena *a = ev_arena_new("pl");
+    const char *pn[] = { "n" };
+    EvNode *cond = ev_node_binop(a, EV_NODE_LT,
+                     ev_node_int(a, 1, 1), ev_node_int(a, 2, 1), 1);
+    EvNode *body = ev_node_if(a, cond,
+                     ev_node_binop(a, EV_NODE_MUL, ev_node_var(a, "n", 1),
+                                   ev_node_int(a, 2, 1), 1),
+                     ev_node_var(a, "n", 1), 1);
+    EvNode *def  = ev_node_def(a, "dbl", pn, 1, body, 1);
+    EvNode *call = ev_node_call(a, "dbl", (EvNode*[]){ ev_node_int(a, 21, 1) }, 1, 1);
+    /* `if true then dbl(21) else def dbl`: the call runs in the global body and the
+       definition is lowered into the module beside it */
+    EvNode *root = ev_node_if(a, ev_node_bool(a, 1, 1), call, def, 1);
+
+    EvArena *u = ev_arena_new("plu");
+    EvModule *mu = ev_lower_module("PLU", root);
+    EvInterp *iu = ev_interp_new(mu);
+    EValue ru = ev_interp_run(iu);
+    ASSERT_EQ_INT(EV_INT, ru.tag);
+    ASSERT_EQ_INT(42,     ru.body.as_int);
+    ASSERT_EQ_INT(E_INTAKE, ev_interp_ret_conf(iu));
+
+    EvArena *o = ev_arena_new("plo");
+    EvModule *mo = ev_lower_module("PLO", root);
+    ev_optimise(mo->global_body);
+    EvInterp *io = ev_interp_new(mo);
+    EValue ro = ev_interp_run(io);
+    ASSERT_EQ_INT(ru.tag,         ro.tag);
+    ASSERT_EQ_INT(ru.body.as_int, ro.body.as_int);
+    ASSERT_EQ_INT(ev_interp_ret_conf(iu), ev_interp_ret_conf(io));
+
+    ev_interp_free(iu); ev_module_free(mu);
+    ev_interp_free(io); ev_module_free(mo);
+    ev_arena_free(u); ev_arena_free(o); ev_arena_free(a);
 }
 
 EV_SUITE_TAGGED(ks_pipeline_end_to_end, "ks", "ks_pipeline") {

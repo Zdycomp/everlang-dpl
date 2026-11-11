@@ -66,7 +66,7 @@ and `form.c` need no change, and no form kind is added.
 - [x] Found while verifying, fixed in the same file: `ev_pass_dead_regs` removed
       a parameter's binding LOAD in block 0, so `def dbl(n) = if 1 < 2 then n*2
       else n` returned z once optimised. See lessons.md.
-- [ ] Hand-off to test-engineer (owns `kitchen_sink.c`): add to
+- [~] Hand-off to test-engineer (owns `kitchen_sink.c`): add to
       `ks_pipeline_optimiser_safety` (1) form-path cases `if 2 < 1 then 42 else
       7`, `if z then 1 else 2`, a 3-arm match on `false` — compare tag, value
       AND the result's confidence, optimised vs not, and assert the optimised
@@ -74,6 +74,9 @@ and `form.c` need no change, and no form kind is added.
       else n; dbl(21)` through `ev_interp_run` — expected 42, got z before the
       dead-regs fix. Today the suite compares tag and int only, on the node
       path only, so neither bug could fail it.
+      Done 2026-11-09: the suite now compares the confidence as well, and
+      `ks_pipeline_optimiser_param_load` runs `dbl(21)` through `ev_interp_run`,
+      optimised and not (42 at INTAKE). Still open: the form-path cases in (1).
 
 ### Integration suite: Backend B cannot carry function confidence (2026-11-08, closed 2026-11-09)
 
@@ -185,10 +188,18 @@ treats *any* decreasing measure as anchored — depth handed out, not earned.
 - [x] Remove the auto-anchor-by-measure in `runtime.py` / `scope.py`. — 2026-11-08
 - [x] Test: §8 run as a real `.ever` program, every row of its table asserted.
       `tests/test_anchor.py` (14 checks), gate suite "Anchor (SEMANTICS §8)". — 2026-11-08
-- [ ] SEMANTICS.md: grammar as built (EBNF) + §7 corrected to what is truly
-      missing; parser docstring updated.
-- [ ] C parity: `tac.c` has no anchoring (every recursion capped at 3).
-      Owner: `tac-optimizer` — tracked, not silently skipped.
+- [x] SEMANTICS.md: grammar as built (EBNF) + §7 corrected to what is truly
+      missing; parser docstring updated. — closed 2026-11-09: §10 (EBNF, notes,
+      forgive.py), §7 rows corrected, loop docstrings say `do`.
+- [x] C parity: `tac.c` now runs the call gate per function (`gated_call`, shared
+      by `OP_CALL`, `ev_interp_call` and `ev_module_example`): an unanchored
+      function nests floor(pi) activations of itself, an anchored one may recurse
+      while its measure strictly decreases, and `EV_MAX_DEPTH` is 512 to match
+      scope.py's backstop. `ev_module_set_measure`, `ev_module_example` and
+      `ev_module_anchor` carry §4.2 and §4.4. Checked live by
+      `tests/test_ceiling.py`. Limits: C compares scalars in Examples, not lists or
+      records, and int64 caps the anchored case at fact(20) where Python computes
+      fact(100). — closed 2026-11-09
 - [x] `run_all.py` green: 56 passed, 0 skipped, 0 failed, 2026-11-09. Kitchen sink
       ASan/UBSan clean, 0 leaks by the macOS `leaks` tool. Call results are capped at
       INTAKE in C (`OP_CALL`, `ev_emit_call`) and in every transpiler, so the
@@ -196,7 +207,13 @@ treats *any* decreasing measure as anchored — depth handed out, not earned.
       gate runs with the gcc shim described in the Integration item.
 
 
-- [ ] **`tests/test_ceiling.py`** — the behavioural half of the depth contract.
+- [x] **`tests/test_ceiling.py`** — the behavioural half of the depth contract.
+  Closed 2026-11-09: each case runs one program through `run_source` and through the
+  C interpreter (`ev_lower_module`, the OP_CALL gate, `ev_interp_run`), and requires
+  the same value and confidence. Unanchored fact(3) = 6 and fact(4) = z; anchored
+  fact(20) = 20! at 217/256, with Examples and the anchor fed to both layers. The
+  gate runs it as "Depth ceiling (Py vs C)".
+  Original note follows.
   `test_invariants.py` pins the *constant* at every site; nothing pins the
   *comparison*. `tac.c` gates on `depth >= E_DEPTH_CEILING` (in the OP_CALL
   case) while `abstract.py` gates on `depth >`, reconciled only by the
@@ -222,11 +239,12 @@ the DB in /tmp it passes. ASan/UBSan kitchen sink: 33/0, no reports. The two
 new `TestNestedHealsKeepTheirOwnRecord` tests fail against HEAD's
 `heal_order.py`/`scope.py`/`syntax.py` and pass now, so they catch the bug.
 
-- [ ] Unstage both `7-refix-node/{signatures,tests}/oracleJdk-27.jdk` trees
+- [x] Unstage both `7-refix-node/{signatures,tests}/oracleJdk-27.jdk` trees — done in
+      942ded9: unstaged, `*.jdk/` ignored, 38M copies left on disk.
       (772 files, a full JDK twice) before committing; they are already gone
       from disk. `signatures/` is in package.json `files`, so it would also
       ship to npm. Add `*.jdk/` to `.gitignore`.
-- [ ] `repair.py` `get_registry() -> Optional[RepairRegistry]` is wrong: it
+- [x] `repair.py` `get_registry() -> Optional[RepairRegistry]` is wrong: it
       never returns None, and `scope.py:698` / `syntax.py:1722` call
       `.archive_repair` on it directly. Revert to `-> RepairRegistry`.
 - [x] `heal_parity/cases.tsv` has nested heals. A primary or fallback may be
@@ -256,7 +274,7 @@ new `TestNestedHealsKeepTheirOwnRecord` tests fail against HEAD's
       emitted at the end of a heal's fallback arm and records this heal's
       outcome (FALLBACK) again, so the last write is the outer heal's.
       `heal_parity_test.py` exits 0.
-- [ ] `notebook.py` `ARCHIVE` is hard-coded; allow an env override so the
+- [x] `notebook.py` `ARCHIVE` is hard-coded; allow an env override so the
       suite can run where the repo sits on a mount sqlite cannot lock.
 - [ ] Root `probe.ever`, `probe_inferred.ever`, `heal_*.ever` are tracked
       scratch, referenced nowhere.

@@ -100,6 +100,7 @@ SUITES = [
     ("RAG/MCP",        f"{sys.executable} tests/test_rag_mcp.py", ()),
     ("Invariants",     f"{sys.executable} tests/test_invariants.py", ()),
     ("Anchor (SEMANTICS §8)", f"{sys.executable} tests/test_anchor.py", ()),
+    ("Depth ceiling (Py vs C)", f"{sys.executable} tests/test_ceiling.py", ("gcc",)),
 ]
 
 

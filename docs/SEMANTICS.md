@@ -359,13 +359,13 @@ Named honestly, because scope depends on it.
 
 | Missing                         | Consequence                                |
 |---------------------------------|--------------------------------------------|
-| Composite data (records, lists) | `E_TYPE_LIST` is an unimplemented enum     |
+| Element and field types         | not tracked: `xs[i]` and `r.f` are `ANY`   |
 | Higher-order functions          | functions cannot be arguments              |
 | Pattern matching                | only `if/then/else`                        |
 | Static type system              | dynamic tag checks only                    |
 | Module system                   | one flat global namespace                  |
 | Transpiler back-ends            | anchored bodies do not yet emit Rust/Go/TS |
-| Formal grammar (EBNF)           | parsing is regex-based                     |
+| Formal grammar proof            | documented in §10; no proof it matches     |
 | Soundness proof                 | no progress/preservation                   |
 
 **Transpilation is the largest gap.** The decision is that an anchored function's *body* travels into the target
@@ -454,6 +454,72 @@ repair costs 8; an inferred one costs 32.
 - The C layer (`tac.c`) names causes as this section does, through cause frames in the lowered code. It does not
   implement `learn` yet, and it does not raise `operands do not combine`, because its operators do not check operand
   types.
+
+---
+
+## 10. Grammar as built
+
+The block below is the grammar of the Python parser in `2-interpreter-python/syntax.py`. `run_source()`, the front door for the CLI, REPL and embedders, calls `forgive.parse_forgiving()` first. That rewrites the source and token stream, then hands them to this parser. The note under the block covers what the rewrite adds.
+
+In the block, `"x"` is a keyword or punctuation token, `NAME`, `NUM` and `STR` are token classes, `{ }` repeats, `[ ]` is optional and `( )` groups. `heal`, `using`, `fallback` and `fix` are NAME tokens matched by text (see Notes).
+
+```ebnf
+(* Tokens. Spaces, tabs, newlines and #-comments are skipped. *)
+NUM        = digit { digit } [ "." digit { digit } ] ;      (* "1" is an int, "1.0" a real *)
+STR        = '"' { any character but '"' or newline } '"' ;
+NAME       = ( letter | "_" ) { letter | digit | "_" } ;    (* never a keyword *)
+
+(* Statements. Newlines separate nothing; an expr statement must come last. *)
+program    = { statement } ;
+statement  = fndef | letstmt | showstmt | externstmt | example | anchor | expr ;
+
+fndef      = "def" NAME "(" [ NAME { "," NAME } ] ")" "=" expr ;
+letstmt    = ( "let" | "ever" ) NAME "=" expr ;
+showstmt   = "show" NAME ;
+externstmt = "extern" NAME "(" [ NAME { "," NAME } ] ")" "from" STR ;
+example    = "example" NAME "(" [ expr { "," expr } ] ")" "=" expr ;
+anchor     = "anchor" NAME ;
+
+(* Expressions, loosest binding first. *)
+expr       = ifexpr | healexpr | learnexpr | forexpr | whileexpr | orexpr ;
+ifexpr     = "if" expr "then" expr "else" expr ;
+healexpr   = "heal" "(" expr ")" "using" "(" expr ")" "fallback" "(" expr ")" ;
+learnexpr  = "learn" "(" expr ")" "using" "(" expr ")" "fix" "(" expr ")" ;
+forexpr    = "for" NAME ( "in" expr "do" expr
+                        | "=" expr "to" expr [ "by" expr ] "do" expr ) ;
+whileexpr  = "while" expr "do" expr ;
+
+orexpr     = andexpr { "or" andexpr } ;
+andexpr    = notexpr { "and" notexpr } ;
+notexpr    = "not" notexpr | compare ;
+compare    = additive [ cmpop additive ] ;                  (* one comparison, no chaining *)
+cmpop      = "<" | ">" | "<=" | ">=" | "==" | "!=" ;
+additive   = multiply { ( "+" | "-" ) multiply } ;
+multiply   = unary { ( "*" | "/" ) unary } ;
+unary      = "-" unary | postfix ;                          (* -x is 0 - x *)
+postfix    = primary { "[" expr "]" | "." NAME } ;
+primary    = NUM | STR | "true" | "false" | "z"
+           | NAME [ "(" [ expr { "," expr } ] ")" ]         (* call, or variable *)
+           | list
+           | record
+           | "(" expr ")" ;
+list       = "[" [ expr { "," expr } ] "]" ;
+record     = "{" [ field { "," field } ] "}" ;
+field      = NAME ":" expr ;
+```
+
+**Beyond the block.** The parser itself accepts missing or trailing commas in list, record, call and `def` parameter lists, and `=` where a record wants `:`. Only `forgive.py`, which `run_source` runs first, accepts: keyword case (`Let x = 1`); `=` where `==` is meant (`if 1 = 1 then ...`); `:` where `=` is meant after `let` or `ever`; a stray `;`; and missing or trailing commas in `example` and `extern` argument lists.
+
+**Notes**
+
+- **Keywords are reserved.** Every word in `KEYWORDS` is a keyword and cannot be a name, parameter or record key. `expect`, `ascend`, `assimilate` and `equiv` are reserved, but no rule uses them. `heal`, `using`, `fallback` and `fix` are not reserved: they are NAME tokens, and `heal (` opens a heal form only when `using` follows the matching `)`.
+- **`example` and `anchor` are statements, not expressions.** `let y = anchor f` is a parse error.
+- **The `=` of an Example is not a comparison.** `example f(x) = v` takes one `=`; `example f(x) == v` is a parse error.
+- **Newlines separate nothing.** An expression continues onto the next line when the next token can extend it: `let x = 1` followed by `-2` is `1 - 2`, and `let g = f` followed by `(2)` is the call `f(2)`.
+- **An expression statement must come last.** `1` followed by `let x = 2` is a parse error.
+- **`if`, `heal`, `learn`, `for` and `while` cannot be operands** unless parenthesised. `1 + if ...` is a parse error; `1 + (if ...)` parses.
+- **Loop bodies are expressions.** `show` and `let` are statements, so `for i = 1 to 3 do show i` is a parse error (`unexpected show at line 1`).
+- **Parsing is not the whole gate.** The semantic pass runs after the parser and rejects, among other things, unbound names and a literal zero divisor, even inside `heal`. `heal (1 / 0) using ("p") fallback (3)` parses, then fails with `division by a literal zero`.
 
 ---
 

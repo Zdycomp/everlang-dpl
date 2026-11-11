@@ -329,3 +329,30 @@ rule until now, so no run could have shown the gap.
 that cannot carry confidence must say so in its output, not print 256. The test
 that catches a regression is the Integration suite. Fixed 2026-11-09: IR literals
 carry their confidence, and Backend B sends the one the binding earned. — 2026-11-09
+
+## A convenience entry point skipped the call gate
+
+**What broke.** Moving the depth rule from one shared counter to a per-function count
+(SEMANTICS §4.6) left `ev_interp_call` calling `interp_func` directly. Its outermost
+activation was never counted, so fact(4) came back 24 where the gate says z.
+`ks_recursion_ceiling` in `kitchen_sink.c` caught it on its one assertion.
+
+**Why it wasn't caught.** Nothing checked which path a call took. The kitchen sink
+asserted the answer, and `CLAUDE.md` already warned that this entry point skips the gate.
+
+**The rule now.** Every entry into the interpreter passes one gate, `gated_call`, which
+`OP_CALL`, `ev_interp_call` and `ev_module_example` all use. `tests/test_ceiling.py`
+requires the same answer through `run_source` and through the C interpreter. — 2026-11-09
+
+## A backstop smaller than the reference silently capped a recursion
+
+**What broke.** C's hard backstop on call depth was 8, Python's anchored backstop is 512.
+An anchored fact(20) ran in Python and came back z in C. No test had an anchored
+recursion deeper than 8, so the two layers were never compared past that depth.
+
+**Why it wasn't caught.** The unit tests and the integration programs stopped at fact(4)
+or fact(8), where both layers agree whatever the backstop is.
+
+**The rule now.** A backstop matches the reference layer's value, and a parity test runs
+one case past the smaller layer's limit. `tests/test_ceiling.py` runs fact(20) in both
+layers for that reason. — 2026-11-09

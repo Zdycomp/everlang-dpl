@@ -255,6 +255,18 @@ typedef struct {
     int16_t      confidence;  /* function's own trust level             */
     int16_t      _pad;
     EvArena     *arena;
+
+    /* SEMANTICS §4: the function's own state. The front end supplies the
+       measure; the Examples runner and anchors set the rest. */
+    int32_t      active;          /* activations of this function on the stack   */
+    int32_t      anchor_id;       /* 0 = unanchored (§4.4)                       */
+    int32_t      measure;         /* parameter that strictly decreases, or -1    */
+    int32_t      has_last;        /* the innermost activation has a measure      */
+    double       last_measure;    /* that activation's measure                   */
+    int32_t      examples_passed;
+    int32_t      examples_failed;
+    int32_t      refused;         /* an anchor was refused: z for good (§4.4)    */
+    char         reason[160];     /* why it is z, when it is                     */
 } EvFunc;
 
 /* ─────────────────────────────────────────────
@@ -375,6 +387,15 @@ int ev_pass_dead_code(EvFunc *f);
 /* Pass 3: dead-register elimination — remove instructions whose
            dest reg is never used */
 int ev_pass_dead_regs(EvFunc *f);
+
+/* SEMANTICS §4 on the C side. The front end supplies the static fact (the
+   measure). Examples and anchors are earned through these calls, which pass
+   the same call gate as OP_CALL, so an Example takes the path a real call takes. */
+EvFunc *ev_module_func(EvModule *m, const char *fname);
+void    ev_module_set_measure(EvModule *m, const char *fname, int32_t param_index);
+int     ev_module_example(EvModule *m, const char *fname, const EValue *args,
+                          const int16_t *arg_conf, int32_t nargs, EValue expect);
+int     ev_module_anchor(EvModule *m, const char *fname);
 
 /* Pass 4: confidence propagation — fill every dest reg's confidence
            from its operands using the TAC propagation rules */
