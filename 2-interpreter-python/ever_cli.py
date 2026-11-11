@@ -114,7 +114,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_build(args: argparse.Namespace) -> int:
-    """Transpile a .ever program to Go, Rust, R, or Kotlin."""
+    """Transpile a .ever program to Go, Rust, Kotlin, or JavaScript."""
     from emit import emit, BACKENDS
     path = Path(args.file)
     if not path.exists():
@@ -241,10 +241,10 @@ def build_parser():
     pc.add_argument("file")
     pc.set_defaults(func=cmd_check)
 
-    pb = sub.add_parser("build", help="transpile to Go, Rust, R, or Kotlin")
+    pb = sub.add_parser("build", help="transpile to Go, Rust, Kotlin, or JavaScript")
     pb.add_argument("file")
     pb.add_argument("--target", "-t", required=True,
-                    choices=["go", "rust", "r", "kotlin", "js"])
+                    choices=["go", "rust", "kotlin", "js"])
     pb.add_argument("--output", "-o")
     pb.set_defaults(func=cmd_build)
 

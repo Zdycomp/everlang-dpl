@@ -11,6 +11,13 @@ fast in this repo — cite the symbol, and the file, and let the number be a hin
 
 ## Decisions
 
+- [x] **R is no longer a target.** Ricky's call, 2026-11-09: the backends are
+  Go, Rust, Kotlin and JavaScript; finality stays Go and Rust. `REmitter` and
+  its `BACKENDS` row are gone from `emit.py`, `ever build` no longer offers
+  `-t r`, and `test_backends.py` no longer looks for `Rscript` — it was the
+  last skip in the gate. R stays in `language_matrix.py` as a language the
+  inspector recognises (`compatibility`, no backend), like Julia or MATLAB.
+  Backends: 68 passed, 0 failed, 0 skipped. — 2026-11-09
 - [x] **A verdict is an exit code, not a string.** `tests/run_all.py` decides a
   suite by exit status (`SKIP_EXIT` 77 = skip) and by the REQUIRES preflight,
   never by output text. Earlier it classified with `if "SKIP:" in out`, which
@@ -37,6 +44,43 @@ fast in this repo — cite the symbol, and the file, and let the number be a hin
   see through function calls. The named process is `docs/SEMANTICS.md` §9. — 2026-11-03
 
 ## Action items
+
+### Evaluate an AI proposer (2026-11-10): design only, `docs/EVALUATION.md`
+
+The harness is not blocked. Wiring any model in is blocked on Evaluation
+Q1–Q3 under Open questions.
+
+- [x] Design: dimensions, golden set, scoring, regression gate, use. Its §0
+      table and the gate checks ran on the real path (`run_source`;
+      `archive.sql` + `repair.sql` in SQLite `:memory:`).
+- [ ] Harness: `tests/eval/cases/` layout, record and replay by SHA-256, its
+      own `RepairRegistry` via `repair.use_registry` and its own
+      `EVER_REPAIR_STORE` — owner: test-engineer
+- [ ] Smoke set: one case per §9 reason and outcome, plus the eight traps —
+      owner: test-engineer
+- [ ] Mutation enumerator over known-good programs; truth by `_same_value`
+      on a declared domain
+- [ ] Witness and `extern` checks, by the parser, before evaluation
+- [ ] Append-only `tests/eval/ledger.jsonl`; admission case by case against
+      the last admitted run
+- [ ] `tests/test_eval_proposer.py` (exit 0/1/77) joins `run_all.py` once its
+      recorded smoke set is checked in, not before
+- [ ] Verify: two runs over the same recordings give a byte-identical outcome
+      table
+
+### Syntax across every archive (2026-11-10)
+
+- [x] `4-archive-sql/syntax_universal.sql`: attaches tapestry, repair, zeroth
+      and notebook read-only and unions every syntax event into `temp.v_syntax`,
+      each row tagged with its basis (`stage` > `term` > `defect`). Checked on
+      the real archives (321 rows: the C, Ruby and SQL inspections) and on copies
+      with one injected row per basis (325, near-misses "thereof"/"complex"
+      excluded). Not run through the `sqlite3` CLI itself here; the SQL ran on
+      SQLite 3.37.2 via Python.
+- [ ] **4ever does not archive its own syntax errors.** `compile_ever`
+      (`syntax.py`) names `lex` and `parse` failures, but nothing writes them to
+      `error_catch`; only ReFix does, as `build`. Until it does, the `stage`
+      basis is always empty.
 
 ### Dead-code elimination after constant folding (2026-11-07) — owner: tac-optimizer
 
@@ -327,3 +371,15 @@ new `TestNestedHealsKeepTheirOwnRecord` tests fail against HEAD's
   so the ASan command shows no errors but not no leaks. `MallocStackLogging=1
   leaks --atExit -- ./ks` reports 0 leaks for the kitchen sink on 2026-11-08, and
   `1 leak for 64 total leaked bytes` on a deliberate leak, so it detects leaks here.
+
+- Evaluation Q1 (`docs/EVALUATION.md` §7): what is an independent witness for a
+  model's proposal? `f` hard-coded to its four Examples returns `0` for `f(5)`
+  at 235 (`run_source`, 2026-11-10). Count only Examples the proposer never
+  saw? Count one model's samples as one witness?
+- Evaluation Q2: recurrence counts `source_ident`, not proposers. One fixture
+  archived under three sources by one model is admitted at 128 (checked against
+  `archive.sql` + `repair.sql` in SQLite `:memory:`), and `repair` has no column
+  that names a proposer. Settle before any model writes to the archive.
+- Evaluation Q3: is model-written source a program constant (`Certain`, §1.2)
+  or external data (`INTAKE`)? Extends the FALLBACK question above: a
+  model-written fallback is a guess at 256.

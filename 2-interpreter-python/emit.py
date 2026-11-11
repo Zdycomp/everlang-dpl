@@ -2,7 +2,7 @@
 """
 emit.py — Ever / Tapestry, transpiler backends.
 
-Ever compiles to Go, Rust, R, and Kotlin. Not four rewrites of the
+Ever compiles to Go, Rust, Kotlin and JavaScript. Not four rewrites of the
 language — one traversal, four emitters, because the IR is structural
 rather than syntactic. Every backend matches the same small set of
 shapes; only the spelling differs.
@@ -77,8 +77,8 @@ class Emitter:
 
     @staticmethod
     def _cstr(v: str, dollar: bool = False) -> str:
-        """A double-quoted string literal valid in Go, Rust, JS, Kotlin
-        and R.
+        """A double-quoted string literal valid in Go, Rust, JS
+        and Kotlin.
 
         Every backend used to interpolate the raw text straight between
         quotes — `f'txt("{v}")'` — so a quote, a backslash or a newline
@@ -768,234 +768,6 @@ fn show(name: &str, v: &Val) {
 
 
 # ═══════════════════════════════════════════════
-# R
-# ═══════════════════════════════════════════════
-
-class REmitter(Emitter):
-    ext, name = "R", "r"
-
-    def preamble(self, fns):
-        f = "\n".join(self.fn(x) for x in fns)
-        return '''# Ever -> R
-mkval <- function(kind, n=0, s="", b=FALSE, items=list(), keys=character(0), conf=256)
-  list(kind=kind, n=n, s=s, b=b, items=items, keys=keys, conf=conf)
-
-num <- function(x) mkval("num", n=x)
-txt <- function(x) mkval("txt", s=x)
-bl  <- function(x) mkval("bool", b=x)
-zz  <- function()  mkval("z", conf=0)
-capc <- function(v, c) { if (v$conf > c) v$conf <- c; v }
-
-lst <- function(...) {
-  it <- list(...)
-  c0 <- if (length(it) == 0) 256 else min(sapply(it, function(v) v$conf))
-  mkval("list", items=it, conf=c0)
-}
-
-recv <- function(keys, ...) {
-  it <- list(...)
-  c0 <- if (length(it) == 0) 256 else min(sapply(it, function(v) v$conf))
-  mkval("rec", items=it, keys=keys, conf=c0)
-}
-
-op <- function(o, a, b) {
-  if (a$kind == "z" || b$kind == "z") return(zz())
-  cf <- min(a$conf, b$conf)
-  # TEXT's only defined operator is `+`; every other one read a$n,
-  # which is 0 for a txt, and answered with invented certainty.
-  if (o == "+" && a$kind == "txt" && b$kind == "txt")
-    return(mkval("txt", s=paste0(a$s, b$s), conf=cf))
-  if (a$kind == "txt" || b$kind == "txt") return(zz())
-  x <- a$n; y <- b$n
-  if (o == "+") return(mkval("num", n=x+y, conf=cf))
-  if (o == "-") return(mkval("num", n=x-y, conf=cf))
-  if (o == "*") return(mkval("num", n=x*y, conf=cf))
-  if (o == "/") { if (y == 0) return(zz()); return(mkval("num", n=x/y, conf=cf)) }
-  if (o == "<")  return(mkval("bool", b=(x <  y), conf=cf))
-  if (o == ">")  return(mkval("bool", b=(x >  y), conf=cf))
-  if (o == "<=") return(mkval("bool", b=(x <= y), conf=cf))
-  if (o == ">=") return(mkval("bool", b=(x >= y), conf=cf))
-  if (o == "==") return(mkval("bool", b=(x==y), conf=cf))
-  if (o == "!=") return(mkval("bool", b=(x!=y), conf=cf))
-  zz()
-}
-
-truthy <- function(v) v$kind == "bool" && v$b
-
-# A branch result can never be more certain than the condition that chose it.
-condv <- function(cv, v) {
-  if (v$kind == "z") return(v)
-  v$conf <- min(cv$conf, v$conf)
-  v
-}
-
-vexp <- function(a) {
-  if (a$kind == "z") return(zz())
-  mkval("num", n=exp(a$n), conf=a$conf)
-}
-vsigmoid <- function(a) {
-  if (a$kind == "z") return(zz())
-  mkval("num", n=1/(1+exp(-a$n)), conf=a$conf)
-}
-vdot <- function(a, b) {
-  if (a$kind != "list" || b$kind != "list" ||
-      length(a$items) != length(b$items) || length(a$items) == 0) return(zz())
-  s <- 0; mc <- 256
-  for (i in seq_along(a$items)) {
-    if (a$items[[i]]$kind == "z" || b$items[[i]]$kind == "z") return(zz())
-    s <- s + a$items[[i]]$n * b$items[[i]]$n
-    mc <- min(mc, a$items[[i]]$conf, b$items[[i]]$conf)
-  }
-  mkval("num", n=s, conf=mc)
-}
-vnot <- function(a) {
-  if (a$kind != "bool") return(zz())
-  bl(!a$b)
-}
-vindex <- function(lst, idx) {
-  if (lst$kind != "list" || idx$kind != "num") return(zz())
-  i <- as.integer(idx$n)
-  # R lists are 1-indexed; Ever's are 0-indexed
-  if (i < 0 || i >= length(lst$items)) return(zz())
-  lst$items[[i + 1]]
-}
-vfield <- function(rec, name) {
-  if (rec$kind != "rec") return(zz())
-  for (i in seq_along(rec$keys)) {
-    if (rec$keys[i] == name) return(rec$items[[i]])
-  }
-  zz()
-}
-vmse <- function(p, act) {
-  if (p$kind != "list" || act$kind != "list" ||
-      length(p$items) != length(act$items) || length(p$items) == 0) return(zz())
-  s <- 0; mc <- 256
-  for (i in seq_along(p$items)) {
-    if (p$items[[i]]$kind == "z" || act$items[[i]]$kind == "z") return(zz())
-    d <- p$items[[i]]$n - act$items[[i]]$n
-    s <- s + d * d
-    mc <- min(mc, p$items[[i]]$conf, act$items[[i]]$conf)
-  }
-  mkval("num", n=s/length(p$items), conf=mc)
-}
-
-fmtnum <- function(x) if (x == round(x)) format(as.integer(x)) else format(x)
-
-show_val <- function(name, v) {
-  if (v$kind == "z")    cat(sprintf("%s = z [0/256]\\n", name))
-  else if (v$kind == "num")  cat(sprintf("%s = %s [%d/256]\\n", name, fmtnum(v$n), v$conf))
-  else if (v$kind == "txt")  cat(sprintf('%s = "%s" [%d/256]\\n', name, v$s, v$conf))
-  else if (v$kind == "bool") cat(sprintf("%s = %s [%d/256]\\n", name,
-                                   if (v$b) "true" else "false", v$conf))
-  else if (v$kind == "list") cat(sprintf("%s = <list %d items> [%d/256]\\n", name,
-                                   length(v$items), v$conf))
-  else if (v$kind == "rec")  cat(sprintf("%s = {%s} [%d/256]\\n", name,
-                                   paste(v$keys, collapse=", "), v$conf))
-}
-
-''' + f + "\n"
-
-    def postamble(self): return "\n"
-
-    def fn(self, f):
-        ps = ", ".join(f.params)
-        # a definition begins at INTAKE (SEMANTICS §4.1): its result is capped there
-        # an unanchored function nests at most floor(pi) = 3 activations deep (§4.6)
-        # R evaluates arguments lazily; force them first so a nested call in an
-        # argument counts against the caller, as it does in the reference
-        forced = "".join(f"  force({p})\n" for p in f.params)
-        return (f".depth_{f.name} <- 0\n"
-                f"{f.name} <- function({ps}) {{\n"
-                f"{forced}"
-                f"  if (.depth_{f.name} >= 3) return(zz())\n"
-                f"  .depth_{f.name} <<- .depth_{f.name} + 1\n"
-                f"  on.exit(.depth_{f.name} <<- .depth_{f.name} - 1)\n"
-                f"  capc({self.expr(f.body)}, 120)\n"
-                f"}}\n")
-
-    def let(self, name, expr, tracked): return f"{name} <- {expr}"
-    def show(self, name):  return f'show_val("{name}", {name})'
-    def num(self, v):      return f"num({float(v)})"
-    def text(self, v):     return f"txt({self._cstr(v)})"
-    def boolean(self, v):  return f"bl({'TRUE' if v else 'FALSE'})"
-    def zval(self):        return "zz()"
-    def var(self, n):      return n
-    def binop(self, o, l, r): return f'op("{o}", {l}, {r})'
-    def cond(self, c, t, e):
-        return (f"(function() {{ cv <- {c}; "
-                f"if (truthy(cv)) condv(cv, {t}) else condv(cv, {e}) }})()")
-    def unaryop(self, op, operand):
-        return f"vnot({operand})"
-    def logic(self, op, left, right):
-        l = self.expr(left); r = self.expr(right)
-        want = "FALSE" if op == "and" else "TRUE"
-        return (f'(function() {{ l <- {l}; '
-               f'if (l$kind != "bool") return(zz()); '
-               f'if (l$b == {want}) return(l); '
-               f'{r} }})()')
-    def index(self, target, key):
-        return f"vindex({target}, {key})"
-    def field(self, target, name):
-        return f'vfield({target}, "{name}")'
-    def forrange(self, var, start, end, step, body):
-        step_expr = step if step else "num(1.0)"
-        body_code = self.expr(body)
-        return f'''(function() {{
-  start_v <- {start}; end_v <- {end}; step_v <- {step_expr}
-  if (start_v$kind != "num" || end_v$kind != "num" || step_v$kind != "num")
-    return(zz())
-  st <- step_v$n
-  if (st == 0) return(zz())
-  result <- zz()
-  iv <- start_v$n
-  guard <- 0
-  while ((st > 0 && iv <= end_v$n) || (st < 0 && iv >= end_v$n)) {{
-    guard <- guard + 1
-    if (guard > 1000000) return(zz())
-    {var} <- num(iv)
-    result <- {body_code}
-    iv <- iv + st
-  }}
-  result
-}})()'''
-    def forin(self, var, seq, body):
-        body_code = self.expr(body)
-        return f'''(function() {{
-  seq_v <- {seq}
-  if (seq_v$kind != "list") return(zz())
-  result <- zz()
-  for ({var} in seq_v$items) {{
-    result <- {body_code}
-  }}
-  result
-}})()'''
-    def whileloop(self, cond, body):
-        cond_code = self.expr(cond)
-        body_code = self.expr(body)
-        return f'''(function() {{
-  result <- zz()
-  guard <- 0
-  repeat {{
-    guard <- guard + 1
-    if (guard > 1000000) return(zz())
-    c <- {cond_code}
-    if (c$kind != "bool" || !c$b) break
-    result <- {body_code}
-  }}
-  result
-}})()'''
-    _ML_BUILTINS = {"sigmoid": "vsigmoid", "exp": "vexp", "dot": "vdot", "mse": "vmse"}
-    def call(self, n, a):
-        native = self._ML_BUILTINS.get(n)
-        if native: return f"{native}({', '.join(a)})"
-        return f"{n}({', '.join(a)})"
-    def listlit(self, items): return f"lst({', '.join(items)})"
-    def reclit(self, keys, vals):
-        ks = ", ".join(f'"{k}"' for k in keys)
-        return f"recv(c({ks}), {', '.join(vals)})" if vals else "recv(character(0))"
-
-
-# ═══════════════════════════════════════════════
 # KOTLIN
 # ═══════════════════════════════════════════════
 
@@ -1459,7 +1231,6 @@ function show(name, v) {
 BACKENDS = {
     "go":     GoEmitter,
     "rust":   RustEmitter,
-    "r":      REmitter,
     "kotlin": KotlinEmitter,
     "js":     JSEmitter,
 }

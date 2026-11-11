@@ -66,7 +66,7 @@ ADAPTERS: Dict[str, LanguageAdapter] = {
     'PHP': LanguageAdapter('PHP', ('.php',), ('php',), None, 'compatibility'),
     'PowerShell': LanguageAdapter('PowerShell', ('.ps1', '.psm1'), ('pwsh',), None, 'compatibility'),
     'Python': LanguageAdapter('Python', ('.py',), ('python3',), None, 'reference'),
-    'R': LanguageAdapter('R', ('.r', '.R'), ('Rscript',), 'r', 'runtime'),
+    'R': LanguageAdapter('R', ('.r', '.R'), ('Rscript',), None, 'compatibility'),
     'Ruby': LanguageAdapter('Ruby', ('.rb',), ('ruby',), None, 'dsl'),
     'Rust': LanguageAdapter('Rust', ('.rs',), ('rustc',), 'rust', 'finality'),
     'Scala': LanguageAdapter('Scala', ('.scala',), ('scala',), None, 'compatibility'),

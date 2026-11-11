@@ -2,7 +2,7 @@
 """
 test_backends.py — every transpiler target must agree with Ever.
 
-Compiles each integration program to Go, Rust, R, and Kotlin, runs the
+Compiles each integration program to Go, Rust, Kotlin and JavaScript, runs the
 result, and diffs it against what Ever itself produced. A backend that
 merely compiles proves nothing; a backend that computes 88 where Ever
 says z has broken the one guarantee the language makes.
@@ -40,7 +40,6 @@ def have(cmd):
 TOOLS = {
     "go":     ("go",      lambda: have("go")),
     "rust":   ("rustc",   lambda: have("rustc")),
-    "r":      ("Rscript", lambda: have("Rscript")),
     "kotlin": ("kotlinc", lambda: have("kotlinc") and have("java")),
     "js":     ("node",    lambda: have("node")),
 }
@@ -82,8 +81,6 @@ def run_target(target, code, tmp):
         if c.returncode:
             return None, error_text(c.stderr)
         r = run([exe], 120)
-    elif target == "r":
-        r = run(["Rscript", src], 180)
     elif target == "kotlin":
         jar = os.path.join(tmp, "prog.jar")
         with KOTLIN_SLOTS:

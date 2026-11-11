@@ -9,6 +9,28 @@ lesson hardens into a rule every agent must follow, promote it into
 
 ---
 
+## A branch switch in the shared checkout erased a day of uncommitted work
+
+**What broke.** On 2026-11-10 at 08:56 something on the Mac switched
+`~/Downloads/4ever` from `feature/heal-repair-order` (1f14e49, Nov 9) to
+`claude/coderabbit-autofix-5d0` (1f6ea44, Oct 15). Every uncommitted change was
+dropped: the dead-code pass, the SEMANTICS and tasks edits, and the R removal.
+Most came back from a security-guidance turn baseline (`ff729eb`, kept as
+`rescue/turn-baseline-2026-11-09`) and a backup of `tasks.md`. The R removal
+was never in any object and had to be redone.
+
+**Why it wasn't caught.** Several agents (the Moto G session, Cowork, a
+CodeRabbit autofix, Paradev workspaces) shared one working tree, and the work
+lived only there. Git protects commits, not a shared folder. No test can see a
+checkout switch; the gate ran green on the old branch too (cross-layer 11/11).
+
+**The rule now.** One worktree per agent, on its own branch. Only Ricky works
+in the main checkout, and it stays on the working branch. Commit at every
+checkpoint; a snapshot plugin is a backstop, not the plan. Check: `git reflog
+-3` at session start must show no checkout you did not make.
+
+---
+
 ## The optimiser unbound function parameters
 
 **What broke.** `ev_pass_dead_regs` turned a parameter's LOAD in block 0 into

@@ -143,7 +143,7 @@ between `xs` and
 `[i]`, or between `xs[0]` and `[1]` — check `_completes_value()` before touching that logic.
 
 **Transpilers refuse `extern`/FFI outright, all four, no exceptions.**
-FFI runs through Python's `ctypes`; none of the five backends know about it. Silently dropping an `extern` statement is
+FFI runs through Python's `ctypes`; none of the four backends (Go, Rust, Kotlin, JavaScript) know about it. Silently dropping an `extern` statement is
 worse than refusing — the CALL survives into the emitted code, and for a name that happens to already exist as a
 target-language builtin (R's own
 `sqrt()`, for instance) it can appear to work by coincidence while every other extern fails. `emit.py`'s
