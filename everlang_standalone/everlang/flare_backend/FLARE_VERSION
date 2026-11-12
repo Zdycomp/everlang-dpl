@@ -3,3 +3,4 @@ tag: v0.2.0
 commit: d7a3e184ce57f0d51fa658106d3c8276846f0bf5
 source: https://github.com/Zdycomp/flare
 vendored: 2026-11-12
+note: rt/flare_rt.h clang-formatted (LLVM style, clang-format 18.1.3) on 2026-11-12 for everlang-dpl super-linter; formatting only, no semantic change
