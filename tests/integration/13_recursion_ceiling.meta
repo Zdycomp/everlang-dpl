@@ -1,0 +1,3 @@
+tags=recursion,depth,boundary
+description=Depth ceiling boundary: fact(3) allowed, fact(4) refused as z
+exit_code=0

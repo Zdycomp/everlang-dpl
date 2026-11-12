@@ -1,0 +1,3 @@
+let z_inf = z
+let res = heal (z_inf) using ("plain") fallback (0)
+show res

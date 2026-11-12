@@ -1,0 +1,1 @@
+AST:{"body":{"left":{"name":"n","type":"Var"},"operator":"*","right":{"literal":"2","numeric_kind":"int","type":"Num","value":2},"type":"BinOp"},"name":"double","parameters":["n"],"type":"FnDef"}

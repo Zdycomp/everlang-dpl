@@ -1,0 +1,36 @@
+# Compound interest projection — recursive, real math, real use.
+# Projects account balance year over year and compares two strategies.
+
+def compound(principal, rate, years) =
+    if years <= 0 then principal
+    else compound(principal * (1 + rate), rate, years - 1)
+
+def total_deposited(yearly, years) =
+    if years <= 0 then 0
+    else yearly + total_deposited(yearly, years - 1)
+
+let starting_balance = 10000
+let annual_rate       = 0.06
+
+# `years` strictly decreases in every self-call, so the semantic pass
+# proves termination and ANCHORS compound(): the floor(pi) = 3 ceiling
+# lifts, because the measure is the termination argument and depth no
+# longer has to stand in for one. Recursion with no decreasing measure
+# stays unanchored, stops at 3 call levels, and returns z rather than a
+# silently-wrong number. See docs/SEMANTICS.md §4.4, [ANCHOR-⊥].
+ever after_2_years = compound(starting_balance, annual_rate, 2)
+ever growth        = after_2_years - starting_balance
+ever growth_pct     = (growth / starting_balance) * 100
+
+let yearly_contribution = 2000
+ever total_saved = total_deposited(yearly_contribution, 2)
+
+ever better_strategy = if growth > total_saved
+                       then "compounding wins"
+                       else "contributions win"
+
+show after_2_years
+show growth
+show growth_pct
+show total_saved
+show better_strategy

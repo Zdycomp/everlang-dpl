@@ -1,0 +1,6 @@
+{
+  "name": "ReEstablish",
+  "skill": ".claude/skills/ReEstablish/SKILL.md",
+  "description": "A scope-driven workflow for rigorous reinforcement, hardening, regression coverage, and verification.",
+  "scope": "user-defined"
+}

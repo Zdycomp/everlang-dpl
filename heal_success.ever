@@ -1,0 +1,2 @@
+let res = heal (100) using ("plain") fallback (0)
+show res

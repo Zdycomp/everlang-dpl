@@ -1,0 +1,1335 @@
+<title>Depth Is Earned</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* ─────────────────────────────────────────────────────────────
+   Codric — the ascent from anchored recursion to ReFix.
+   Palette is instrument-derived: a confidence ramp (teal), an
+   earned state (ember), and Z, which sits off the ramp entirely
+   because Z is not a low confidence — it is its own state.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --ground:      #EDEFEC;
+  --ground-2:    #E4E7E3;
+  --panel:       #F6F7F5;
+  --ink:         #141B1D;
+  --ink-2:       #47555A;
+  --ink-3:       #77868B;
+  --rule:        #CFD5D0;
+  --rule-2:      #DDE2DD;
+  --signal:      #10796B;
+  --signal-soft: #CBE3DE;
+  --ember:       #B65E1B;
+  --ember-soft:  #F0DAC6;
+  --void:        #6A6280;
+  --void-soft:   #DCD8E4;
+  --cell-off:    #D8DDD8;
+
+  --f-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --f-body:    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --f-mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --measure: 66ch;
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0D1417;
+    --ground-2:    #111A1E;
+    --panel:       #131E22;
+    --ink:         #E4EAE7;
+    --ink-2:       #9DADB1;
+    --ink-3:       #6E8085;
+    --rule:        #24343A;
+    --rule-2:      #1B282D;
+    --signal:      #3FBBA6;
+    --signal-soft: #16403C;
+    --ember:       #E08A3C;
+    --ember-soft:  #40280F;
+    --void:        #9A90B2;
+    --void-soft:   #2A2536;
+    --cell-off:    #1D2A2F;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0D1417;
+  --ground-2:    #111A1E;
+  --panel:       #131E22;
+  --ink:         #E4EAE7;
+  --ink-2:       #9DADB1;
+  --ink-3:       #6E8085;
+  --rule:        #24343A;
+  --rule-2:      #1B282D;
+  --signal:      #3FBBA6;
+  --signal-soft: #16403C;
+  --ember:       #E08A3C;
+  --ember-soft:  #40280F;
+  --void:        #9A90B2;
+  --void-soft:   #2A2536;
+  --cell-off:    #1D2A2F;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+/* ── Shell ─────────────────────────────────────────────────── */
+
+.shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.spread {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+@media (min-width: 1000px) {
+  .spread { grid-template-columns: 190px minmax(0, 1fr); gap: 3.5rem; }
+}
+
+/* ── The rail: layers 0 through 7 ──────────────────────────── */
+
+.rail { display: none; }
+
+@media (min-width: 1000px) {
+  .rail {
+    display: block;
+    position: sticky;
+    top: 0;
+    align-self: start;
+    padding: 5rem 0 3rem;
+    height: 100vh;
+    overflow-y: auto;
+  }
+}
+
+.rail-title {
+  font-family: var(--f-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 1.25rem;
+}
+
+.rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+
+.rail a {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.4rem 0.5rem 0.4rem 0;
+  text-decoration: none;
+  color: var(--ink-3);
+  border-left: 2px solid transparent;
+  padding-left: 0.6rem;
+  transition: color .18s ease, border-color .18s ease;
+}
+
+.rail a:hover, .rail a:focus-visible { color: var(--ink); border-left-color: var(--rule); }
+
+.rail a.on { color: var(--ink); border-left-color: var(--ember); }
+
+.rail .n {
+  font-family: var(--f-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+.rail a.on .n { color: var(--ember); }
+
+.rail .l { font-size: 0.8125rem; line-height: 1.35; }
+
+/* ── Type ──────────────────────────────────────────────────── */
+
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+
+h1 {
+  font-family: var(--f-display);
+  font-weight: 400;
+  font-size: clamp(3rem, 9.5vw, 6.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-family: var(--f-display);
+  font-weight: 400;
+  font-size: clamp(1.9rem, 4.2vw, 3rem);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  margin-bottom: 0.75rem;
+}
+
+h3 {
+  font-family: var(--f-body);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  letter-spacing: 0.01em;
+  margin-bottom: 0.5rem;
+}
+
+p { margin: 0 0 1.1rem; max-width: var(--measure); }
+
+a { color: inherit; }
+
+.eyebrow {
+  font-family: var(--f-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 1.1rem;
+}
+
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+.lede {
+  font-size: clamp(1.0625rem, 1.9vw, 1.3125rem);
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 58ch;
+}
+
+.dek {
+  font-family: var(--f-display);
+  font-style: italic;
+  font-size: clamp(1.25rem, 2.6vw, 1.75rem);
+  line-height: 1.35;
+  color: var(--ink);
+  max-width: 40ch;
+  margin: 0 0 1.25rem;
+}
+
+strong { font-weight: 600; }
+
+.mono { font-family: var(--f-mono); font-size: 0.9em; }
+
+/* ── Sections ──────────────────────────────────────────────── */
+
+section { padding: clamp(3.5rem, 8vw, 6rem) 0; border-top: 1px solid var(--rule-2); }
+
+section:first-of-type { border-top: none; }
+
+.hero { padding-top: clamp(3rem, 8vw, 5.5rem); padding-bottom: clamp(3rem, 7vw, 5rem); border-top: none; }
+
+/* ── Byte grid: 256 cells, because 256 IS the states of a byte ── */
+
+.byte {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 1.5px;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.byte i {
+  display: block;
+  aspect-ratio: 1;
+  background: var(--cell-off);
+  border-radius: 0.5px;
+}
+
+.byte i.on { background: var(--signal); }
+.byte i.top { background: var(--ember); }
+
+.gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 168px;
+}
+
+.gauge .byte i { transition: background .5s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gauge .byte i { transition: none; }
+}
+
+.gauge-read {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.gauge-val { font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; }
+.gauge-lab { font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+
+.is-z .gauge-val { color: var(--void); }
+.is-z .byte i { background: var(--void-soft); }
+.is-earned .gauge-val { color: var(--ember); }
+.is-signal .gauge-val { color: var(--signal); }
+
+/* ── Hero composition ──────────────────────────────────────── */
+
+.hero-grid {
+  display: grid;
+  gap: clamp(2rem, 5vw, 3.5rem);
+  align-items: end;
+}
+
+@media (min-width: 780px) {
+  .hero-grid { grid-template-columns: minmax(0, 1fr) 168px; }
+}
+
+.wordmark {
+  font-family: var(--f-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ember);
+  margin-bottom: 2.5rem;
+}
+
+.hero h1 em {
+  font-style: italic;
+  color: var(--ember);
+}
+
+.hero-sub { margin-top: 1.75rem; }
+
+/* ── Terminal blocks ───────────────────────────────────────── */
+
+.term {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font-family: var(--f-mono);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.term-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--rule-2);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.term-bar .run { color: var(--signal); }
+
+.term pre {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  white-space: pre;
+  font-variant-numeric: tabular-nums;
+}
+
+.c-dim { color: var(--ink-3); }
+.c-sig { color: var(--signal); }
+.c-emb { color: var(--ember); font-weight: 500; }
+.c-void { color: var(--void); font-weight: 500; }
+
+/* ── Panels & grids ────────────────────────────────────────── */
+
+.cols {
+  display: grid;
+  gap: clamp(1.5rem, 3.5vw, 2.5rem);
+  margin-top: 2rem;
+}
+
+@media (min-width: 720px) { .cols-2 { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 720px) { .cols-3 { grid-template-columns: repeat(3, 1fr); } }
+
+.card {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1.25rem 1.35rem;
+  background: var(--panel);
+}
+
+.card p:last-child { margin-bottom: 0; }
+.card p { font-size: 0.9375rem; color: var(--ink-2); }
+
+.card-k {
+  font-family: var(--f-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 0.5rem;
+}
+
+.stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem 2.5rem;
+  margin: 1.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stat-row li { display: flex; flex-direction: column; gap: 0.15rem; }
+
+.stat-n {
+  font-family: var(--f-mono);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.stat-l {
+  font-family: var(--f-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ── Tables ────────────────────────────────────────────────── */
+
+.tw { overflow-x: auto; margin: 1.75rem 0 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  min-width: 540px;
+}
+
+th {
+  text-align: left;
+  font-family: var(--f-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 0 0.9rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+td {
+  padding: 0.6rem 0.9rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule-2);
+  vertical-align: top;
+  color: var(--ink-2);
+}
+
+td:first-child, th:first-child { padding-left: 0; }
+
+td.k { color: var(--ink); font-weight: 500; }
+
+td.num, th.num {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-right: 0;
+  white-space: nowrap;
+}
+
+td.num { color: var(--signal); font-weight: 500; }
+
+td.layer {
+  font-family: var(--f-mono);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Scale diagram ─────────────────────────────────────────── */
+
+.scale { margin: 2rem 0 0; }
+
+.scale-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 1px;
+  overflow: hidden;
+  background: var(--cell-off);
+}
+
+.scale-bar span { display: block; height: 100%; }
+.scale-z { width: 3%; background: var(--void); }
+.scale-lo { width: 47%; background: var(--signal-soft); }
+.scale-hi { width: 49%; background: var(--signal); }
+.scale-c { width: 1%; background: var(--ember); }
+
+.scale-marks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-family: var(--f-mono);
+  font-size: 0.6875rem;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.scale-marks b { display: block; color: var(--ink-2); font-weight: 500; }
+.scale-marks div:last-child { text-align: right; }
+.scale-marks div:nth-child(2) { text-align: center; }
+
+/* ── Pull quote ────────────────────────────────────────────── */
+
+.pull {
+  border-left: 2px solid var(--ember);
+  padding: 0.25rem 0 0.25rem 1.5rem;
+  margin: 2rem 0;
+  max-width: 52ch;
+}
+
+.pull p {
+  font-family: var(--f-display);
+  font-size: clamp(1.25rem, 2.6vw, 1.625rem);
+  line-height: 1.32;
+  color: var(--ink);
+  margin: 0;
+}
+
+.pull cite {
+  display: block;
+  margin-top: 0.65rem;
+  font-family: var(--f-mono);
+  font-size: 0.6875rem;
+  font-style: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ── Refusal list ──────────────────────────────────────────── */
+
+.refusals { list-style: none; margin: 1.75rem 0 0; padding: 0; display: flex; flex-direction: column; }
+
+.refusals li {
+  display: grid;
+  gap: 0.15rem 1.25rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--rule-2);
+}
+
+@media (min-width: 700px) { .refusals li { grid-template-columns: 1fr 1.15fr; align-items: baseline; } }
+
+.refusals .no {
+  font-family: var(--f-mono);
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.refusals .no::before {
+  content: "refuses";
+  display: inline-block;
+  margin-right: 0.6rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--void);
+}
+
+.refusals .why { font-size: 0.875rem; color: var(--ink-2); }
+
+/* ── Footer ────────────────────────────────────────────────── */
+
+footer {
+  border-top: 1px solid var(--rule);
+  padding: 3rem 0 4rem;
+  font-family: var(--f-mono);
+  font-size: 0.75rem;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}
+
+footer p { max-width: none; }
+
+.foot-row { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; justify-content: space-between; }
+
+:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; border-radius: 2px; }
+</style>
+
+<div class="shell">
+<div class="spread">
+
+  <!-- ── The rail ─────────────────────────────────────────── -->
+  <nav class="rail" aria-label="The eight layers">
+    <p class="rail-title">The ascent</p>
+    <ol>
+      <li><a href="#anchor"><span class="n">§</span><span class="l">Depth is earned</span></a></li>
+      <li><a href="#refusal"><span class="n">§</span><span class="l">The refusal</span></a></li>
+      <li><a href="#scale"><span class="n">§</span><span class="l">The scale</span></a></li>
+      <li><a href="#zeroth"><span class="n">0ᵗʰ</span><span class="l">The Zeroth Law</span></a></li>
+      <li><a href="#atom"><span class="n">0·1</span><span class="l">Atom &amp; phase</span></a></li>
+      <li><a href="#language"><span class="n">2</span><span class="l">The language</span></a></li>
+      <li><a href="#instrument"><span class="n">3·6</span><span class="l">DSL &amp; interface</span></a></li>
+      <li><a href="#archive"><span class="n">4</span><span class="l">The archive</span></a></li>
+      <li><a href="#runtime"><span class="n">5</span><span class="l">The runtime</span></a></li>
+      <li><a href="#refix"><span class="n">7</span><span class="l">ReFix</span></a></li>
+      <li><a href="#ledger"><span class="n">✓</span><span class="l">The ledger</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <!-- ── Hero ─────────────────────────────────────────────── -->
+  <section class="hero" id="anchor">
+    <p class="wordmark">4Ever &nbsp;·&nbsp; Codric Enterprise</p>
+    <div class="hero-grid">
+      <div>
+        <h1>Depth is<br><em>earned.</em></h1>
+        <p class="lede hero-sub">A recursive function does not get to go deep because you
+        trust it. It goes deep when it has proved it will stop. That one rule, followed
+        honestly for eight layers, ends up as a tool that fixes Gradle builds.</p>
+      </div>
+      <div class="gauge is-earned" data-value="256" data-top="true">
+        <div class="byte" aria-hidden="true"></div>
+        <div class="gauge-read">
+          <span class="gauge-val">256</span>
+          <span class="gauge-lab">Certain</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="term">
+      <div class="term-bar"><span>python3 examples/anchor_demo.py</span><span class="run">executed</span></div>
+<pre>1. Unanchored — the ceiling is ⌊π⌋ = 3
+
+  def                    fact(n) = if n &lt;= 1 then 1 else n * fact(n - 1)
+  measure found          'n'
+  fact(3)                <span class="c-sig">6</span>   <span class="c-dim">— inside the ceiling</span>
+  fact(8)                <span class="c-void">DepthExceeded</span> <span class="c-dim">— a checked halt, not a hang</span>
+
+2. Three Examples, then an anchor
+
+  example fact(1)        = 1   <span class="c-sig">✓</span>
+  example fact(2)        = 2   <span class="c-sig">✓</span>
+  example fact(3)        = 6   <span class="c-sig">✓</span>
+  state                  <span class="c-emb">ANCHORED</span>
+  reason                 anchored 1001, recursion unbounded on
+                         decreasing measure 'n'
+
+3. Anchored — the ceiling is gone
+
+  fact(8)                <span class="c-sig">40320</span>
+  fact(20)               <span class="c-sig">2432902008176640000</span>
+  deepest frame reached  <span class="c-emb">19</span>
+  old ceiling            3</pre>
+    </div>
+
+    <p>Three passing Examples buy a proof obligation, not a favour. The
+    anchor is granted because <span class="mono">n − 1</span> strictly decreases
+    on every self-call — a syntactic, deliberately conservative check. What it
+    cannot prove, it refuses.</p>
+  </section>
+
+  <!-- ── The refusal ──────────────────────────────────────── -->
+  <section id="refusal">
+    <p class="eyebrow">The rule that keeps it honest</p>
+    <h2>A function can sit at 217 and still loop forever.</h2>
+    <p class="lede">So confidence does not buy depth. Ever. This is the same
+    demo, four lines further down.</p>
+
+    <div class="cols cols-2">
+      <div>
+        <div class="term" style="margin-top:1.75rem">
+          <div class="term-bar"><span>the same run, part 4</span><span class="run">executed</span></div>
+<pre>def                   grow(n) = if n &gt; 99
+                        then n else grow(n + 1)
+every example passes  True
+confidence            <span class="c-sig">217/256</span>
+measure found         <span class="c-void">None</span>
+
+anchor →              <span class="c-void">Z</span>
+defect                <span class="c-void">UNBOUNDED</span>
+reason                recursive function has no
+                      decreasing measure;
+                      confidence proves trust,
+                      not termination</pre>
+        </div>
+      </div>
+      <div>
+        <div class="gauge is-signal" data-value="217" style="margin:1.75rem 0 1.5rem">
+          <div class="byte" aria-hidden="true"></div>
+          <div class="gauge-read">
+            <span class="gauge-val">217</span>
+            <span class="gauge-lab">grow · verified</span>
+          </div>
+        </div>
+        <p>Every example it was given, it passed. It is well above the
+        execute floor. It is still refused, because correctness and
+        termination are different claims and the language will not let
+        one be spent on the other.</p>
+        <p>A wrong termination proof is worse than no proof.</p>
+      </div>
+    </div>
+
+    <div class="pull">
+      <p>Anchoring a recursive function without a decreasing measure
+      would turn “unbounded depth” into “hangs.”</p>
+      <cite>SEMANTICS.md · §4.4 · [ANCHOR-⊥]</cite>
+    </div>
+  </section>
+
+  <!-- ── The scale ────────────────────────────────────────── -->
+  <section id="scale">
+    <p class="eyebrow">The instrument</p>
+    <h2>Every value carries how much it is trusted.</h2>
+    <p class="lede">Most languages give a value two states: it exists, or it is
+    null. This one gives it a scale — and one state that is not on the scale
+    at all.</p>
+
+    <div class="scale">
+      <div class="scale-bar" role="img" aria-label="Confidence scale from Z at zero through the execute floor at 128 to Certain at 256">
+        <span class="scale-z"></span><span class="scale-lo"></span><span class="scale-hi"></span><span class="scale-c"></span>
+      </div>
+      <div class="scale-marks">
+        <div><b>0 · Z</b>unknown, with its reason</div>
+        <div><b>128</b>execute floor</div>
+        <div><b>256</b>Certain</div>
+      </div>
+    </div>
+
+    <div class="cols cols-3">
+      <div class="card">
+        <p class="card-k">Why 256</p>
+        <p>4⁴ — the states of a byte. Every other constant is derived from it,
+        not chosen: the floor is 256/2, the enumerate threshold ⌊256/π²⌋ = 25,
+        the emulate ceiling ⌊π⌋ = 3.</p>
+      </div>
+      <div class="card">
+        <p class="card-k">Z is not a low number</p>
+        <p>It is its own state, it carries the reason it is unknown, and it is
+        contagious. Anything touching Z becomes Z. Confidence flows down,
+        never up.</p>
+      </div>
+      <div class="card">
+        <p class="card-k">Certain is earned</p>
+        <p>256 comes from verification at runtime. Static inspection
+        deliberately cannot reach it, and — see below — no stack of evidence
+        can either.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:3rem">Then the contagion turned out to be arithmetic.</h3>
+    <p>Let <span class="mono">u = (256 − confidence) / 256</span> — normalized
+    ignorance. Corroboration between two independent witnesses is
+    <em>identically</em> <span class="mono">u_result = u_a × u_b</span>: the
+    standard rule for combining evidence, checked exactly across the full
+    grid at <strong>1089/1089</strong>. Three consequences nobody designed in:</p>
+
+    <ul class="refusals">
+      <li>
+        <span class="no">to manufacture confidence</span>
+        <span class="why">Two witnesses agreeing multiplies two ignorances into a
+        smaller one. The confidence was already distributed across them;
+        corroboration only revealed it.</span>
+      </li>
+      <li>
+        <span class="no">to treat Z-contagion as a rule</span>
+        <span class="why">Z has <span class="mono">u = 1</span>, and
+        <span class="mono">1 × x = 1</span>. Z absorbs because it is the
+        absorbing element under multiplication. It was written in as a design
+        decision; it is a theorem.</span>
+      </li>
+      <li>
+        <span class="no">to reach Certain by combination</span>
+        <span class="why"><span class="mono">u = 0</span> requires some
+        <span class="mono">u_i = 0</span> exactly, and a product of non-zero
+        terms is never zero. No stack of imperfect witnesses, at any strength
+        or count, gets there.</span>
+      </li>
+    </ul>
+
+    <p style="margin-top:1.75rem">That third one exposed a live bug. The integer
+    scale had been rounding the last fraction away, so
+    <span class="mono">excel(250, 250)</span> returned <strong>256</strong> —
+    the language inferring Certain from accumulated evidence, in direct
+    contradiction of its own rule. True value: 255.78. Fixed in C, Python and
+    Ruby; combination now caps at 255.</p>
+  </section>
+
+  <!-- ── The Zeroth Law ───────────────────────────────────── -->
+  <section id="zeroth">
+    <p class="eyebrow">The Zeroth Law</p>
+    <h2>Before you can combine two readings, they have to be readings of
+    the same thing.</h2>
+    <p class="lede">The First Law says what happens when evidence combines. The
+    Zeroth says confidence is a comparable quantity at all — and it is numbered
+    first because everything above it had quietly assumed it.</p>
+
+    <div class="pull">
+      <p>If two threads are each in equilibrium with a third, they are in
+      equilibrium with each other.</p>
+      <cite>The law</cite>
+    </div>
+
+    <p>Thermodynamics named this one last and numbered it first for exactly the
+    same reason. Without transitive equilibrium, two thermometers can each agree
+    with a third and disagree with each other — and then temperature is not a
+    property of anything, just a reading on a particular instrument.</p>
+
+    <h3 style="margin-top:2.5rem">The stack had that hole</h3>
+    <p>Six layers compared confidence to confidence. The only predicate for it,
+    written identically in C++ and Java, was proximity:</p>
+
+    <div class="term">
+      <div class="term-bar"><span>1-phase-cpp/phase.cpp — before</span><span class="run">measured</span></div>
+<pre>std::abs(a.confidence - b.confidence) &lt; E_PI_WIDTH_WARN   <span class="c-dim">// &lt; 81</span>
+
+  |0 - 1|   =  1   &lt; 81   <span class="c-sig">✓</span>
+  |1 - 81|  = 80   &lt; 81   <span class="c-sig">✓</span>
+  |0 - 81|  = 81   &lt; 81   <span class="c-void">✗</span>   <span class="c-dim">the chain breaks</span>
+
+  <span class="c-void">969,840</span> of 4,922,897 candidate triples break it — <span class="c-void">19.7%</span></pre>
+    </div>
+
+    <p>Reflexive and symmetric, and <strong>not transitive</strong>. That is a
+    tolerance relation, and no tolerance relation is transitive — so widening
+    the threshold does not fix it. A predicate that cannot be chained cannot
+    license a scale.</p>
+
+    <p>There was a quieter finding underneath. Proximity had exactly one caller,
+    <span class="mono">a.confidence == b.confidence &amp;&amp; sameSpectrum(a, b)</span>
+    — and equal confidences have a gap of zero, which is inside any width. The
+    system's only comparison predicate was both non-transitive <em>and</em>
+    inert at its only call site.</p>
+
+    <h3 style="margin-top:2.5rem">The fix is structural, not numeric</h3>
+    <p>Equilibrium is now equality of <strong>band</strong>, and band is a
+    <em>total function</em> of confidence. That single fact is the entire proof:
+    <span class="mono">a ~ b ⟺ f(a) = f(b)</span> is the kernel of a function,
+    and the kernel of a function is an equivalence relation by construction —
+    not by luck, and not by testing. So the thing to protect is the totality of
+    <span class="mono">band</span>, which is what every layer's test checks.</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Band</th><th class="num">Range</th><th>Boundary from</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Z</td><td class="num" style="color:var(--void)">0</td><td>its own state, never a low band</td></tr>
+          <tr><td class="k">Vestigial</td><td class="num">1–24</td><td>below ⌊256/π²⌋ = 25</td></tr>
+          <tr><td class="k">Approaching</td><td class="num">25–80</td><td>below ⌊256/π⌋ = 81</td></tr>
+          <tr><td class="k">Subfloor</td><td class="num">81–127</td><td>below 256/2 = 128</td></tr>
+          <tr><td class="k">Executable</td><td class="num">128–255</td><td>cleared to execute, not verified</td></tr>
+          <tr><td class="k">Certain</td><td class="num" style="color:var(--ember)">256</td><td>4⁴ exactly</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="margin-top:1.5rem">Every boundary is a constant the scale already
+    had. Nothing was chosen for this. And two bands are deliberately singletons:
+    <strong>255 and 256 are not in equilibrium</strong> — proximity said they
+    were, with a gap of 1, which is the same laundering that made
+    <span class="mono">excel(250,250)</span> return Certain.</p>
+
+    <h3 style="margin-top:2.5rem">And it travels exactly as far as an anchor does</h3>
+    <p>An unanchored thread pays one confidence per language crossing. One point
+    is nothing — unless the thread is standing on the floor of its band.</p>
+
+    <div class="term">
+      <div class="term-bar"><span>0-atom-c/tapestry_test.c — through the real operator</span><span class="run">executed</span></div>
+<pre>edge thread at 128  <span class="c-dim">(Executable — the band floor)</span>
+
+  unanchored  →  127  →  <span class="c-void">Subfloor</span>     band changed. equilibrium lost.
+  anchored    →  128  →  <span class="c-emb">Executable</span>   band held.    equilibrium survives.</pre>
+    </div>
+
+    <p>Two threads comparable at home are not comparable abroad — and nothing in
+    the old code could have noticed, because the old predicate had no notion of
+    a boundary to cross.</p>
+
+    <div class="pull">
+      <p>Depth is earned. So is comparability.</p>
+      <cite>The Zeroth Law survives assimilation exactly for anchored threads</cite>
+    </div>
+
+    <p>Which is the sentence this whole page has been saying at every scale.
+    <span class="mono">fact</span> earns unbounded depth with three Examples and
+    a decreasing measure. A fixture earns rulehood with three distinct sources
+    and a clean replay. A thread earns the right to mean the same thing in
+    another language by being anchored.</p>
+
+    <h3 style="margin-top:2.5rem">One law, or four opinions</h3>
+    <p>The law is stated in C, C++, Python, SQL and Java. Stating it five times
+    is only worth anything if they can be checked against each other — a law
+    five layers each hold privately is five laws.</p>
+
+    <div class="term">
+      <div class="term-bar"><span>python3 tests/test_zeroth.py</span><span class="run">executed</span></div>
+<pre>The law: reflexive, symmetric, transitive
+  <span class="c-sig">✓</span> reflexive over all 257 values
+  <span class="c-sig">✓</span> symmetric over all 66,049 pairs
+  <span class="c-sig">✓</span> transitive over every triple
+
+  proximity |a-b| &lt; 81: <span class="c-void">969,840</span> of 4,922,897 triples break the chain  (19.7%)
+
+Agreement — one law, or four opinions
+  <span class="c-sig">✓</span> Python and C agree on all 257 values
+  <span class="c-sig">✓</span> Python and SQL agree on all 257 values
+  <span class="c-sig">✓</span> Python and Java agree on all 257 values
+  <span class="c-sig">✓</span> <span class="c-emb">all of Python, C, SQL, Java agree on every boundary</span></pre>
+    </div>
+
+    <p>Only one layer can <em>refuse</em>. Everywhere else the law is a predicate
+    a caller may forget to consult; in the archive it is a constraint at the
+    storage boundary — an anchored crossing that changed band is rejected, and
+    the table that defines the bands is closed to editing, because moving one
+    boundary to overlap its neighbour would silently destroy transitivity in
+    every view above it.</p>
+
+    <p>An <em>unanchored</em> crossing that changes band is allowed, and lands in
+    <span class="mono">v_band_drift</span> naming both bands. Drift that is
+    recorded is the design. Drift that is silent is the failure.</p>
+  </section>
+
+  <!-- ── Layer 0/1 ────────────────────────────────────────── -->
+  <section id="atom">
+    <p class="eyebrow">Layer 0 · C &nbsp;—&nbsp; Layer 1 · C++</p>
+    <h2>The rule is enforced where memory is.</h2>
+    <p class="lede">Z-contagion lives in the C atom, so no layer above can
+    launder an unknown into a fact. A 440-byte particle, fixed width, no
+    hidden allocation.</p>
+
+    <p>Layer 1 decides what happens when two particles meet, in a check order
+    that is fixed and not negotiable: <span class="mono">Z-contagion →
+    Expel → Repel → Excel</span>. Expel is checked before Repel because it is
+    the more specific claim.</p>
+
+    <ul class="stat-row">
+      <li><span class="stat-n" style="color:var(--signal)">88</span><span class="stat-l">atom</span></li>
+      <li><span class="stat-n" style="color:var(--signal)">98</span><span class="stat-l">EValue</span></li>
+      <li><span class="stat-n" style="color:var(--signal)">70</span><span class="stat-l">IR + arena</span></li>
+      <li><span class="stat-n" style="color:var(--signal)">50</span><span class="stat-l">phase engine</span></li>
+      <li><span class="stat-n" style="color:var(--signal)">46</span><span class="stat-l">ABI boundary</span></li>
+    </ul>
+  </section>
+
+  <!-- ── Layer 2 ──────────────────────────────────────────── -->
+  <section id="language">
+    <p class="eyebrow">Layer 2 · Python</p>
+    <h2>An unmeasured input poisons what it touches.</h2>
+    <p class="lede">Instead of quietly becoming a plausible wrong number.
+    Here is a week of sales with Thursday never recorded.</p>
+
+    <div class="term">
+      <div class="term-bar"><span>ever run examples/weekly_sales.ever</span><span class="run">executed</span></div>
+<pre><span class="c-dim">let</span> mon = 420   <span class="c-dim">let</span> tue = 610   <span class="c-dim">let</span> wed = 380
+<span class="c-dim">let</span> thu = <span class="c-void">z</span>     <span class="c-dim">let</span> fri = 705
+
+<span class="c-dim">def</span> sum_from(xs, i) = <span class="c-dim">if</span> i &gt;= 5 <span class="c-dim">then</span> 0
+                      <span class="c-dim">else</span> xs[i] + sum_from(xs, i + 1)
+───────────────────────────────────────────────────────
+total       = <span class="c-void">z</span>       <span class="c-dim">[  0/256]</span>
+had_gap     = <span class="c-void">z</span>       <span class="c-dim">[  0/256]</span>
+best        = <span class="c-sig">610</span>     <span class="c-dim">[256/256]</span>
+third_day   = <span class="c-sig">380</span>     <span class="c-dim">[256/256]</span>
+missing     = <span class="c-void">z</span>       <span class="c-dim">[  0/256]</span>
+last_square = <span class="c-sig">25</span>      <span class="c-dim">[256/256]</span></pre>
+    </div>
+
+    <p>Not 2115 with Thursday quietly skipped. And note
+    <span class="mono">had_gap</span>: asking <em>“is this the unknown?”</em>
+    also returns <span class="mono">z</span>, because a definite answer about
+    an unknown is still a claim about it.</p>
+
+    <div class="cols cols-2">
+      <div class="card">
+        <p class="card-k">Five compile targets</p>
+        <p>Go, Rust, R, Kotlin, JavaScript — each matched to the reference
+        value-for-value <em>and</em> confidence-for-confidence. This host has
+        only a JS toolchain, so 12 cases re-verified here and
+        <strong>four targets reported SKIP</strong>. The other four are the
+        project's own prior result, not something this page re-ran.</p>
+      </div>
+      <div class="card">
+        <p class="card-k">Foreign code is capped at 120</p>
+        <p>Calling real <span class="mono">libm</span> through FFI —
+        <span class="mono">sqrt</span>, <span class="mono">pow</span>,
+        <span class="mono">sin</span> — works, and lands at 120/256, because
+        the language cannot audit what foreign code did.</p>
+      </div>
+    </div>
+
+    <p style="margin-top:2rem">The same discipline runs a real 1D logistic
+    regression by gradient descent, checked bit-for-bit against an independent
+    from-scratch implementation. Make one training label
+    <span class="mono">z</span> and the trained weight correctly comes back
+    unknown — not a number quietly learned from the labels that happened to
+    be there.</p>
+  </section>
+
+  <!-- ── Layer 3/6 ────────────────────────────────────────── -->
+  <section id="instrument">
+    <p class="eyebrow">Layer 3 · Ruby &nbsp;—&nbsp; Layer 6 · hand HTML</p>
+    <h2>An instrument you cannot inspect is not an instrument. It is a claim.</h2>
+    <p class="lede">So Layer 6 is hand-written HTML — no framework, no build
+    step, and no script from anywhere else — and it was pointed at itself.</p>
+
+    <p>It came back <strong>Z</strong>, with five errors. Four were false
+    positives: the inspector was reading <span class="mono">&lt;script&gt;</span>
+    string literals as markup. A false positive that reaches Z is worse than a
+    missed finding, because it teaches the corpus something untrue — both
+    layers were fixed to strip script, style and comment bodies first.</p>
+
+    <p>The fifth was real and would have broken the page in a browser: a bare
+    <span class="mono">&lt;/script&gt;</span> inside a JavaScript string
+    terminates the script element regardless of string context. Then the
+    cross-layer check found a bare C function with no
+    <span class="mono">#include</span> being detected as
+    <span class="mono">Ever</span> by <em>both</em> layers — consistent, and
+    wrong.</p>
+
+    <div class="cols cols-2">
+      <div class="gauge is-earned" data-value="238" style="max-width:168px">
+        <div class="byte" aria-hidden="true"></div>
+        <div class="gauge-read">
+          <span class="gauge-val">238</span>
+          <span class="gauge-lab">self-inspection</span>
+        </div>
+      </div>
+      <div>
+        <p>After the fixes, Layer 6 inspects itself at <strong>238/256, zero
+        errors</strong>. The system found three real defects in its own source.
+        That is the thesis demonstrated on itself rather than asserted.</p>
+        <p>Cross-layer agreement — Python and the browser producing identical
+        particles for identical input — holds at <strong>11/11</strong>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Layer 4 ──────────────────────────────────────────── -->
+  <section id="archive">
+    <p class="eyebrow">Layer 4 · SQL</p>
+    <h2>The archive refuses to store a contradiction.</h2>
+    <p class="lede">Not application checks a careless caller can skip —
+    triggers, at the storage boundary.</p>
+
+    <ul class="refusals">
+      <li><span class="no">a Z particle carrying confidence</span><span class="why">Z has no degree. If it had one it would be low confidence, which is a different state.</span></li>
+      <li><span class="no">a Certain particle at anything but 256</span><span class="why">Certain is exact or it is not Certain.</span></li>
+      <li><span class="no">an Emulate past ⌊π⌋ = 3</span><span class="why">Borrowed patterns decay. Past three errors of distance the honest answer is Z.</span></li>
+      <li><span class="no">DELETE, on anything</span><span class="why">Nothing is discarded. An EError is a boundary marker: it records where the edge of the known sat that day.</span></li>
+    </ul>
+
+    <p style="margin-top:2rem">Why a database and not a log file: <strong>E = MC²</strong>
+    — Mental creation, Masterful correlation, and C² is the archive correlating
+    its own correlations. That is a join, not a loop. It has to be able to ask
+    questions about itself.</p>
+  </section>
+
+  <!-- ── Layer 5 ──────────────────────────────────────────── -->
+  <section id="runtime">
+    <p class="eyebrow">Layer 5 · Java</p>
+    <h2>Written, then finally run.</h2>
+    <p class="lede">The runtime carries the guardrails into somebody else's
+    build pipeline. It had never been executed — the original build container
+    had no JDK — and the project said so rather than fudging it.</p>
+
+    <div class="pull">
+      <p>Ever’s whole claim is that unverified is not the same as verified, and
+      it would be incoherent to fudge it in its own README.</p>
+      <cite>Ever v1 · verification status</cite>
+    </div>
+
+    <p>Merging the repositories put it on a host that has a JDK. It was
+    compiled and run: <strong>78 passed, 0 failed</strong> — the largest single
+    block of assertions the corpus had never counted.</p>
+
+    <p>Ruby, on the same host, runs clean and exits 0. But
+    <span class="mono">ever.rb</span> is a demonstration script with no
+    assertions in it, so it earns <em>“executes without error”</em> and nothing
+    stronger. Calling that a passing suite would be exactly the fudge the
+    original refused to make.</p>
+  </section>
+
+  <!-- ── Layer 7 ──────────────────────────────────────────── -->
+  <section id="refix">
+    <p class="eyebrow">Layer 7 · Node &nbsp;—&nbsp; ReFix</p>
+    <h2>The same gate, seven layers later.</h2>
+    <p class="lede">ReFix matches Gradle build errors against a signature
+    corpus and archives every accepted repair as a
+    <span class="mono">(Failure, Fixture)</span> pair. It proposes a new rule
+    only when that fixture has earned it.</p>
+
+    <div class="cols cols-2">
+      <div>
+        <h3>What <span class="mono">fact</span> had to do</h3>
+        <p>Pass three Examples. Then prove a decreasing measure. Then it may
+        recurse without a ceiling.</p>
+      </div>
+      <div>
+        <h3>What a fixture has to do</h3>
+        <p>Recur across <strong>three distinct sources</strong>. Then replay
+        against the entire archive without changing one prior outcome. Then it
+        may become a rule.</p>
+      </div>
+    </div>
+
+    <p style="margin-top:1.5rem"><strong>Distinct sources, not distinct rows.</strong>
+    Ten repairs in one repository is one habit, not a rule — the threshold
+    exists precisely so that the evidence comes from people who were not
+    talking to each other. It is the corroboration law from Layer 0, applied
+    to build logs.</p>
+
+    <div class="cols cols-3" style="margin-top:2.25rem">
+      <div class="gauge is-signal" data-value="120">
+        <div class="byte" aria-hidden="true"></div>
+        <div class="gauge-read"><span class="gauge-val">120</span><span class="gauge-lab">Intake · proposed</span></div>
+      </div>
+      <div class="gauge is-signal" data-value="128">
+        <div class="byte" aria-hidden="true"></div>
+        <div class="gauge-read"><span class="gauge-val">128</span><span class="gauge-lab">Admitted</span></div>
+      </div>
+      <div class="gauge is-z" data-value="0">
+        <div class="byte" aria-hidden="true"></div>
+        <div class="gauge-read"><span class="gauge-val">Z</span><span class="gauge-lab">Rejected · kept</span></div>
+      </div>
+    </div>
+
+    <p style="margin-top:2rem">A rule is born at intake — 120, deliberately
+    below the execute floor — and rises to 128 <em>only</em> by surviving
+    replay. It does not rise further from replay alone; further evidence is
+    real usage. And a rejected rule is preserved forever with its reason,
+    because knowing which generalisations failed is the part of a corpus that
+    is expensive to rebuild.</p>
+
+    <h3 style="margin-top:2.5rem">The citation that was not true yet</h3>
+    <p>ReFix’s README said the mechanism ports from
+    <span class="mono">SEMANTICS.md §9</span> and
+    <span class="mono">4-archive-sql/repair.sql</span>. The document has eight
+    sections. No such SQL file existed in either generation. The merge made the
+    citation true instead of deleting it: <span class="mono">repair.sql</span>
+    now expresses the JSONL contract in the archive layer’s own language, with
+    nine triggers each matching a throw in
+    <span class="mono">src/archive.js</span>.</p>
+
+    <div class="term">
+      <div class="term-bar"><span>python3 4-archive-sql/repair_test.py</span><span class="run">executed</span></div>
+<pre>Cost is derived, not supplied
+  <span class="c-sig">✓</span> plain repair priced as inferred is refused
+  <span class="c-sig">✓</span> conf_after ≠ conf_before − cost is refused
+
+Confidence never rises through a repair
+  <span class="c-sig">✓</span> rising confidence refused
+  <span class="c-sig">✓</span> four inferred repairs land on E_EXECUTE_FLOOR
+
+Recurrence counts distinct sources, not rows
+  <span class="c-sig">✓</span> three distinct sources
+  <span class="c-sig">✓</span> null fixture_form never becomes a candidate
+
+Replay gate
+  <span class="c-sig">✓</span> admission below the floor refused
+  <span class="c-sig">✓</span> admission on disagreeing replay refused
+  <span class="c-sig">✓</span> rejection without a reason refused
+
+Nothing is ever deleted, nothing is ever edited
+  <span class="c-sig">✓</span> DELETE on a repair refused
+  <span class="c-sig">✓</span> UPDATE on a repair refused
+
+=== Layer 4 (repair): <span class="c-emb">55 passed, 0 failed</span> ===</pre>
+    </div>
+
+    <p>Most of those assert a <em>refusal</em>. An invariant that holds in only
+    one of two implementations is not an invariant — it is a convention.</p>
+  </section>
+
+  <!-- ── Ledger ───────────────────────────────────────────── -->
+  <section id="ledger">
+    <p class="eyebrow">The ledger</p>
+    <h2>Everything above was run.</h2>
+    <p class="lede">One command, eight layers, on macOS, 2026-10-12. Suites
+    whose toolchain is missing report SKIP — they never report PASS.</p>
+
+    <ul class="stat-row" style="margin-bottom:0.5rem">
+      <li><span class="stat-n" style="color:var(--ember)">45</span><span class="stat-l">suites passed</span></li>
+      <li><span class="stat-n" style="color:var(--ink-3)">0</span><span class="stat-l">skipped</span></li>
+      <li><span class="stat-n" style="color:var(--ink-3)">0</span><span class="stat-l">failed</span></li>
+    </ul>
+
+    <div class="tw">
+      <table>
+        <thead>
+          <tr><th class="layer">Layer</th><th>Suite</th><th>Language</th><th class="num">Assertions</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="layer">0</td><td class="k">Atom</td><td>C</td><td class="num">107</td></tr>
+          <tr><td class="layer">0</td><td class="k">EValue</td><td>C</td><td class="num">98</td></tr>
+          <tr><td class="layer">0</td><td class="k">IR + arena</td><td>C</td><td class="num">70</td></tr>
+          <tr><td class="layer">1</td><td class="k">Phase engine</td><td>C++</td><td class="num">61</td></tr>
+          <tr><td class="layer">2</td><td class="k">Lexer</td><td>Python</td><td class="num">91</td></tr>
+          <tr><td class="layer">2</td><td class="k">Parser</td><td>Python</td><td class="num">74</td></tr>
+          <tr><td class="layer">2</td><td class="k">ABI boundary</td><td>Python / C</td><td class="num">46</td></tr>
+          <tr><td class="layer">2</td><td class="k">EValue</td><td>Python</td><td class="num">85</td></tr>
+          <tr><td class="layer">2</td><td class="k">Interpreter</td><td>Python</td><td class="num">83</td></tr>
+          <tr><td class="layer">2</td><td class="k">IR bridge</td><td>Python / C</td><td class="num">7</td></tr>
+          <tr><td class="layer">2</td><td class="k">Pipeline</td><td>Python</td><td class="num">63</td></tr>
+          <tr><td class="layer">2</td><td class="k">Abstraction — anchoring</td><td>Python</td><td class="num">70</td></tr>
+          <tr><td class="layer">2</td><td class="k">Vowel operators</td><td>Python</td><td class="num">79</td></tr>
+          <tr><td class="layer">2</td><td class="k">Teaching</td><td>Python</td><td class="num">41</td></tr>
+          <tr><td class="layer">2</td><td class="k">Source inspector</td><td>Python</td><td class="num">62</td></tr>
+          <tr><td class="layer">3</td><td class="k">DSL</td><td>Ruby</td><td class="num" style="color:var(--ink-3)">runs clean</td></tr>
+          <tr><td class="layer">4</td><td class="k">Archive</td><td>SQL</td><td class="num">56</td></tr>
+          <tr><td class="layer">4</td><td class="k">Repair archive</td><td>SQL</td><td class="num">55</td></tr>
+          <tr><td class="layer">4</td><td class="k">Zeroth Law <em>(new)</em></td><td>SQL</td><td class="num" style="color:var(--ember)">37</td></tr>
+          <tr><td class="layer">5</td><td class="k">Runtime <em>(first execution)</em></td><td>Java</td><td class="num" style="color:var(--ember)">86</td></tr>
+          <tr><td class="layer">6</td><td class="k">Inspector</td><td>hand HTML</td><td class="num">39</td></tr>
+          <tr><td class="layer">7</td><td class="k">ReFix</td><td>Node</td><td class="num">15</td></tr>
+          <tr><td class="layer">·</td><td class="k">Cross-layer agreement</td><td>Python ↔ HTML</td><td class="num">11</td></tr>
+          <tr><td class="layer">·</td><td class="k">Zeroth Law agreement <em>(new)</em></td><td>Py · C · SQL · Java</td><td class="num" style="color:var(--ember)">18</td></tr>
+          <tr><td class="layer">·</td><td class="k">Golden master</td><td>Python / C</td><td class="num">31</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:1rem;font-size:0.875rem;color:var(--ink-3)">The
+    twenty-four suites above are the ones that report a count, and they sum to
+    1,385. Ten further suites — C bridge, kitchen sink, form IR, native C99,
+    profiler, integration, gold standard, notebook and research — pass without
+    emitting one, and are counted in the 34 but not in the 1,385.</p>
+  </section>
+
+  <!-- ── Not claimed ──────────────────────────────────────── -->
+  <section id="limits">
+    <p class="eyebrow">The other half of the claim</p>
+    <h2>What this is not.</h2>
+
+    <ul class="refusals">
+      <li><span class="no">to be a general program synthesiser</span><span class="why">The synthesis grammar is bounded and stated: arithmetic to depth 2, single recursion. What it cannot reach is therefore stated too.</span></li>
+      <li><span class="no">to prove correctness</span><span class="why"><span class="mono">undermine</span> finds counterexamples. When it finds none it returns <strong>Z</strong>, because <em>no counterexample found</em> is not a proof and must not be dressed as one.</span></li>
+      <li><span class="no">to improve without bound</span><span class="why">The evolution loop converges and reports convergence — “incumbent held; no improvement found” — rather than churning to look busy.</span></li>
+      <li><span class="no">to be governed by φ</span><span class="why">1 of 6 corpus ratios lands near 1.618, which is what chance would give. φ earns its place as the output equalizer, applied deliberately. Claiming more would be decoration.</span></li>
+      <li><span class="no">to be first</span><span class="why">SQL’s NULL and floating-point NaN do the mechanically same thing; <span class="mono">Uncertain&lt;T&gt;</span> and Julia’s <span class="mono">Measurements.jl</span> do it with real statistical rigor. This trades that rigor for a number anyone can read at a glance — then takes it into recursion depth, foreign calls, and training loops.</span></li>
+      <li><span class="no">to be production-ready</span><span class="why">For anything that is not a demonstration.</span></li>
+    </ul>
+
+    <p style="margin-top:2rem">And the merge that produced this repository found
+    six defects by running it rather than reading it. Five were the same class —
+    <em>extent not delimited</em>: a stray comment opener, a trailing slash, a
+    docstring delimiter written with two quotes instead of three. The corpus’s
+    own research had already named that class as 84.2% of all findings and the
+    highest-value one to target. It was also 100% of what had rotted.</p>
+  </section>
+
+  <footer>
+    <div class="foot-row">
+      <p>Codric Enterprise · Ricky (Dreid) · 2026</p>
+      <p>C · C++ · Python · Ruby · SQL · Java · hand HTML · Node</p>
+    </div>
+  </footer>
+
+  </main>
+</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var reduce = window.matchMedia &&
+               window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* Build every byte grid: 256 cells, because 256 IS the states of a byte. */
+  var gauges = Array.prototype.slice.call(document.querySelectorAll(".gauge"));
+
+  gauges.forEach(function (g) {
+    var grid = g.querySelector(".byte");
+    var cells = [];
+    for (var i = 0; i < 256; i++) {
+      var c = document.createElement("i");
+      grid.appendChild(c);
+      cells.push(c);
+    }
+    g._cells = cells;
+    g._value = parseInt(g.getAttribute("data-value"), 10) || 0;
+    g._top = g.getAttribute("data-top") === "true";
+    g._lit = false;
+  });
+
+  function light(g) {
+    if (g._lit) return;
+    g._lit = true;
+    var n = g._value;
+    var cls = g._top ? "top" : "on";
+    if (reduce) {
+      for (var i = 0; i < n; i++) g._cells[i].classList.add(cls);
+      return;
+    }
+    /* Fill in row order — the grid reads as a byte filling up. */
+    var step = Math.max(1, Math.round(n / 40));
+    var i2 = 0;
+    (function tick() {
+      var stop = Math.min(n, i2 + step);
+      for (; i2 < stop; i2++) g._cells[i2].classList.add(cls);
+      if (i2 < n) requestAnimationFrame(tick);
+    })();
+  }
+
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { light(e.target); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.35 });
+    gauges.forEach(function (g) { io.observe(g); });
+  } else {
+    gauges.forEach(light);
+  }
+
+  /* Rail: mark the section currently in view. */
+  var links = Array.prototype.slice.call(document.querySelectorAll(".rail a"));
+  var targets = links.map(function (a) {
+    return document.querySelector(a.getAttribute("href"));
+  });
+
+  function sync() {
+    var best = 0, bestTop = -Infinity, probe = window.innerHeight * 0.28;
+    for (var i = 0; i < targets.length; i++) {
+      if (!targets[i]) continue;
+      var top = targets[i].getBoundingClientRect().top;
+      if (top <= probe && top > bestTop) { bestTop = top; best = i; }
+    }
+    links.forEach(function (a, i) { a.classList.toggle("on", i === best); });
+  }
+
+  var queued = false;
+  window.addEventListener("scroll", function () {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(function () { sync(); queued = false; });
+  }, { passive: true });
+
+  sync();
+})();
+</script>

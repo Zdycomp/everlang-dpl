@@ -1,0 +1,10 @@
+# The depth ceiling, at its boundary (pi = 3 call levels).
+# fact(3) is the deepest call that is allowed; fact(4) must be refused as z.
+# Both backends run this, so the boundary is checked across layers.
+def fact(n) = if n <= 1 then 1 else n * fact(n - 1)
+
+ever f3 = fact(3)
+ever f4 = fact(4)
+
+show f3
+show f4

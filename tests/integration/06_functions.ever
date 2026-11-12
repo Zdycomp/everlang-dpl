@@ -1,0 +1,16 @@
+def square(n)    = n * n
+def cube(n)      = n * n * n
+def max2(a, b)   = if a > b then a else b
+def min2(a, b)   = if a < b then a else b
+
+ever r1 = square(7)
+ever r2 = cube(3)
+ever r3 = max2(10, 42)
+ever r4 = min2(7, 3)
+ever r5 = square(square(2))
+
+show r1
+show r2
+show r3
+show r4
+show r5

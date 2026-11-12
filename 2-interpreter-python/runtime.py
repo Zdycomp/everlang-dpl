@@ -1,0 +1,622 @@
+#!/usr/bin/env python3
+"""
+runtime.py — Ever / Tapestry, the real program executor.
+
+Every prior execution of a multi-statement .ever file in this project
+went through a regex line-splitter living inside test-harness code
+(tests/ev_integrate.py), which also hardcoded every let/ever binding's
+confidence to 256 regardless of what the initializer actually computed.
+For a language whose entire premise is honest trust tracking, that was
+a live correctness bug, not a shortcut — z-contagion into `ever risky =
+some_uncertain_call()` was silently discarded.
+
+This module is the real thing: a Program AST (from syntax.py's actual
+grammar) executed statement by statement, with each let/ever binding's
+confidence computed from what it was actually built from, and z/void
+propagated instead of erased.
+
+Codric Enterprise · Ricky (Dreid) · 2026
+"""
+
+from __future__ import annotations
+
+import itertools
+from dataclasses import dataclass, field, replace
+from typing import Any, Dict, List, Optional
+
+from syntax import (parse, Semantic, Program, Let, Show, FnDef, Extern,
+                    Example, Anchor, Call)
+from forgive import parse_forgiving, Correction
+from ir import _ast_to_ir, NK, EvNode, E_CERTAIN, E_INTAKE, E_EXECUTE_FLOOR
+from scope import (EvScope, make_global_scope, eval_node,
+                   E_LOOP_MAX_ITERATIONS, SK)
+from evalue import EValue, EvType, EV_CERTAIN
+
+try:
+    from profiler import Profiler
+    _PROFILER_AVAILABLE = True
+except ImportError:
+    _PROFILER_AVAILABLE = False
+    Profiler = None
+
+
+# ─────────────────────────────────────────────
+# Confidence computation
+#
+# eval_node (scope.py) returns a bare EValue — it does not track trust.
+# Confidence lives at the SCOPE ENTRY, not the value. This mirrors that
+# same recursive structure purely to compute the number that belongs
+# next to it, so a let/ever binding gets the trust its initializer
+# actually earned rather than a blanket 256.
+# ─────────────────────────────────────────────
+
+def eval_confidence(node: Optional[EvNode], scope: EvScope) -> int:
+    """What confidence does evaluating `node` in `scope` deserve?
+
+    Rules, matching the C TAC interpreter and the language's own
+    stated corroboration model:
+      - a literal constant is CERTAIN (256): the program said so
+      - z is 0, by definition
+      - a variable reference carries whatever its binding carries
+      - a binary op is the MIN of its operands (never more certain
+        than its least certain input)
+      - if/then/else is the MIN of the condition and whichever branch
+        is taken
+      - a call to an undefined or ceiling-blocked function is 0
+      - a call to a defined function is the MIN of its argument
+        confidences (the function body's own trust isn't tracked
+        per-instruction on the Python side; this is the honest
+        approximation available without reimplementing TAC-level
+        propagation here)
+    """
+    if node is None:
+        return 0
+    k = node.kind
+
+    if k in (NK.VOID,):
+        return 0
+    if k == NK.Z:
+        return 0
+    if k in (NK.BOOL, NK.INT, NK.REAL, NK.TEXT):
+        return E_CERTAIN
+
+    if k == NK.VAR:
+        entry = scope.lookup(node.str_val or "")
+        return entry.confidence if entry is not None else 0
+
+    if k in (NK.ADD, NK.SUB, NK.MUL, NK.DIV,
+             NK.LT, NK.GT, NK.LTE, NK.GTE, NK.EQ, NK.NEQ):
+        if len(node.children) < 2:
+            return 0
+        return min(eval_confidence(node.children[0], scope),
+                   eval_confidence(node.children[1], scope))
+
+    if k == NK.IF:
+        if len(node.children) < 3:
+            return 0
+        cond_val  = eval_node(node.children[0], scope)
+        cond_conf = eval_confidence(node.children[0], scope)
+        branch = node.children[1] if (cond_val.ev_tag == EvType.BOOL
+                                      and cond_val.ev_bool) \
+                 else node.children[2]
+        return min(cond_conf, eval_confidence(branch, scope))
+
+    if k in (NK.LIST, NK.RECORD):
+        if not node.children:
+            return E_CERTAIN
+        return min(eval_confidence(ch, scope) for ch in node.children)
+
+    if k == NK.AND:
+        l_val  = eval_node(node.children[0], scope)
+        l_conf = eval_confidence(node.children[0], scope)
+        if l_val.ev_tag != EvType.BOOL:
+            return 0
+        if not l_val.ev_bool:
+            return l_conf     # short-circuit: only the left was consulted
+        return min(l_conf, eval_confidence(node.children[1], scope))
+
+    if k == NK.OR:
+        l_val  = eval_node(node.children[0], scope)
+        l_conf = eval_confidence(node.children[0], scope)
+        if l_val.ev_tag != EvType.BOOL:
+            return 0
+        if l_val.ev_bool:
+            return l_conf     # short-circuit
+        return min(l_conf, eval_confidence(node.children[1], scope))
+
+    if k == NK.NOT:
+        return eval_confidence(node.children[0], scope)
+
+    if k == NK.INDEX:
+        tgt = eval_node(node.children[0], scope)
+        key = eval_node(node.children[1], scope)
+        key_conf = eval_confidence(node.children[1], scope)
+        if tgt.ev_tag != EvType.LIST or key.ev_tag != EvType.INT:
+            return 0
+        idx = key.ev_int
+        if idx < 0 or idx >= len(tgt.ev_list):
+            return 0
+        # Deliberately NOT folding in the confidence of the whole
+        # container here. That figure is the MIN across every element
+        # (days' overall confidence is 0 because thu=z lives in it
+        # somewhere) — using it would make reading days[0] (mon, fully
+        # certain) inherit uncertainty from thu, an unrelated element
+        # this read never touches. A void container is already caught
+        # by the ev_tag check above; what's left is the ONE element
+        # actually read, and the key that picked it.
+        elem_conf = tgt.ev_list[idx].confidence
+        return min(key_conf, elem_conf)
+
+    if k == NK.FIELD:
+        tgt = eval_node(node.children[0], scope)
+        if tgt.ev_tag != EvType.RECORD:
+            return 0
+        field_val = tgt.ev_record.get(node.str_val)
+        if field_val is None:
+            return 0
+        # same reasoning as INDEX: only this field's own confidence,
+        # not the record's aggregate across every other field
+        return field_val.confidence
+
+    if k in (NK.FOR_RANGE, NK.FOR_IN):
+        # Mirrors eval_node's own driving loop exactly, so "which
+        # iteration is last" always agrees between the two — computing
+        # confidence for a DIFFERENT iteration than the one whose
+        # value was actually shown would be worse than not tracking
+        # confidence at all.
+        is_range = (k == NK.FOR_RANGE)
+        if is_range:
+            start_v = eval_node(node.children[0], scope)
+            end_v   = eval_node(node.children[1], scope)
+            body    = node.children[2]
+            step_v  = eval_node(node.children[3], scope) \
+                     if len(node.children) > 3 else None
+            bounds_conf = min(eval_confidence(node.children[0], scope),
+                              eval_confidence(node.children[1], scope))
+            if start_v.ev_tag != EvType.INT or end_v.ev_tag != EvType.INT:
+                return 0
+            step = step_v.ev_int if (step_v is not None and
+                                     step_v.ev_tag == EvType.INT) else 1
+            if step == 0:
+                return 0
+            last_conf = 0
+            i = start_v.ev_int
+            guard = 0
+            while (step > 0 and i <= end_v.ev_int) or \
+                  (step < 0 and i >= end_v.ev_int):
+                guard += 1
+                if guard > E_LOOP_MAX_ITERATIONS:
+                    return 0
+                iter_scope = EvScope(parent=scope, name="for")
+                iter_scope.set_var(node.str_val, EValue.from_int(i))
+                last_conf = eval_confidence(body, iter_scope)
+                i += step
+            return min(bounds_conf, last_conf) if last_conf else 0
+        else:
+            seq = eval_node(node.children[0], scope)
+            body = node.children[1]
+            seq_conf = eval_confidence(node.children[0], scope)
+            if seq.ev_tag != EvType.LIST:
+                return 0
+            last_conf = 0
+            for item in seq.ev_list:
+                iter_scope = EvScope(parent=scope, name="for")
+                iter_scope.set_var(node.str_val, item)
+                last_conf = eval_confidence(body, iter_scope)
+            return min(seq_conf, last_conf) if last_conf else 0
+
+    if k == NK.WHILE:
+        cond, body = node.children[0], node.children[1]
+        last_conf = 0
+        guard = 0
+        while True:
+            guard += 1
+            if guard > E_LOOP_MAX_ITERATIONS:
+                return 0
+            c_val  = eval_node(cond, scope)
+            c_conf = eval_confidence(cond, scope)
+            if c_val.ev_tag != EvType.BOOL or not c_val.ev_bool:
+                break
+            last_conf = min(c_conf, eval_confidence(body, scope))
+        return last_conf
+
+    if k in (NK.HEAL, NK.LEARN):
+        # the value carries the confidence it was given by the operator. This
+        # re-reads a repair that already ran, so it is a probe: no trace, no archive.
+        import heal_order
+        with heal_order.probing():
+            return eval_node(node, scope).confidence
+
+    if k == NK.CALL:
+        name = node.str_val or ""
+        entry = scope.lookup(name)
+        if entry is not None and entry.kind == SK.EXTERN:
+            if entry.extern_fn is None:
+                return 0
+            args  = [eval_node(ch, scope) for ch in node.children]
+            confs = [eval_confidence(ch, scope) for ch in node.children]
+            result = entry.extern_fn.call(args)
+            if result.ev_tag == EvType.VOID:
+                return 0
+            return entry.extern_fn.confidence(args, confs)
+        if entry is None:
+            from builtins_ml import BUILTINS
+            b = BUILTINS.get(name)
+            if b is None:
+                return 0
+            args  = [eval_node(ch, scope) for ch in node.children]
+            confs = [eval_confidence(ch, scope) for ch in node.children]
+            if len(args) != b.arity:
+                return 0
+            result = b.call(args)
+            if result.ev_tag == EvType.VOID:
+                return 0
+            return b.conf(args, confs)
+        confs = [eval_confidence(ch, scope) for ch in node.children]
+        # a call that will hit the depth ceiling or fail resolves to
+        # z at evaluation; approximate its confidence as 0 up front
+        # rather than double-walk the recursive call here.
+        result = eval_node(node, scope)
+        if result.ev_tag == EvType.VOID:
+            return 0
+        # the call is no more certain than the function that makes it (§4.3)
+        return min([entry.confidence] + confs)
+
+    return 0
+
+
+# ─────────────────────────────────────────────
+# Program result
+# ─────────────────────────────────────────────
+
+@dataclass
+class ShownValue:
+    name:       str
+    value:      EValue
+    confidence: int
+    is_fn:      bool = False
+    params:     Optional[List[str]] = None
+
+@dataclass
+class ProgramResult:
+    shown:       List[ShownValue] = field(default_factory=list)
+    errors:      List[str]        = field(default_factory=list)
+    recoveries:  List[str]        = field(default_factory=list)
+    proficiency: Optional[int]    = None
+    scaffold:    Optional[str]    = None
+    scope:       Optional[EvScope] = None
+    heal_trace:  List[str]        = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+    def format_lines(self) -> List[str]:
+        out = []
+        for sv in self.shown:
+            if sv.is_fn:
+                # A function is bound as SK.FN and carries no EValue,
+                # so the value formatter used to render it as z. It is
+                # not unknown — it is a definition. Show it as one.
+                params = ", ".join(sv.params or [])
+                out.append(f"{sv.name} = def {sv.name}({params}) "
+                           f"[{sv.confidence}/256]")
+            else:
+                out.append(_format_value(sv.name, sv.value, sv.confidence))
+        return out
+
+
+def _format_value(name: str, val: EValue, conf: int) -> str:
+    if val.ev_tag == EvType.VOID:
+        return f"{name} = z [0/256]"
+    if val.ev_tag == EvType.BOOL:
+        return f"{name} = {'true' if val.ev_bool else 'false'} [{conf}/256]"
+    if val.ev_tag == EvType.INT:
+        return f"{name} = {val.ev_int} [{conf}/256]"
+    if val.ev_tag == EvType.REAL:
+        r = val.ev_real
+        shown = int(r) if r == int(r) else f"{r:g}"
+        return f"{name} = {shown} [{conf}/256]"
+    if val.ev_tag == EvType.TEXT:
+        return f'{name} = "{val.ev_text}" [{conf}/256]'
+    return f"{name} = {val.describe()} [{conf}/256]"
+
+
+# ─────────────────────────────────────────────
+# THE EXECUTOR
+# ─────────────────────────────────────────────
+
+def _lowering_error(node: Optional[EvNode]) -> Optional[EvNode]:
+    """The first node in the tree that failed to lower, or None."""
+    if node is None:
+        return None
+    if node.kind is NK.ERR:
+        return node
+    for ch in node.children:
+        bad = _lowering_error(ch)
+        if bad is not None:
+            return bad
+    return None
+
+
+def run_source(source: str, profiler: Optional["Profiler"] = None,
+               scope: Optional[EvScope] = None) -> ProgramResult:
+    """Parse and execute a full .ever source string, recording every repair's
+    evaluate → plan → execute trace on the result (see heal_order.py)."""
+    import heal_order
+    heal_order.begin()
+    result = _run_source(source, profiler, scope)
+    result.heal_trace = heal_order.drain()
+    return result
+
+
+# ─────────────────────────────────────────────
+# Examples and anchors (SEMANTICS §4.2, §4.4)
+# ─────────────────────────────────────────────
+
+# Anchor 0 means unanchored (§1), so the first anchor is 1.
+_ANCHOR_IDS = itertools.count(1)
+
+
+def _same_value(a: EValue, b: EValue) -> bool:
+    """Equal as values: same tag and payload. Confidence is not part of it."""
+    if a.ev_tag != b.ev_tag:
+        return False
+    if a.ev_tag == EvType.LIST:
+        return len(a.ev_list) == len(b.ev_list) and all(
+            _same_value(x, y) for x, y in zip(a.ev_list, b.ev_list))
+    if a.ev_tag == EvType.RECORD:
+        return a.ev_record.keys() == b.ev_record.keys() and all(
+            _same_value(a.ev_record[k], b.ev_record[k]) for k in a.ev_record)
+    return (a.ev_bool, a.ev_int, a.ev_real, a.ev_text, a.ev_blob) == \
+           (b.ev_bool, b.ev_int, b.ev_real, b.ev_text, b.ev_blob)
+
+
+def _example_confidence(passed: int, total: int) -> int:
+    """c_f = floor(256 * (1 - u_f) * (p/t)), with u_f = ((256 - 120)/256)^p,
+    capped at 255 (SEMANTICS §4.2). No passing Example leaves it at 0."""
+    if passed == 0:
+        return 0
+    u = ((E_CERTAIN - E_INTAKE) / E_CERTAIN) ** passed
+    return min(E_CERTAIN - 1, int(E_CERTAIN * (1.0 - u) * (passed / total)))
+
+
+def _run_example(stmt: Example, g: EvScope, result: ProgramResult) -> None:
+    """`example f(a, ...) = v`: run the call through the real evaluator and
+    count it. A z, a wrong value, or a call past the ceiling is a failure."""
+    entry = g.lookup(stmt.name)
+    if entry is None or entry.kind != SK.FN:
+        result.errors.append(f"example references unknown function '{stmt.name}'")
+        return
+    if entry.refused:
+        return   # a refused function is z; evidence about it is not counted
+    got  = eval_node(_ast_to_ir(Call(stmt.name, stmt.args)), g)
+    want = eval_node(_ast_to_ir(stmt.expect), g)
+    if got.ev_tag != EvType.VOID and _same_value(got, want):
+        entry.examples_passed += 1
+    else:
+        entry.examples_failed += 1
+    total = entry.examples_passed + entry.examples_failed
+    entry.confidence = _example_confidence(entry.examples_passed, total)
+    entry.reason = ("" if entry.confidence > 0 else
+                    f"{entry.examples_passed}/{total} examples passed; "
+                    "definition kept")
+
+
+def _run_anchor(stmt: Anchor, g: EvScope, result: ProgramResult) -> None:
+    """`anchor f`: pin f's identity if the evidence earns it (SEMANTICS §4.4).
+    An uncleared function, or a recursive one with no decreasing measure, is
+    refused: it becomes z and says why."""
+    entry = g.lookup(stmt.name)
+    if entry is None or entry.kind != SK.FN:
+        result.errors.append(f"anchor references unknown function '{stmt.name}'")
+        return
+    if entry.anchor_id:
+        return   # already anchored: the identity is kept
+    if entry.confidence < E_EXECUTE_FLOOR:
+        _refuse(entry, "cannot anchor an unverified function")
+    elif entry.recursive and entry.measure is None:
+        _refuse(entry, "recursive function has no decreasing measure; "
+                       "confidence proves trust, not termination")
+    else:
+        entry.anchor_id = next(_ANCHOR_IDS)
+
+
+def _refuse(entry, reason: str) -> None:
+    """A refused anchor leaves the binding z, with the reason, for good."""
+    entry.confidence, entry.refused, entry.reason = 0, True, reason
+
+
+def _run_source(source: str, profiler: Optional["Profiler"] = None,
+                scope: Optional[EvScope] = None) -> ProgramResult:
+    """Parse and execute a full .ever source string for real: through
+    the actual grammar (syntax.py), the actual semantic pass (with
+    Program-level scope threading), and the actual evaluator
+    (scope.py's eval_node) — with genuine per-binding confidence.
+
+    This is the function a CLI, a REPL, or an embedder should call.
+    It is not a test harness; it is the language's real front door.
+    """
+    result = ProgramResult()
+    # E forgives what it safely can (trailing commas, a stray ';',
+    # colon/equals confusion, keyword case, a lone '=' meant as '==')
+    # and reports exactly what it assumed. Only a genuinely ambiguous
+    # program still refuses — see forgive.py for the boundary.
+    node, perr, result.corrections = parse_forgiving(source)
+    if perr is not None:
+        result.errors.append(str(perr))
+        return result
+    if node is None:
+        return result
+
+    # Recoveries: punctuation E fixed rather than failing on. Full/
+    # guided bands get the teaching line; everyone else gets the
+    # one-line note; nobody sees the raw text swallowed silently —
+    # forgiving a mistake is not the same as hiding that one happened.
+    for rec in getattr(node, "_recoveries", []):
+        line = (rec.teach if (profiler and profiler.scaffold_level()
+                              in ("full", "guided")) else rec.message)
+        result.recoveries.append(f"line {rec.line}: {line}")
+
+    # Normalise: a single bare statement (no let/ever/show) still
+    # comes back unwrapped from parse() for backward compatibility.
+    # Wrap it here so the executor has one code path.
+    prog = node if isinstance(node, Program) else Program([node])
+
+    # NOTE: no profiler passed in. Semantic.analyse() calls observe()
+    # once per statement, which would count a 14-line program as 14
+    # sessions and inflate the score. Without a profiler it still
+    # attaches an Observation to each Analysis; we fold those into ONE
+    # observation per program below.
+    sem = Semantic(source=source)
+    preexisting = scope.bound_names() if scope is not None else None
+    pa = sem.analyse_program(prog, preexisting=preexisting)
+    if not pa.clean:
+        result.errors.extend(pa.errors)
+        return result
+
+    # A statement that cannot be lowered to IR fails the whole program,
+    # before any statement runs, rather than executing as void.
+    for stmt in prog.statements:
+        cls = type(stmt).__name__
+        if cls in ("Show", "Extern", "Anchor"):
+            continue
+        if cls == "Example":
+            # the arguments and the expected value lower like any expression
+            bad = next((b for b in (_lowering_error(_ast_to_ir(e))
+                                    for e in [*stmt.args, stmt.expect])
+                        if b is not None), None)
+        else:
+            bad = _lowering_error(_ast_to_ir(stmt.value if cls == "Let" else stmt))
+        if bad is not None:
+            result.errors.append(bad.error)
+            return result
+
+    g = scope if scope is not None else make_global_scope()
+
+    for stmt in prog.statements:
+        cls = type(stmt).__name__
+
+        if cls == "FnDef":
+            fn_ir = _ast_to_ir(stmt)
+            if fn_ir is not None:
+                eval_node(fn_ir, g)
+                # The static facts the semantic pass proved about the body:
+                # whether it recurses, and a parameter that strictly decreases
+                # in every self-call. Neither makes it anchored. Anchoring is
+                # earned by `anchor f` (SEMANTICS §4.4), and only an anchored
+                # function with a measure may recurse past floor(pi) (§4.6).
+                e = g.lookup(stmt.name)
+                if e is not None:
+                    e.recursive = Semantic._recursive(stmt)
+                    e.measure = Semantic._measure(stmt)
+            continue
+
+        if cls == "Extern":
+            from ffi import load_extern, FFIError
+            try:
+                fn = load_extern(stmt.name, stmt.params, stmt.libpath)
+            except FFIError as exc:
+                result.errors.append(str(exc))
+                continue
+            g.set(stmt.name, SK.EXTERN, EValue.void(), confidence=EV_CERTAIN)
+            g.lookup(stmt.name).extern_fn = fn
+            g.lookup(stmt.name).params = list(stmt.params)
+            continue
+
+        if cls == "Example":
+            _run_example(stmt, g, result)
+            continue
+
+        if cls == "Anchor":
+            _run_anchor(stmt, g, result)
+            continue
+
+        if cls == "Let":
+            expr_ir = _ast_to_ir(stmt.value)
+            if expr_ir is None:
+                g.set_var(stmt.name, EValue.void(), conf=0)
+                continue
+            val  = eval_node(expr_ir, g)
+            conf = eval_confidence(expr_ir, g)
+            # Sync the tracked confidence ONTO the value itself, not
+            # just onto the scope entry. Confidence lives in two
+            # places: ScopeEntry.confidence (what `show` reads) and
+            # EValue.confidence (what travels WITH the value once it
+            # leaves the entry — into a list, a record, an argument).
+            # Those two only matched by coincidence for a certain
+            # literal; `thu = z` showed the gap directly: the entry
+            # tracked confidence 0 correctly, but the raw EValue.void()
+            # defaults its own .confidence to 256, so `thu` embedded in
+            # a list and read back via indexing reported certain. Every
+            # binding is resynced here so nothing downstream that reads
+            # confidence off a value directly — not through a scope
+            # entry — inherits a stale default.
+            if val.confidence != conf:
+                val = replace(val, confidence=conf)
+            g.set_var(stmt.name, val, conf=conf)
+            continue
+
+        if cls == "Show":
+            entry = g.lookup(stmt.name)
+            val  = entry.value if entry is not None else EValue.void()
+            conf = entry.confidence if entry is not None else 0
+            is_fn = bool(entry is not None and getattr(entry, "is_fn", False))
+            result.shown.append(ShownValue(
+                stmt.name, val, conf,
+                is_fn=is_fn,
+                params=list(entry.params) if is_fn else None))
+            continue
+
+        # bare trailing expression statement: evaluate, don't show
+        expr_ir = _ast_to_ir(stmt)
+        if expr_ir is not None:
+            eval_node(expr_ir, g)
+
+    result.scope = g
+    if profiler is not None and pa.statements:
+        # fold the whole program's construct mix into one profiler
+        # observation rather than one per statement, so a five-line
+        # beginner program and a five-line advanced one are compared
+        # as programs, not diluted per line.
+        try:
+            from profiler import Observation, observe_source_flags
+            combined = Observation()
+            for a in pa.statements:
+                if a.observation:
+                    for key, n in a.observation.counts.items():
+                        combined.note(key, n)
+                    combined.max_depth = max(combined.max_depth,
+                                             a.observation.max_depth)
+            # Statement-syntax constructs (let/ever/anchor/z) are read
+            # off the whole program's text, so they are counted ONCE
+            # here rather than inside each statement's analyse() — where
+            # every statement picked up the program's totals and this
+            # fold then squared them.
+            observe_source_flags(combined, source)
+            p = profiler.observe(combined)
+            result.proficiency = p.rounded
+            result.scaffold    = p.scaffold
+        except Exception:
+            pass
+
+    return result
+
+
+if __name__ == "__main__":
+    demo = """
+    let a = 6
+    ever b = 36
+    ever sum = a + b
+    ever unknown = z
+    ever poisoned = sum + unknown
+    show sum
+    show unknown
+    show poisoned
+    """
+    r = run_source(demo)
+    if not r.ok:
+        print("errors:", r.errors)
+    else:
+        for line in r.format_lines():
+            print(line)

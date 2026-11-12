@@ -1,30 +1,82 @@
-FROM ubuntu:24.04
+# ─────────────────────────────────────────────
+# Ever / Tapestry — cross-platform test container
+#
+# Build:   docker build -t codric/ever:3.8.0 .
+# Verify:  docker run --rm codric/ever:3.8.0 ./run.sh
+# Tests:   docker run --rm codric/ever:3.8.0 python3 tests/run_all.py
+# Shell:   docker run --rm -it codric/ever:3.8.0 /bin/bash
+#
+# The image verifies itself at build time. If any layer fails, the
+# build fails — an image that ships without its own tests passing
+# ships a claim instead of a result.
+#
+# Codric Enterprise · Ricky (Dreid) · 2026
+# ─────────────────────────────────────────────
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8 \
-    PYTHONDONTWRITEBYTECODE=1
+# JDK 25 comes from the official Temurin image. Debian bookworm ships only JDK 17.
+FROM eclipse-temurin:25-jdk AS jdk
 
+FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.title="Ever / Tapestry"
+LABEL org.opencontainers.image.description="A language where every value carries how much it is trusted"
+LABEL org.opencontainers.image.vendor="Codric Enterprise"
+LABEL org.opencontainers.image.authors="Ricky (Dreid)"
+LABEL org.opencontainers.image.version="3.8.0"
+
+ENV DEBIAN_FRONTEND=noninteractive
+# JDK 25 from the Temurin stage
+COPY --from=jdk /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH=/opt/java/openjdk/bin:$PATH
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+# Ensure consistent locale for all string operations
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
+# ── toolchains ──
+# One layer per concern — ordered least- to most-volatile.
+# Ensure the base image itself is patched before shipping; otherwise
+# Debian slim images can carry published CVEs in its package set.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        gdb \
-        git \
-        ca-certificates \
-        jq \
+        gcc \
+        g++ \
+        make \
         python3 \
-        python3-pytest \
-        python3-pyflakes \
-        ruby \
+        python3-venv \
+        ruby-full \
         sqlite3 \
-        openjdk-25-jdk-headless \
-        maven \
-    && ln -s "$(ls -d /usr/lib/jvm/java-25-openjdk-*)" /usr/lib/jvm/jdk-25 \
+        nodejs \
+        ca-certificates \
+        diffutils \
+    && apt-get upgrade -y \
+    && (command -v node >/dev/null 2>&1 || ln -s /usr/bin/nodejs /usr/bin/node) \
     && rm -rf /var/lib/apt/lists/*
 
-ENV JAVA_HOME=/usr/lib/jvm/jdk-25
-ENV PATH=/usr/lib/jvm/jdk-25/bin:$PATH
+WORKDIR /ever
 
-WORKDIR /workspace
-COPY . /workspace
+# ── sources ──
+COPY . /ever
+RUN chmod +x run.sh tests/run_all.py 2>/dev/null || true
 
-CMD ["bash", "-lc", "python3 run_all.py --skip-native"]
+# ── cross-platform sanity check ──
+# These verify that the container is not accidentally relying on any
+# macOS-specific system library. Debian's gcc, Ruby, JDK and Python
+# must all agree with the host implementations on:
+#   - struct sizes and field offsets (ABI)
+#   - floating-point arithmetic
+#   - string encoding
+
+RUN python3 -c "import sys, platform; print(f'Python  {sys.version}'); print(f'OS      {platform.system()} {platform.release()}'); print(f'Arch    {platform.machine()}')" \
+    && gcc --version | head -1 \
+    && ruby --version \
+    && node --version
+
+# ── build-time verification ──
+# The full test suite must pass before the image is finalised.
+RUN ./run.sh && python3 tests/run_all.py
+
+# ── default: run everything ──
+CMD ["python3", "tests/run_all.py"]

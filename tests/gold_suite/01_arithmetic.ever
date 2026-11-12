@@ -1,0 +1,17 @@
+# 01_arithmetic.ever
+# Basic integer and float arithmetic.
+# Both backends must produce these exact values.
+
+let a = 10
+let b = 32
+ever sum   = a + b
+ever diff  = a - b
+ever prod  = a * b
+ever quot  = 10 / 4
+ever nest  = (a + b) * 2
+
+show sum
+show diff
+show prod
+show quot
+show nest

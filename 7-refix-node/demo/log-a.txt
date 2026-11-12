@@ -1,0 +1,13 @@
+> Task :app:mergeReleaseResources FAILED
+> Task :app:processReleaseManifest
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileReleaseKotlin'.
+> Could not resolve all files for configuration ':app:releaseCompileClasspath'.
+   > Could not find com.squareup.okhttp3:okhttp:9.99.9-DOES-NOT-EXIST.
+     Required by:
+         project :app
+
+* Try:
+Run with --stacktrace option to get the stack trace.

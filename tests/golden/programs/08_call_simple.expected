@@ -1,0 +1,2 @@
+AST:{"arguments":[{"literal":"42","numeric_kind":"int","type":"Num","value":42}],"name":"f","type":"Call"}
+AST:{"arguments":[{"literal":"1","numeric_kind":"int","type":"Num","value":1},{"literal":"2","numeric_kind":"int","type":"Num","value":2}],"name":"g","type":"Call"}

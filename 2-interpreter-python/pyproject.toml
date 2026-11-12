@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ever-lang"
+version = "3.8.0"
+description = "Ever (Tapestry) — a confidence-tracking programming language where every value carries a trust level."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Ricky (Dreid), Codric Enterprise" }]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Interpreters",
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.scripts]
+ever = "ever_cli:main"
+
+[tool.setuptools]
+py-modules = [
+    "ever_cli",
+    "runtime",
+    "ever",
+    "syntax",
+    "ir",
+    "scope",
+    "evalue",
+    "forgive",
+    "emit",
+    "ffi",
+    "builtins_ml",
+    "profiler",
+    "collider",
+    "architecture",
+    "repair",
+    "rag_index",
+    "language_matrix",
+    "parse_lex_executor",
+    "verification_oracle",
+]

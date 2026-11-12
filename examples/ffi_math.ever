@@ -1,0 +1,26 @@
+# Calling real compiled C code.
+#
+# extern loads an actual symbol from an actual shared library — sqrt,
+# pow, and sin below are libm, not reimplementations. The result can
+# never be certain: Ever has no way to audit what a foreign function
+# did, so every FFI call enters at 120/256 (E_INTAKE), the same
+# ceiling every other piece of outside data enters at. And since C has
+# no way to represent "unknown," calling a foreign function with a z
+# argument never happens at all — the call itself becomes z.
+
+extern sqrt(x) from "m"
+extern pow(base, exponent) from "m"
+extern sin(x) from "m"
+
+ever root       = sqrt(16)
+ever squared    = pow(2, 10)
+ever half_turn  = 3.14159265358979 / 2
+ever sine_at_90 = sin(half_turn)
+
+let sensor_offline = z
+ever tainted = sqrt(sensor_offline)
+
+show root
+show squared
+show sine_at_90
+show tainted

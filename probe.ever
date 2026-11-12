@@ -1,0 +1,7 @@
+let low = 100
+let res1 = heal (low) using ("plain") fallback (200)
+show res1
+
+let zero = 0
+let res2 = heal (1 / zero) using ("plain") fallback (0)
+show res2

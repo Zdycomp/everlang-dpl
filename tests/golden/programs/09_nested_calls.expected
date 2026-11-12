@@ -1,0 +1,1 @@
+AST:{"arguments":[{"arguments":[{"name":"x","type":"Var"}],"name":"g","type":"Call"}],"name":"f","type":"Call"}

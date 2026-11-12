@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <title>Ever — Particle Inspector</title>
+    <!--
+      inspector.html — Ever Language, Layer 6 (HTML)
+    
+      Hand written. No framework, no CDN, no build step. Open the file.
+    
+      HTML owns this layer because the interface should be readable by the
+      person who has to trust it. Every rule below is legible in the source,
+      which is the point: an instrument you cannot inspect is not an
+      instrument, it is a claim.
+    
+      The scoring here mirrors 2-translate-python/translate.py exactly.
+    
+      Codric Enterprise · Ricky (Dreid) · 2026
+      Theory of Relative E:  E = MC²
+    -->
+    <style>
+        /* ─────────────────────────────────────────────
+           Ever reads as a laboratory instrument, not a dashboard.
+           Bone panel, indigo ink, brass gradations, one teal signal.
+           Z is drawn as absence — hatched, unfilled, quarantined.
+           ───────────────────────────────────────────── */
+
+        :root {
+            --panel: #d8d6c8;
+            --panel-deep: #c6c4b4;
+            --panel-lip: #eae8dc;
+            --ink: #14202e;
+            --ink-soft: #58637a;
+            --brass: #8c6e3f;
+            --brass-lite: #b39a6b;
+            --signal: #0b6e75;
+            --signal-hi: #109aa4;
+            --alarm: #8c3a2b;
+
+            --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+            "Liberation Mono", monospace;
+            --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            --serif: Georgia, "Times New Roman", serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            -webkit-text-size-adjust: 100%;
+        }
+
+        body {
+            margin: 0;
+            background: var(--panel);
+            color: var(--ink);
+            font-family: var(--serif);
+            font-size: 16px;
+            line-height: 1.55;
+            /* faint machined texture, drawn not imported */
+            background-image: repeating-linear-gradient(0deg,
+            rgba(20, 32, 46, .022) 0 1px, transparent 1px 3px);
+        }
+
+        .panel {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 24px 96px;
+        }
+
+        /* ── silkscreen labels ── */
+        .label {
+            font-family: var(--sans);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .22em;
+            text-transform: uppercase;
+            color: var(--brass);
+        }
+
+        /* ── masthead ── */
+        header {
+            padding: 44px 0 28px;
+            border-bottom: 2px solid var(--ink);
+        }
+
+        .wordmark {
+            font-family: var(--sans);
+            font-size: clamp(44px, 9vw, 82px);
+            font-weight: 700;
+            letter-spacing: -.045em;
+            line-height: .9;
+            margin: 0;
+        }
+
+        .wordmark span {
+            font-weight: 300;
+            letter-spacing: .28em;
+            font-size: .26em;
+            vertical-align: .9em;
+            margin-left: .5em;
+            color: var(--brass);
+        }
+
+        .tagline {
+            margin: 14px 0 0;
+            max-width: 46ch;
+            font-size: 17px;
+            color: var(--ink);
+        }
+
+        .origin {
+            margin: 10px 0 0;
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--ink-soft);
+        }
+
+        /* ── the scale: the signature element ── */
+        .scale-block {
+            margin: 40px 0 0;
+            padding: 26px 0 0;
+        }
+
+        .scale-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .readout {
+            font-family: var(--mono);
+            font-size: clamp(34px, 7vw, 58px);
+            font-weight: 600;
+            letter-spacing: -.03em;
+            line-height: 1;
+        }
+
+        .readout .den {
+            color: var(--ink-soft);
+            font-weight: 400;
+        }
+
+        .state-chip {
+            font-family: var(--sans);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+            padding: 7px 13px;
+            border: 1.5px solid var(--ink);
+            background: var(--panel-lip);
+        }
+
+        .state-chip[data-z="1"] {
+            border-style: dashed;
+            color: var(--ink-soft);
+            background: transparent;
+        }
+
+        /* the 256-step bar */
+        .bar {
+            position: relative;
+            height: 58px;
+            border: 1.5px solid var(--ink);
+            background: var(--panel-lip);
+            overflow: hidden;
+        }
+
+        .fill {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 0;
+            background: var(--signal);
+            transition: width .34s cubic-bezier(.2, .7, .3, 1);
+        }
+
+        .fill[data-certain="1"] {
+            background: var(--ink);
+        }
+
+        /* Z is absence. Not a colour — a void, hatched and quarantined. */
+        .bar[data-z="1"] .fill {
+            width: 100% !important;
+            background: repeating-linear-gradient(45deg,
+            transparent 0 7px, rgba(20, 32, 46, .13) 7px 8px);
+        }
+
+        .bar[data-z="1"] {
+            border-style: dashed;
+        }
+
+        .ticks {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        .tick {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: var(--ink);
+            opacity: .42;
+        }
+
+        .tick b {
+            position: absolute;
+            bottom: 4px;
+            left: 5px;
+            font-family: var(--mono);
+            font-size: 9.5px;
+            font-weight: 500;
+            letter-spacing: .04em;
+            white-space: nowrap;
+            opacity: .85;
+        }
+
+        .tick.floor {
+            opacity: .8;
+            width: 1.5px;
+        }
+
+        .gradations {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 7px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--ink-soft);
+        }
+
+        .derivation {
+            margin-top: 8px;
+            font-family: var(--mono);
+            font-size: 11.5px;
+            color: var(--ink-soft);
+        }
+
+        /* ── two-column bench ── */
+        .bench {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 28px;
+            margin-top: 46px;
+        }
+
+        @media (max-width: 800px) {
+            .bench {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .station {
+            min-width: 0;
+        }
+
+        .station h2 {
+            font-family: var(--sans);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .22em;
+            text-transform: uppercase;
+            color: var(--brass);
+            margin: 0 0 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--brass-lite);
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 15px;
+            border: 1.5px solid var(--ink);
+            background: var(--panel-lip);
+            color: var(--ink);
+            font-family: var(--mono);
+            font-size: 13px;
+            line-height: 1.6;
+            resize: vertical;
+        }
+
+        textarea:focus-visible {
+            outline: 3px solid var(--signal);
+            outline-offset: 2px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button {
+            font-family: var(--sans);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .16em;
+            text-transform: uppercase;
+            padding: 11px 18px;
+            border: 1.5px solid var(--ink);
+            background: var(--ink);
+            color: var(--panel-lip);
+            cursor: pointer;
+        }
+
+        button.ghost {
+            background: transparent;
+            color: var(--ink);
+        }
+
+        button:hover {
+            background: var(--signal);
+            border-color: var(--signal);
+            color: #fff;
+        }
+
+        button:focus-visible {
+            outline: 3px solid var(--signal);
+            outline-offset: 2px;
+        }
+
+        select {
+            font-family: var(--mono);
+            font-size: 12px;
+            padding: 10px 12px;
+            border: 1.5px solid var(--ink);
+            background: var(--panel-lip);
+            color: var(--ink);
+        }
+
+        select:focus-visible {
+            outline: 3px solid var(--signal);
+            outline-offset: 2px;
+        }
+
+        /* ── findings ── */
+        .finding {
+            border-left: 3px solid var(--alarm);
+            padding: 9px 0 9px 13px;
+            margin-bottom: 9px;
+            font-size: 14.5px;
+        }
+
+        .finding.pattern {
+            border-left-color: var(--signal);
+        }
+
+        .finding .m {
+            font-family: var(--mono);
+            font-size: 12.5px;
+        }
+
+        .finding .w {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--ink-soft);
+        }
+
+        .finding .fix {
+            color: var(--ink-soft);
+            font-style: italic;
+        }
+
+        .none {
+            color: var(--ink-soft);
+            font-style: italic;
+        }
+
+        /* ── particle line ── */
+        .wire {
+            margin-top: 26px;
+            padding: 14px;
+            border: 1px dashed var(--brass);
+            background: var(--panel-lip);
+            font-family: var(--mono);
+            font-size: 11.5px;
+            word-break: break-all;
+            line-height: 1.7;
+        }
+
+        .wire .k {
+            color: var(--brass);
+        }
+
+        /* ── verdict ── */
+        .verdict {
+            margin-top: 30px;
+            padding: 20px 22px;
+            border: 2px solid var(--ink);
+            font-family: var(--sans);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: .13em;
+            text-transform: uppercase;
+        }
+
+        .verdict.blocked {
+            border-style: dashed;
+            color: var(--ink-soft);
+            background: repeating-linear-gradient(45deg,
+            transparent 0 8px, rgba(20, 32, 46, .05) 8px 9px);
+        }
+
+        .verdict small {
+            display: block;
+            margin-top: 9px;
+            font-family: var(--serif);
+            font-size: 14px;
+            font-weight: 400;
+            letter-spacing: 0;
+            text-transform: none;
+            color: var(--ink);
+        }
+
+        /* ── laws ── */
+        .laws {
+            margin-top: 66px;
+            padding-top: 26px;
+            border-top: 2px solid var(--ink);
+        }
+
+        .laws ol {
+            margin: 20px 0 0;
+            padding: 0;
+            list-style: none;
+            counter-reset: law;
+        }
+
+        .laws li {
+            counter-increment: law;
+            display: grid;
+            grid-template-columns: 46px 1fr;
+            gap: 16px;
+            padding: 15px 0;
+            border-bottom: 1px solid var(--brass-lite);
+        }
+
+        .laws li::before {
+            content: counter(law, upper-roman);
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--brass);
+            padding-top: 3px;
+        }
+
+        .laws b {
+            font-family: var(--sans);
+            font-size: 14px;
+        }
+
+        .laws p {
+            margin: 4px 0 0;
+            font-size: 15px;
+        }
+
+        footer {
+            margin-top: 56px;
+            font-family: var(--mono);
+            font-size: 11.5px;
+            color: var(--ink-soft);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                transition: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="panel">
+
+    <header>
+        <h1 class="wordmark">Ever<span>E-verified</span></h1>
+        <p class="tagline">Every value carries how much it is trusted. Nothing
+            processes through the unknown.</p>
+        <p class="origin">Codric Enterprise · Layer 6 · particle inspector</p>
+    </header>
+
+    <!-- ═══ the scale: signature element ═══ -->
+    <section aria-labelledby="scale-h" class="scale-block">
+        <div class="scale-head">
+            <div>
+                <div class="label" id="scale-h">Confidence</div>
+                <div class="readout"><span id="conf">0</span><span
+                        class="den">/256</span></div>
+            </div>
+            <div class="state-chip" data-z="1" id="chip">Z · unknown</div>
+        </div>
+
+        <div aria-labelledby="scale-h" aria-valuemax="256" aria-valuemin="0"
+             aria-valuenow="0" class="bar" data-z="1"
+             id="bar" role="meter">
+            <div class="fill" id="fill"></div>
+            <div class="ticks">
+                <div class="tick" style="left:9.77%"><b>25 · π²</b></div>
+                <div class="tick" style="left:31.64%"><b>81 · π</b></div>
+                <div class="tick floor" style="left:50%"><b>128 · execute</b></div>
+            </div>
+        </div>
+
+        <div class="gradations">
+            <span>0 — Z</span><span>256 — Certain</span>
+        </div>
+        <p class="derivation">256 = 4⁴, the states of a byte &nbsp;·&nbsp;
+            81 = ⌊256/π⌋ &nbsp;·&nbsp; 25 = ⌊256/π²⌋ &nbsp;·&nbsp;
+            emulate ceiling = ⌊π⌋ = 3</p>
+    </section>
+
+    <!-- ═══ bench ═══ -->
+    <div class="bench">
+        <section class="station">
+            <h2>Source</h2>
+            <label class="label" for="code" style="display:block;margin-bottom:6px">
+                Paste code in any supported language</label>
+            <textarea aria-describedby="detected" id="code"
+                      spellcheck="false">int add(int x, int y) { return x + y }</textarea>
+            <div class="controls">
+                <button id="run">Inspect</button>
+                <button class="ghost" id="clear">Clear</button>
+                <select aria-label="Load an example" id="sample">
+                    <option value="">Load an example…</option>
+                    <option value="c">C — missing semicolon</option>
+                    <option value="cpp">C++ — leak, no virtual dtor</option>
+                    <option value="python">Python — mutable default</option>
+                    <option value="ruby">Ruby — missing end</option>
+                    <option value="sql">SQL — delete without where</option>
+                    <option value="java">Java — unguarded null</option>
+                    <option value="html">HTML — img without alt</option>
+                    <option value="clean">Clean Python — scores high</option>
+                    <option value="wreck">Past the ceiling — returns to Z</option>
+                </select>
+            </div>
+            <p class="label" id="detected" style="margin-top:14px">
+                Language: <span id="lang" style="color:var(--ink)">—</span></p>
+        </section>
+
+        <section class="station">
+            <h2>Findings</h2>
+            <div class="label" style="margin-bottom:8px">Errors — spend confidence</div>
+            <div id="errors"><p class="none">None yet. Inspect to begin.</p></div>
+            <div class="label" style="margin:20px 0 8px">Patterns — earn confidence</div>
+            <div id="patterns"><p class="none">None yet.</p></div>
+        </section>
+    </div>
+
+    <div class="verdict" id="verdict">Awaiting inspection
+        <small>Paste code and press Inspect.</small></div>
+
+    <div aria-label="Serialized particle" class="wire" id="wire">
+        <span class="k">particle →</span> not yet formed
+    </div>
+
+    <!-- ═══ laws ═══ -->
+    <section class="laws">
+        <div class="label">The rules this instrument enforces</div>
+        <ol>
+            <li>
+                <div><b>Z is zero-absolute</b>
+                    <p>Unknown is not low confidence. It is its own state, and it
+                        carries the reason it is unknown.</p></div>
+            </li>
+            <li>
+                <div><b>Z is contagious</b>
+                    <p>Anything touching Z becomes Z. Confidence flows down, never up.
+                        Enforced in C, at the atom, so no layer above can launder an
+                        unknown into a fact.</p></div>
+            </li>
+            <li>
+                <div><b>π governs width</b>
+                    <p>A range wider than ⌊256/π²⌋ = 25 must be enumerated. Wider than
+                        ⌊256/π⌋ = 81 and it is effectively unknown.</p></div>
+            </li>
+            <li>
+                <div><b>Certain is earned, never guessed</b>
+                    <p>Static inspection cannot reach 256. Reading code tells you it is
+                        well formed, not that it works.</p></div>
+            </li>
+            <li>
+                <div><b>Emulate stops at ⌊π⌋ = 3</b>
+                    <p>Past three errors from working, borrowing a neighbour's pattern
+                        is guessing. It returns to Z and gets fixed properly.</p></div>
+            </li>
+            <li>
+                <div><b>Nothing is discarded</b>
+                    <p>A failure is archived as a boundary marker. It records where the
+                        edge of the known sat that day.</p></div>
+            </li>
+        </ol>
+    </section>
+
+    <footer>
+        Ever · C · C++ · Python · Ruby · SQL · Java · hand HTML<br>
+        Theory of Relative E — E = MC² · Mental Creation × Masterful Correlation<br>
+        Codric Enterprise · Ricky (Dreid) · 2026
+    </footer>
+
+</div>
+
+<script>
+    "use strict";
+    /* ─────────────────────────────────────────────
+       Scoring mirrors 2-translate-python/translate.py exactly.
+       Same constants, same weights, same ceiling behaviour.
+       ───────────────────────────────────────────── */
+
+    var E_ZERO = 0, E_CERTAIN = 256;
+    var E_PI_WIDTH_WARN = 81;        // floor(256 / pi)
+    var E_PI_WIDTH_ENUMERATE = 25;   // floor(256 / pi^2)
+    var E_EMULATE_CEILING = 3;       // floor(pi)
+    var E_EXECUTE_FLOOR = 128;
+
+    function detect(code) {
+        var s = code.trim();
+        if (/^\s*<(!DOCTYPE|html|div|form|body|head|p|a|span|img)\b/im.test(s))
+            return "HTML";
+        if (/\b(SELECT|INSERT INTO|UPDATE|DELETE FROM|CREATE TABLE|ALTER TABLE|DROP TABLE)\b/i.test(s))
+            return "SQL";
+        if (s.indexOf("#include") !== -1) {
+            var cpp = ["iostream", "std::", "namespace", "template<", "class ", "vector<", "cout"];
+            for (var i = 0; i < cpp.length; i++)
+                if (s.indexOf(cpp[i]) !== -1) return "C++";
+            return "C";
+        }
+        if (/\b(public|private|protected)\s+(static\s+)?(class|void|int|String)\b/.test(s))
+            return "Java";
+        if (/\b(end|puts|require|attr_accessor|attr_reader)\b/.test(s) ||
+            /\bdo\s*\|/.test(s)) return "Ruby";
+        /* A bare C function with no include directive. Found by cross-checking
+           Layer 6 against Layer 2: both agreed on "Ever", and both were wrong. */
+        if (/^\s*(?:static\s+|const\s+|unsigned\s+)*(int|char|float|double|long|short|void|size_t)\s*\*?\s*\w+\s*\([^;]*\)\s*\{/m.test(s))
+            return "C";
+        if (/^\s*def\s+\w+\s*\(.*\)\s*(->.*)?:/m.test(s)) return "Python";
+        if (/^\s*(import|from)\s+\w+/m.test(s) && s.indexOf(":") !== -1)
+            return "Python";
+        return "Ever";
+    }
+
+    function F(kind, message, weight, fix) {
+        return {kind: kind, message: message, weight: weight, fix: fix || ""};
+    }
+
+    var VOID_TAGS = ["area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr"];
+
+    /* Script, style and comment bodies are not markup. Found by running
+       Ever against its own interface: an <img> inside a JavaScript string is
+       sample data, not an image. A false positive that reaches Z is worse
+       than a missed finding, because it teaches the corpus a lie. */
+    function markupOnly(code) {
+        return code
+            .replace( /<!--[\s\S]*?-->/g, "")
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "<scr" + "ipt><\/scr" + "ipt>")
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "<style></style>");
+    }
+
+    function inspect(code, lang) {
+        if (lang === "HTML") code = markupOnly(code);
+        var out = [], lines = code.split("\n"), i, t, m, re;
+
+        if (lang === "C" || lang === "C++") {
+            for (i = 0; i < lines.length; i++) {
+                t = lines[i].trim();
+                if (!t || /^(\/\/|\/\*|\*|#)/.test(t)) continue;
+                if (/^\s*(int|char|float|double|long|short|void|unsigned|size_t)\b.*[^;{}\s]$/.test(t)
+                    && !/[,\\)]$/.test(t))
+                    out.push(F("error", "statement missing semicolon", 40, "append ;"));
+                if (/(?:\breturn\b[^;{}]*[^;{}\s]|[\w\])]\s*=[^;{}]*[^;{}\s])\s*\}/.test(t))
+                    out.push(F("error", "statement missing semicolon before closing brace",
+                        40, "append ;"));
+                if ((t.split("(").length - 1) !== (t.split(")").length - 1))
+                    out.push(F("error", "unbalanced parentheses", 50, "match ( with )"));
+                if (/\bgets\s*\(/.test(t))
+                    out.push(F("error", "gets is unsafe, buffer overflow", 90,
+                        "use fgets with a bound"));
+            }
+            if (lang === "C" && /\bmalloc\s*\(/.test(code) && code.indexOf("free") === -1)
+                out.push(F("error", "malloc without matching free", 60,
+                    "pair every malloc with free"));
+            if (code.indexOf("#include") !== -1)
+                out.push(F("pattern", "header inclusion", 20));
+            if (/\bint\s+main\s*\(/.test(code)) {
+                out.push(F("pattern", "entry point declared", 25));
+                if (code.indexOf("return") === -1)
+                    out.push(F("error", "main does not return", 30, "add return 0;"));
+            }
+            if (lang === "C++") {
+                if (/\bnew\b/.test(code) && !/\bdelete\b/.test(code) &&
+                    code.indexOf("unique_ptr") === -1 && code.indexOf("shared_ptr") === -1)
+                    out.push(F("error", "new without delete or smart pointer", 60,
+                        "prefer std::unique_ptr"));
+                if (code.indexOf("using namespace std") !== -1)
+                    out.push(F("error", "using namespace std in header scope", 25,
+                        "qualify with std::"));
+                if (/\bclass\b/.test(code)) {
+                    out.push(F("pattern", "class declared", 25));
+                    if (/\bvirtual\b/.test(code) && !/virtual\s+~/.test(code))
+                        out.push(F("error", "virtual method without virtual destructor",
+                            55, "declare virtual ~Class()"));
+                }
+                if (code.indexOf("unique_ptr") !== -1 || code.indexOf("shared_ptr") !== -1)
+                    out.push(F("pattern", "RAII ownership", 30));
+            }
+        } else if (lang === "Python") {
+            for (i = 0; i < lines.length; i++) {
+                t = lines[i].trim();
+                if (!t || t.charAt(0) === "#") continue;
+                if (/^\s*(def|class|if|elif|else|for|while|try|except|finally|with)\b/.test(lines[i])
+                    && !/:$/.test(t) && t.indexOf("\\") === -1 && !/[,(]$/.test(t))
+                    out.push(F("error", "block header missing colon", 45, "append :"));
+                if (lines[i].indexOf("\t") !== -1 && lines[i].indexOf("    ") !== -1)
+                    out.push(F("error", "mixed tabs and spaces", 40, "use four spaces"));
+                if (/^\s*except\s*:\s*$/.test(lines[i]))
+                    out.push(F("error", "bare except swallows everything", 50,
+                        "except SpecificError as e"));
+                if (/\beval\s*\(/.test(t))
+                    out.push(F("error", "eval on untrusted input", 80,
+                        "use ast.literal_eval"));
+                if (/\bdef\s+\w+\s*\([^)]*=\s*(\[\]|\{\})/.test(t))
+                    out.push(F("error", "mutable default argument", 55, "default to None"));
+            }
+            if (/^\s*def\s+/m.test(code)) out.push(F("pattern", "function defined", 20));
+            if (/->\s*\w+\s*:/.test(code))
+                out.push(F("pattern", "return type annotated", 30));
+            if (/:\s*(int|str|float|bool|List|Dict|Optional)/.test(code))
+                out.push(F("pattern", "parameters typed", 30));
+        } else if (lang === "Ruby") {
+            var opens = (code.match(/\b(def|do|class|module|if|unless|case|begin|while)\b/g) || []).length;
+            var ends = (code.match(/\bend\b/g) || []).length;
+            var inline = (code.match(/\S\s+(if|unless)\s+\S/g) || []).length;
+            var expected = Math.max(0, opens - inline);
+            if (ends < expected)
+                out.push(F("error", "missing end: " + expected + " opened, " + ends +
+                    " closed", 50, "add end"));
+            for (i = 0; i < lines.length; i++) {
+                t = lines[i].trim();
+                if (!t || t.charAt(0) === "#") continue;
+                if (/\beval\s*\(/.test(t))
+                    out.push(F("error", "eval on untrusted input", 80, "avoid eval"));
+                if (/\brescue\s*$/.test(t))
+                    out.push(F("error", "bare rescue swallows everything", 50,
+                        "rescue StandardError => e"));
+                if (/\$\w+/.test(t))
+                    out.push(F("error", "global variable", 30,
+                        "prefer an instance variable"));
+            }
+            if (/\bdef\s+/.test(code)) out.push(F("pattern", "method defined", 20));
+            if (code.indexOf("attr_accessor") !== -1 || code.indexOf("attr_reader") !== -1)
+                out.push(F("pattern", "attribute accessor", 25));
+            if (/\bdo\s*\|/.test(code) || /\{\s*\|/.test(code))
+                out.push(F("pattern", "block with parameters", 25));
+            if (code.indexOf("freeze") !== -1)
+                out.push(F("pattern", "immutability asserted", 30));
+        } else if (lang === "SQL") {
+            var up = code.toUpperCase();
+            if (/\bSELECT\s+\*/.test(up))
+                out.push(F("error", "SELECT * hides schema drift", 35,
+                    "name the columns"));
+            if (/\b(DELETE\s+FROM|UPDATE)\b/.test(up) && !/\bWHERE\b/.test(up))
+                out.push(F("error", "DELETE or UPDATE without WHERE", 95,
+                    "add a WHERE clause"));
+            if (/["']\s*\+\s*|%s\s*["']|\|\|\s*'/.test(code))
+                out.push(F("error", "string concatenation into SQL", 90,
+                    "use bound parameters"));
+            if (/\bDROP\s+TABLE\b/.test(up) && !/\bIF\s+EXISTS\b/.test(up))
+                out.push(F("error", "DROP TABLE without IF EXISTS", 60, "add IF EXISTS"));
+            if (/\bCREATE\s+TABLE\b/.test(up)) {
+                out.push(F("pattern", "table defined", 25));
+                if (!/\bPRIMARY\s+KEY\b/.test(up))
+                    out.push(F("error", "table without primary key", 50,
+                        "declare a PRIMARY KEY"));
+            }
+            if (/\bJOIN\b/.test(up) && !/\bON\b/.test(up))
+                out.push(F("error", "JOIN without ON produces a cartesian product",
+                    85, "add ON"));
+            if (/\bINDEX\b/.test(up)) out.push(F("pattern", "index declared", 30));
+            if (/\bFOREIGN\s+KEY\b/.test(up))
+                out.push(F("pattern", "referential integrity", 30));
+            if (/\bTRANSACTION\b|\bBEGIN\b/.test(up))
+                out.push(F("pattern", "transactional boundary", 30));
+        } else if (lang === "Java") {
+            for (i = 0; i < lines.length; i++) {
+                t = lines[i].trim();
+                if (!t || /^(\/\/|\*|\/\*)/.test(t)) continue;
+                if (/^[\w\s.<>\[\]]+=[^=].*[^;{}\s]$/.test(t) && !/[,(+]$/.test(t))
+                    out.push(F("error", "statement missing semicolon", 40, "append ;"));
+                if (/\bcatch\s*\([^)]*\)\s*\{\s*\}/.test(t))
+                    out.push(F("error", "empty catch block", 55, "log or rethrow"));
+                if (/==\s*"/.test(t) || /"\s*==/.test(t))
+                    out.push(F("error", "string compared with ==", 60, "use .equals()"));
+            }
+            if (/\bnull\b/.test(code) &&
+                !/!=\s*null|==\s*null|Optional|@Nullable/.test(code))
+                out.push(F("error", "null used without a guard", 65,
+                    "check != null or use Optional"));
+            if (/\bthrows\b|\bthrow\s+new\b/.test(code) && code.indexOf("try") === -1)
+                out.push(F("error", "throw without any try boundary", 45,
+                    "wrap in try/catch"));
+            if (/\bpublic\s+class\b/.test(code))
+                out.push(F("pattern", "public class", 25));
+            if (code.indexOf("try") !== -1 && code.indexOf("catch") !== -1)
+                out.push(F("pattern", "exception handled", 30));
+            if (code.indexOf("final ") !== -1)
+                out.push(F("pattern", "immutability asserted", 25));
+            if (code.indexOf("Optional") !== -1)
+                out.push(F("pattern", "optional over null", 30));
+        } else if (lang === "HTML") {
+            re = /<img\b[^>]*>/gi;
+            while ((m = re.exec(code)) !== null)
+                if (!/\balt\s*=/i.test(m[0]))
+                    out.push(F("error", "img without alt text", 55, 'add alt=""'));
+            re = /<input\b[^>]*>/gi;
+            while ((m = re.exec(code)) !== null) {
+                if (!/\btype\s*=/i.test(m[0]))
+                    out.push(F("error", "input without type", 45, 'add type="text"'));
+                if (!/\b(id|name|aria-label)\s*=/i.test(m[0]))
+                    out.push(F("error", "input with no label anchor", 40,
+                        "add id and a matching label"));
+            }
+            re = /<a\b[^>]*target\s*=\s*["']_blank["'][^>]*>/gi;
+            while ((m = re.exec(code)) !== null)
+                if (m[0].indexOf("noopener") === -1)
+                    out.push(F("error", "target=_blank without noopener", 50,
+                        'add rel="noopener noreferrer"'));
+            if (/<form\b/i.test(code)) {
+                out.push(F("pattern", "form element", 20));
+                if (!/\baction\s*=/i.test(code))
+                    out.push(F("error", "form without action", 40, "add action="));
+            }
+            var opened = code.match(/<([a-zA-Z][a-zA-Z0-9]*)\b[^>/]*>/g) || [];
+            var closed = code.match(/<\/([a-zA-Z][a-zA-Z0-9]*)\s*>/g) || [];
+            var oc = {}, cc = {}, tag;
+            for (i = 0; i < opened.length; i++) {
+                tag = opened[i].replace(/<\s*([a-zA-Z0-9]+)[\s\S]*/, "$1").toLowerCase();
+                oc[tag] = (oc[tag] || 0) + 1;
+            }
+            for (i = 0; i < closed.length; i++) {
+                tag = closed[i].replace(/<\/\s*([a-zA-Z0-9]+)[\s\S]*/, "$1").toLowerCase();
+                cc[tag] = (cc[tag] || 0) + 1;
+            }
+            for (tag in oc) if (Object.prototype.hasOwnProperty.call(oc, tag)) {
+                if (VOID_TAGS.indexOf(tag) !== -1) continue;
+                if (oc[tag] > (cc[tag] || 0))
+                    out.push(F("error", "unclosed <" + tag + ">", 50,
+                        "add </" + tag + ">"));
+            }
+            if (/<!DOCTYPE/i.test(code)) out.push(F("pattern", "doctype declared", 25));
+            if (/\blang\s*=/i.test(code))
+                out.push(F("pattern", "language declared", 25));
+            if (/\baria-\w+\s*=/i.test(code))
+                out.push(F("pattern", "aria attributes", 30));
+            if (/<(header|nav|main|footer|article|section)\b/i.test(code))
+                out.push(F("pattern", "semantic structure", 30));
+        }
+
+        return out;
+    }
+
+    function score(errors, patterns) {
+        if (errors.length > E_EMULATE_CEILING) {
+            return {
+                state: "Z", confidence: 0,
+                reason: errors.length + " errors exceeds emulate ceiling " +
+                    E_EMULATE_CEILING
+            };
+        }
+        var base = 128, i;
+        for (i = 0; i < patterns.length; i++) base += patterns[i].weight;
+        for (i = 0; i < errors.length; i++) base -= errors[i].weight;
+
+        if (base <= E_ZERO)
+            return {
+                state: "Z", confidence: 0,
+                reason: "confidence spent below zero by errors"
+            };
+        /* Certain is earned at runtime, never guessed from reading. */
+        if (base >= E_CERTAIN) base = E_CERTAIN - 1;
+        return {state: "Confident", confidence: base, reason: ""};
+    }
+
+    /* ── rendering ── */
+
+    var $ = function (id) {
+        return document.getElementById(id);
+    };
+    var LANG_ID = {
+        "C": 0, "C++": 1, "Python": 2, "Ruby": 3, "SQL": 4,
+        "Java": 5, "HTML": 6, "Ever": 7
+    };
+
+    function esc(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    function renderFindings(el, list, cls, emptyMsg) {
+        if (!list.length) {
+            el.innerHTML = '<p class="none">' + emptyMsg + "</p>";
+            return;
+        }
+        var h = "", i;
+        for (i = 0; i < list.length; i++) {
+            h += '<div class="finding ' + cls + '">' +
+                '<div class="m">' + esc(list[i].message) + "</div>" +
+                '<div class="w">' + (cls === "pattern" ? "+" : "\u2212") +
+                list[i].weight +
+                (list[i].fix ? ' &nbsp;·&nbsp; <span class="fix">' +
+                    esc(list[i].fix) + "</span>" : "") +
+                "</div></div>";
+        }
+        el.innerHTML = h;
+    }
+
+    function run() {
+        var code = $("code").value;
+        var lang = detect(code);
+        var findings = inspect(code, lang);
+        var errors = [], patterns = [], i;
+        for (i = 0; i < findings.length; i++)
+            (findings[i].kind === "error" ? errors : patterns).push(findings[i]);
+
+        var s = score(errors, patterns);
+        var isZ = s.state === "Z";
+        var isCertain = s.confidence >= E_CERTAIN;
+        var canExecute = !isZ && s.confidence >= E_EXECUTE_FLOOR;
+
+        $("lang").textContent = lang;
+        $("conf").textContent = s.confidence;
+
+        var bar = $("bar"), fill = $("fill"), chip = $("chip");
+        bar.setAttribute("data-z", isZ ? "1" : "0");
+        bar.setAttribute("aria-valuenow", String(s.confidence));
+        fill.style.width = (s.confidence / E_CERTAIN * 100) + "%";
+        fill.setAttribute("data-certain", isCertain ? "1" : "0");
+
+        chip.setAttribute("data-z", isZ ? "1" : "0");
+        chip.textContent = isZ ? "Z · unknown"
+            : s.state + " · " + s.confidence + "/256";
+
+        renderFindings($("errors"), errors, "error", "No errors found.");
+        renderFindings($("patterns"), patterns, "pattern",
+            "No recognised patterns.");
+
+        var v = $("verdict");
+        if (isZ) {
+            v.className = "verdict blocked";
+            v.innerHTML = "Returned to Z<small>" + esc(s.reason) +
+                ". Past ⌊π⌋ = 3 errors from working, borrowing a neighbour's pattern " +
+                "is guessing. Fix it properly.</small>";
+        } else if (canExecute) {
+            v.className = "verdict";
+            v.innerHTML = "Cleared for execution<small>Confidence " + s.confidence +
+                " is at or above the execute floor of 128. Certain (256) is earned at " +
+                "runtime, never from reading.</small>";
+        } else {
+            v.className = "verdict blocked";
+            v.innerHTML = "Blocked below the execute floor<small>Confidence " +
+                s.confidence + " is under 128. Resolve the errors above to raise it." +
+                "</small>";
+        }
+
+        var born = Date.now();
+        var line = (isZ ? 0 : 1) + "|0|" + (LANG_ID[lang] || 7) + "|" +
+            s.confidence + "|" + s.confidence + "|" + s.confidence +
+            "|0|0|-1|" + born + "|pasted_source|" + (s.reason || "");
+        $("wire").innerHTML = '<span class="k">particle \u2192</span> ' + esc(line) +
+            '<br><span class="k">fields \u2192</span> state|phase|lang|conf|lo|hi|' +
+            "errdist|gen|archive_id|born|ident|reason" +
+            '<br><span class="k">read by \u2192</span> Layer 0 (C) · Layer 2 ' +
+            "(Python) · Layer 4 (SQL) · Layer 5 (Java)";
+    }
+
+    var SAMPLES = {
+        c: "int add(int x, int y) { return x + y }",
+        cpp: "#include <iostream>\nclass Shape {\npublic:\n    virtual void draw();\n};\nint main() {\n    Shape* s = new Shape();\n    return 0;\n}",
+        python: "def collect(items=[]):\n    items.append(1)\n    return items",
+        ruby: "def greet(name)\n  puts \"hello #{name}\"",
+        sql: "DELETE FROM users",
+        java: "public class Account {\n    void show() {\n        String owner = null;\n        System.out.println(owner.length());\n    }\n}",
+        html: "<div>\n  <img src=\"chart.png\">\n  <a href=\"/x\" target=\"_blank\">open</a>\n</div>",
+        clean: "def add(x: int, y: int) -> int:\n    \"\"\"Add two numbers.\"\"\"\n    return x + y",
+        wreck: "SELECT * FROM a JOIN b;\nDELETE FROM c;\nDROP TABLE d;\nUPDATE e SET x = 1;"
+    };
+
+    $("run").addEventListener("click", run);
+    $("clear").addEventListener("click", function () {
+        $("code").value = "";
+        $("code").focus();
+        run();
+    });
+    $("sample").addEventListener("change", function () {
+        var k = this.value;
+        if (SAMPLES[k]) {
+            $("code").value = SAMPLES[k];
+            run();
+        }
+        this.value = "";
+    });
+    $("code").addEventListener("keydown", function (e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") run();
+    });
+
+    run();
+</script>
+</body>
+</html>
