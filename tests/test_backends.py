@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-test_backends.py — every transpiler target must agree with Ever.
+"""test_backends.py — every transpiler target must agree with Ever.
 
 Compiles each integration program to Go, Rust, Kotlin and JavaScript, runs the
 result, and diffs it against what Ever itself produced. A backend that
@@ -204,16 +203,16 @@ def main():
         for target in targets:
             try:
                 code = emit(src, target)
-            except NotImplementedError as e:
+            except NotImplementedError as exc:
                 if regression:
-                    print(f"  x FAIL {label:22} {target:7} emit: {e}")
+                    print(f"  x FAIL {label:22} {target:7} emit: {exc}")
                     nfail += 1
                 else:
-                    print(f"  ~ SKIP {label:22} {target:7} ({e})")
+                    print(f"  ~ SKIP {label:22} {target:7} ({exc})")
                     nskip += 1
                 continue
-            except Exception as e:
-                print(f"  x FAIL {label:22} {target:7} emit: {e}")
+            except Exception as exc:
+                print(f"  x FAIL {label:22} {target:7} emit: {exc}")
                 nfail += 1
                 continue
             jobs.append((label, target, code, expected))
@@ -242,9 +241,9 @@ def main():
             continue
         if norm(got) != expected:
             print(f"  x FAIL {label:22} {target:7} output differs")
-            for g, e in zip(norm(got), expected):
-                if g != e:
-                    print(f"        ever: {e}")
+            for g, exp in zip(norm(got), expected):
+                if g != exp:
+                    print(f"        ever: {exp}")
                     print(f"        {target:4}: {g}")
                     break
             nfail += 1
