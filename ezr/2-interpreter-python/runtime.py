@@ -21,7 +21,7 @@ Codric Enterprise · Ricky (Dreid) · 2026
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from syntax import parse, Semantic, Program, Let, Show, FnDef, Extern
 from forgive import parse_forgiving, Correction
@@ -36,7 +36,7 @@ try:
     _PROFILER_AVAILABLE = True
 except ImportError:
     _PROFILER_AVAILABLE = False
-    Profiler = None
+    Profiler = None  # type: ignore[misc,assignment]
 
 
 # ─────────────────────────────────────────────
@@ -289,6 +289,7 @@ class ProgramResult:
     proficiency: Optional[int]    = None
     scaffold:    Optional[str]    = None
     scope:       Optional[EvScope] = None
+    corrections: List[Correction] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -394,36 +395,41 @@ def run_source(source: str, profiler: Optional["Profiler"] = None,
         cls = type(stmt).__name__
 
         if cls == "FnDef":
-            fn_ir = _ast_to_ir(stmt)
+            fn_stmt = cast(FnDef, stmt)
+            fn_ir = _ast_to_ir(fn_stmt)
             if fn_ir is not None:
                 eval_node(fn_ir, g)
                 # Attach the termination proof the semantic pass found.
                 # A function with a strictly-decreasing parameter is
                 # ANCHORED: its recursion is bounded by the measure, so
                 # the floor(pi)=3 ceiling does not apply to it.
-                measure = Semantic._measure(stmt)
+                measure = Semantic._measure(fn_stmt)
                 if measure:
-                    e = g.lookup(stmt.name)
+                    e = g.lookup(fn_stmt.name)
                     if e is not None:
                         e.measure = measure
             continue
 
         if cls == "Extern":
             from ffi import load_extern, FFIError
+            extern_stmt = cast(Extern, stmt)
             try:
-                fn = load_extern(stmt.name, stmt.params, stmt.libpath)
+                fn = load_extern(extern_stmt.name, extern_stmt.params, extern_stmt.libpath)
             except FFIError as exc:
                 result.errors.append(str(exc))
                 continue
-            g.set(stmt.name, SK.EXTERN, EValue.void(), confidence=EV_CERTAIN)
-            g.lookup(stmt.name).extern_fn = fn
-            g.lookup(stmt.name).params = list(stmt.params)
+            g.set(extern_stmt.name, SK.EXTERN, EValue.void(), confidence=EV_CERTAIN)
+            entry = g.lookup(extern_stmt.name)
+            if entry is not None:
+                entry.extern_fn = fn
+                entry.params = list(extern_stmt.params)
             continue
 
         if cls == "Let":
-            expr_ir = _ast_to_ir(stmt.value)
+            let_stmt = cast(Let, stmt)
+            expr_ir = _ast_to_ir(let_stmt.value)
             if expr_ir is None:
-                g.set_var(stmt.name, EValue.void(), conf=0)
+                g.set_var(let_stmt.name, EValue.void(), conf=0)
                 continue
             val  = eval_node(expr_ir, g)
             conf = eval_confidence(expr_ir, g)
@@ -442,18 +448,19 @@ def run_source(source: str, profiler: Optional["Profiler"] = None,
             # entry — inherits a stale default.
             if val.confidence != conf:
                 val = replace(val, confidence=conf)
-            g.set_var(stmt.name, val, conf=conf)
+            g.set_var(let_stmt.name, val, conf=conf)
             continue
 
         if cls == "Show":
-            entry = g.lookup(stmt.name)
+            show_stmt = cast(Show, stmt)
+            entry = g.lookup(show_stmt.name)
             val  = entry.value if entry is not None else EValue.void()
             conf = entry.confidence if entry is not None else 0
             is_fn = bool(entry is not None and getattr(entry, "is_fn", False))
             result.shown.append(ShownValue(
-                stmt.name, val, conf,
+                show_stmt.name, val, conf,
                 is_fn=is_fn,
-                params=list(entry.params) if is_fn else None))
+                params=list(entry.params) if (is_fn and entry is not None) else None))
             continue
 
         # bare trailing expression statement: evaluate, don't show

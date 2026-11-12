@@ -247,7 +247,7 @@ def heal(tokens: List[Token]) -> Tuple[List[Token], List[Correction]]:
         # ── track bracket context (before rewriting EQ/COLON, so the
         #    stack reflects where we structurally are) ──
         if tok.kind in _OPENERS:
-            is_call = tok.kind is T.LPAR and out and out[-1].kind is T.NAME
+            is_call = bool(tok.kind is T.LPAR and out and out[-1].kind is T.NAME)
             stack.append((tok.kind, is_call))
         elif tok.kind in (T.RBRACK, T.RBRACE, T.RPAR):
             if stack:

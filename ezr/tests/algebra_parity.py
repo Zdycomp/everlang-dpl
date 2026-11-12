@@ -46,12 +46,12 @@ CAP = 64
 
 
 def _fmt(ladder, needed) -> str:
-    return (" ".join(str(x) for x in ladder) + " | "
-            + " ".join(str(x) for x in needed))
+    return " ".join(str(x) for x in ladder) + " | " + " ".join(str(x) for x in needed)
 
 
 def python_vectors() -> str:
     from ezrun import confidence_from_examples, witnesses_needed
+
     lad = [confidence_from_examples(p, t) for p, t in LADDER]
     ned = [witnesses_needed(p, t, FLOOR, CAP) for p, t in NEEDED]
     return _fmt(lad, [-1 if n is None else n for n in ned])
@@ -63,17 +63,30 @@ def c_vectors(tmp: Path) -> str | None:
     src = tmp / "probe.c"
     src.write_text(
         '#include <stdio.h>\n#include "tapestry.h"\nint main(void){\n'
-        + "".join(f'  printf("%d ", e_confidence_from_examples({p}, {t}));\n'
-                  for p, t in LADDER)
+        + "".join(f'  printf("%d ", e_confidence_from_examples({p}, {t}));\n' for p, t in LADDER)
         + '  printf("| ");\n'
-        + "".join(f'  printf("%d ", e_witnesses_needed({p}, {t}, {FLOOR}, {CAP}));\n'
-                  for p, t in NEEDED)
-        + '  printf("\\n");\n  return 0;\n}\n')
+        + "".join(
+            f'  printf("%d ", e_witnesses_needed({p}, {t}, {FLOOR}, {CAP}));\n' for p, t in NEEDED
+        )
+        + '  printf("\\n");\n  return 0;\n}\n'
+    )
     exe = tmp / "probe"
     atom = ROOT / "0-atom-c"
-    r = subprocess.run(["gcc", "-std=c99", "-Wall", f"-I{atom}",
-                        str(atom / "tapestry.c"), str(src), "-o", str(exe), "-lm"],
-                       capture_output=True, text=True)
+    r = subprocess.run(
+        [
+            "gcc",
+            "-std=c99",
+            "-Wall",
+            f"-I{atom}",
+            str(atom / "tapestry.c"),
+            str(src),
+            "-o",
+            str(exe),
+            "-lm",
+        ],
+        capture_output=True,
+        text=True,
+    )
     if r.returncode != 0:
         return f"DID NOT BUILD: {r.stderr.strip().splitlines()[:2]}"
     out = subprocess.run([str(exe)], capture_output=True, text=True).stdout
@@ -86,10 +99,11 @@ def ruby_vectors() -> str | None:
     lib = ROOT / "3-dsl-ruby" / "ever.rb"
     script = (
         f'require_relative "{lib.with_suffix("")}"\n'
-        f'lad = {[list(x) for x in LADDER]!r}.map {{ |p, t| EZR.from_examples(p, t) }}\n'
-        f'ned = {[list(x) for x in NEEDED]!r}.map {{ |p, t| '
-        f'EZR.witnesses_needed(p, t, {FLOOR}, {CAP}) || -1 }}\n'
-        'puts (lad + ["|"] + ned).join(" ")\n')
+        f"lad = {[list(x) for x in LADDER]!r}.map {{ |p, t| EZR.from_examples(p, t) }}\n"
+        f"ned = {[list(x) for x in NEEDED]!r}.map {{ |p, t| "
+        f"EZR.witnesses_needed(p, t, {FLOOR}, {CAP}) || -1 }}\n"
+        'puts (lad + ["|"] + ned).join(" ")\n'
+    )
     r = subprocess.run(["ruby", "-e", script], capture_output=True, text=True)
     if r.returncode != 0:
         return f"DID NOT RUN: {r.stderr.strip().splitlines()[:2]}"
@@ -102,8 +116,7 @@ def java_vectors(tmp: Path) -> str | None:
     layer = ROOT / "5-runtime-java"
     out = layer / "out"
     if not out.is_dir():
-        b = subprocess.run(["bash", str(layer / "build.sh")],
-                           capture_output=True, text=True)
+        b = subprocess.run(["bash", str(layer / "build.sh")], capture_output=True, text=True)
         if b.returncode != 0 or not out.is_dir():
             return f"DID NOT BUILD: {b.stderr.strip().splitlines()[:2]}"
     src = tmp / "Probe.java"
@@ -111,23 +124,26 @@ def java_vectors(tmp: Path) -> str | None:
         "import com.codric.ezr.Laws;\npublic final class Probe {\n"
         "  public static void main(String[] a) {\n"
         "    StringBuilder s = new StringBuilder();\n"
-        + "".join(f'    s.append(Laws.fromExamples({p}, {t})).append(" ");\n'
-                  for p, t in LADDER)
+        + "".join(f'    s.append(Laws.fromExamples({p}, {t})).append(" ");\n' for p, t in LADDER)
         + '    s.append("| ");\n'
-        + "".join(f'    s.append(Laws.witnessesNeeded({p}, {t}, {FLOOR}, {CAP}))'
-                  f'.append(" ");\n' for p, t in NEEDED)
-        + "    System.out.println(s.toString().trim());\n  }\n}\n")
-    r = subprocess.run(["javac", "-cp", str(out), "-d", str(tmp), str(src)],
-                       capture_output=True, text=True)
+        + "".join(
+            f"    s.append(Laws.witnessesNeeded({p}, {t}, {FLOOR}, {CAP}))" f'.append(" ");\n'
+            for p, t in NEEDED
+        )
+        + "    System.out.println(s.toString().trim());\n  }\n}\n"
+    )
+    r = subprocess.run(
+        ["javac", "-cp", str(out), "-d", str(tmp), str(src)], capture_output=True, text=True
+    )
     if r.returncode != 0:
         return f"DID NOT BUILD: {r.stderr.strip().splitlines()[:2]}"
     # JAVA_TOOL_OPTIONS prints a banner on every JVM start and would land
     # in the captured output. Removed, not emptied -- an empty value still
     # prints the banner. Same reason 5-runtime-java/ezr does it.
-    env = {k: v for k, v in __import__("os").environ.items()
-           if k != "JAVA_TOOL_OPTIONS"}
-    p = subprocess.run(["java", "-cp", f"{out}:{tmp}", "Probe"],
-                       capture_output=True, text=True, env=env)
+    env = {k: v for k, v in __import__("os").environ.items() if k != "JAVA_TOOL_OPTIONS"}
+    p = subprocess.run(
+        ["java", "-cp", f"{out}:{tmp}", "Probe"], capture_output=True, text=True, env=env
+    )
     if p.returncode != 0:
         return f"DID NOT RUN: {p.stderr.strip().splitlines()[:2]}"
     return " ".join(p.stdout.split())
@@ -141,9 +157,9 @@ def main() -> int:
         tmp = Path(d)
         got = {
             "python (ever/ezrun)": python_vectors(),
-            "c (0-atom-c)":        c_vectors(tmp),
-            "ruby (3-dsl-ruby)":   ruby_vectors(),
-            "java (5-runtime)":    java_vectors(tmp),
+            "c (0-atom-c)": c_vectors(tmp),
+            "ruby (3-dsl-ruby)": ruby_vectors(),
+            "java (5-runtime)": java_vectors(tmp),
         }
 
     ref = got["python (ever/ezrun)"]

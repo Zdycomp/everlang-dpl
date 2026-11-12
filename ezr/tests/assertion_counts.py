@@ -43,8 +43,9 @@ from run_all import SUITES  # noqa: E402  the single list of what exists
 #: Parsing that rather than counting `ok(...)` calls statically means the
 #: number is what EXECUTED, not what was written -- a test skipped behind
 #: a condition would otherwise still be counted.
-TALLY = re.compile(r"===\s*(?P<label>[^:]+):\s*(?P<passed>\d+)\s+passed,"
-                   r"\s*(?P<failed>\d+)\s+failed\s*===")
+TALLY = re.compile(
+    r"===\s*(?P<label>[^:]+):\s*(?P<passed>\d+)\s+passed," r"\s*(?P<failed>\d+)\s+failed\s*==="
+)
 
 #: Suites that sign off some other way -- "ALL GOLD", a banner, a report --
 #: are recorded as having RUN and given no number. An earlier draft of this
@@ -56,8 +57,7 @@ TALLY = re.compile(r"===\s*(?P<label>[^:]+):\s*(?P<passed>\d+)\s+passed,"
 
 
 def run(cmd: str) -> tuple[int, str]:
-    p = subprocess.run(cmd, shell=True, cwd=ROOT,
-                       capture_output=True, text=True)
+    p = subprocess.run(cmd, shell=True, cwd=ROOT, capture_output=True, text=True)
     return p.returncode, p.stdout + p.stderr
 
 
@@ -77,16 +77,29 @@ def harvest() -> list[dict]:
         code, out = run(cmd)
         m = None
         for m in TALLY.finditer(out):
-            pass                      # the LAST tally is the suite's own
+            pass  # the LAST tally is the suite's own
         if m:
-            rows.append({"suite": label, "reported": m.group("label").strip(),
-                         "passed": int(m.group("passed")),
-                         "failed": int(m.group("failed")),
-                         "exit": code, "kind": "assertions"})
+            rows.append(
+                {
+                    "suite": label,
+                    "reported": m.group("label").strip(),
+                    "passed": int(m.group("passed")),
+                    "failed": int(m.group("failed")),
+                    "exit": code,
+                    "kind": "assertions",
+                }
+            )
             continue
-        rows.append({"suite": label, "reported": "", "passed": None,
-                     "failed": 0 if code == 0 else 1,
-                     "exit": code, "kind": "ran"})
+        rows.append(
+            {
+                "suite": label,
+                "reported": "",
+                "passed": None,
+                "failed": 0 if code == 0 else 1,
+                "exit": code,
+                "kind": "ran",
+            }
+        )
     return rows
 
 
@@ -97,16 +110,20 @@ def markdown(rows: list[dict]) -> str:
     for r in rows:
         n = r["passed"] if r["kind"] == "assertions" else "ran"
         out.append(f"| {r['suite']:<{width}} | {n} | {r['failed']} |")
-    out.append(f"| **total** | **{sum(r['passed'] for r in counted)}** | "
-               f"**{sum(r['failed'] for r in rows)}** |")
+    out.append(
+        f"| **total** | **{sum(r['passed'] for r in counted)}** | "
+        f"**{sum(r['failed'] for r in rows)}** |"
+    )
     ran = [r["suite"] for r in rows if r["kind"] == "ran"]
     if ran:
         out.append("")
-        out.append(f"The total covers the {len(counted)} suites that report a "
-                   f"tally. {len(ran)} more run and pass without counting "
-                   f"assertions ({', '.join(ran)}); they are verified, not "
-                   f"quantified, and inventing a number for them is what this "
-                   f"table exists to prevent.")
+        out.append(
+            f"The total covers the {len(counted)} suites that report a "
+            f"tally. {len(ran)} more run and pass without counting "
+            f"assertions ({', '.join(ran)}); they are verified, not "
+            f"quantified, and inventing a number for them is what this "
+            f"table exists to prevent."
+        )
     return "\n".join(out)
 
 
@@ -142,14 +159,16 @@ def check(rows: list[dict]) -> int:
     if i < 0 or j < 0:
         print(f"  {TARGET.name}: generated block missing")
         return 1
-    current = have[i + len(BEGIN):j].strip("\n")
+    current = have[i + len(BEGIN) : j].strip("\n")  # noqa: E203
     if current == want:
         print(f"  {TARGET.name}: generated block matches this run.")
         return 0
     import difflib
+
     print(f"  {TARGET.name}: generated block is stale.\n")
-    for line in difflib.unified_diff(current.splitlines(), want.splitlines(),
-                                     "committed", "this run", lineterm=""):
+    for line in difflib.unified_diff(
+        current.splitlines(), want.splitlines(), "committed", "this run", lineterm=""
+    ):
         print("  " + line)
     print("\n  Run: python3 tests/assertion_counts.py --write")
     return 1

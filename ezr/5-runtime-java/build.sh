@@ -6,4 +6,4 @@ set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p out
 env -u JAVA_TOOL_OPTIONS javac -Xlint:all -d out com/codric/ezr/*.java
-echo "built: $(ls out/com/codric/ezr/*.class | wc -l | tr -d ' ') classes in out/"
+echo "built: $(find out/com/codric/ezr -maxdepth 1 -type f -name '*.class' | wc -l | tr -d ' ') classes in out/"

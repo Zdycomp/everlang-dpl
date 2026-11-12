@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, cast
 
 from ever import (
     E, State, Defect, e_z, e_val,
@@ -107,6 +107,7 @@ def lex(src: str) -> Tuple[List[Token], Optional[E]]:
                              f"unexpected character {ch!r} at {i} (line {line})",
                              Defect.MISBOUND)
 
+        assert m.lastgroup is not None  # guarded by `if not m` above
         kind = T[m.lastgroup]
         text = m.group()
         if kind is T.NAME and text in KEYWORDS:
@@ -482,7 +483,7 @@ class Parser:
         error the caller's own grammar raises, so a truly malformed
         program still fails loudly rather than being guessed at.
         """
-        items = []
+        items: List[Node] = []
         if self.at(close):
             return items
         items.append(item_fn())
@@ -890,7 +891,7 @@ try:
     _PROFILER_AVAILABLE = True
 except ImportError:      # pragma: no cover
     _PROFILER_AVAILABLE = False
-    Observation = None
+    Observation = None  # type: ignore[misc,assignment]
 
 
 @dataclass
@@ -998,7 +999,7 @@ class Semantic:
         # no second traversal, no separate parse.
         self.profiler = profiler if _PROFILER_AVAILABLE else None
         self.source   = source
-        self.last_observation = None
+        self.last_observation: Optional[Observation] = None
 
     def analyse_program(self, prog: "Program",
                         preexisting: Optional[Set[str]] = None) -> "ProgramAnalysis":
@@ -1028,27 +1029,31 @@ class Semantic:
             cls = type(stmt).__name__
 
             if cls == "FnDef":
-                a = self.analyse(stmt)
+                fn_stmt = cast(FnDef, stmt)
+                a = self.analyse(fn_stmt)
                 analyses.append(a)
-                errors.extend(f"in def {stmt.name}: {e}" for e in a.errors)
+                errors.extend(f"in def {fn_stmt.name}: {e}" for e in a.errors)
                 continue
 
             if cls == "Extern":
-                self.fns[stmt.name] = len(stmt.params)
+                extern_stmt = cast(Extern, stmt)
+                self.fns[extern_stmt.name] = len(extern_stmt.params)
                 continue
 
             if cls == "Let":
-                a = self.analyse(stmt.value, bound=bound)
+                let_stmt = cast(Let, stmt)
+                a = self.analyse(let_stmt.value, bound=bound)
                 analyses.append(a)
                 errors.extend(a.errors)
-                bound.add(stmt.name)
+                bound.add(let_stmt.name)
                 continue
 
             if cls == "Show":
-                if stmt.name not in bound and stmt.name not in self.fns:
+                show_stmt = cast(Show, stmt)
+                if show_stmt.name not in bound and show_stmt.name not in self.fns:
                     errors.append(f"show references unbound name "
-                                  f"'{stmt.name}'")
-                shown.add(stmt.name)
+                                  f"'{show_stmt.name}'")
+                shown.add(show_stmt.name)
                 continue
 
             # a bare expression statement (only legal as the last one)
@@ -1635,8 +1640,8 @@ def eval_ast(node: Node, env: Dict[str, E],
         return e_val("lit", node.value, E_CERTAIN)
 
     if isinstance(node, Var):
-        v = env.get(node.name)
-        return v if v is not None else \
+        ev = env.get(node.name)
+        return ev if ev is not None else \
             e_z(node.name, f"{node.name} was never bound", Defect.UNBOUND)
 
     if isinstance(node, BinOp):
@@ -1887,6 +1892,7 @@ if __name__ == "__main__":
     print("            " + " ".join(t.text for t in toks[:14]) + " ...")
 
     c = compile_ever(src)
+    assert c.ast is not None and c.analysis is not None  # sample def parses
     print(f"\n2. PARSER   {type(c.ast).__name__}, "
           f"{c.ast.size()} nodes, depth {c.ast.depth()}")
     print(f"            {c.ast}")
@@ -1898,7 +1904,8 @@ if __name__ == "__main__":
     print(f"            errors={a.errors or 'none'}")
     print(f"            shape={a.shape}")
 
-    fns = {c.ast.name: c.ast}
+    fn = cast(FnDef, c.ast)
+    fns = {fn.name: fn}
     print("\n4. EXECUTE")
     for n in (1, 3, 5):
         r = eval_ast(Call("fact", [Num(n)]), {}, fns, 0, limit=99)

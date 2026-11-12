@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from evalue import EValue, EvType
 
@@ -160,7 +160,7 @@ def _mse_conf(args: List[EValue], confs: List[int]) -> int:
     return min(pair_confs)
 
 
-BUILTINS: dict = {
+BUILTINS: Dict[str, Builtin] = {
     "exp":     Builtin(1, _exp_call,     _exp_conf,
                        "e raised to the power of x"),
     "sigmoid": Builtin(1, _sigmoid_call, _sigmoid_conf,

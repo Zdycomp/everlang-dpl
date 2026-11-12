@@ -29,7 +29,7 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 # ─────────────────────────────────────────────
 # Ever constants — imported HERE, not inside eval functions.
@@ -86,10 +86,10 @@ class EvNode:
     """
     kind:        NK
     line:        int                        = 1
-    lit_bool:    Optional[bool]             = None
-    lit_int:     Optional[int]              = None
-    lit_real:    Optional[float]            = None
-    str_val:     Optional[str]              = None   # text, var name, fn name
+    lit_bool:    bool                       = False
+    lit_int:     int                        = 0
+    lit_real:    float                      = 0.0
+    str_val:     str                        = ""   # text, var name, fn name
     params:      List[str]                  = field(default_factory=list)
     children:    List["EvNode"]             = field(default_factory=list)
     keys:        List[str]                  = field(default_factory=list)
@@ -365,28 +365,28 @@ def _ast_to_ir(ast_node) -> Optional[EvNode]:
 
     if t == "ListLit":
         n = EvNode(kind=NK.LIST)
-        n.children = [_ast_to_ir(i) for i in ast_node.items]
+        n.children = cast(List[EvNode], [_ast_to_ir(i) for i in ast_node.items])
         return n
 
     if t == "RecordLit":
         n = EvNode(kind=NK.RECORD)
-        n.children = [_ast_to_ir(v) for v in ast_node.values]
+        n.children = cast(List[EvNode], [_ast_to_ir(v) for v in ast_node.values])
         n.keys = list(ast_node.keys)
         return n
 
     if t == "UnaryOp":
         n = EvNode(kind=NK.NOT)
-        n.children = [_ast_to_ir(ast_node.operand)]
+        n.children = cast(List[EvNode], [_ast_to_ir(ast_node.operand)])
         return n
 
     if t == "Index":
         n = EvNode(kind=NK.INDEX)
-        n.children = [_ast_to_ir(ast_node.target), _ast_to_ir(ast_node.key)]
+        n.children = cast(List[EvNode], [_ast_to_ir(ast_node.target), _ast_to_ir(ast_node.key)])
         return n
 
     if t == "Field":
         n = EvNode(kind=NK.FIELD)
-        n.children = [_ast_to_ir(ast_node.target)]
+        n.children = cast(List[EvNode], [_ast_to_ir(ast_node.target)])
         n.str_val = ast_node.name
         return n
 
@@ -394,8 +394,8 @@ def _ast_to_ir(ast_node) -> Optional[EvNode]:
         n = EvNode(kind=NK.FOR_RANGE)
         n.str_val = ast_node.var
         step_ir = _ast_to_ir(ast_node.step) if ast_node.step else None
-        n.children = [_ast_to_ir(ast_node.start), _ast_to_ir(ast_node.end),
-                     _ast_to_ir(ast_node.body)]
+        n.children = cast(List[EvNode], [_ast_to_ir(ast_node.start), _ast_to_ir(ast_node.end),
+                     _ast_to_ir(ast_node.body)])
         if step_ir is not None:
             n.children.append(step_ir)
         return n
@@ -403,17 +403,17 @@ def _ast_to_ir(ast_node) -> Optional[EvNode]:
     if t == "ForIn":
         n = EvNode(kind=NK.FOR_IN)
         n.str_val = ast_node.var
-        n.children = [_ast_to_ir(ast_node.seq), _ast_to_ir(ast_node.body)]
+        n.children = cast(List[EvNode], [_ast_to_ir(ast_node.seq), _ast_to_ir(ast_node.body)])
         return n
 
     if t == "While":
         n = EvNode(kind=NK.WHILE)
-        n.children = [_ast_to_ir(ast_node.cond), _ast_to_ir(ast_node.body)]
+        n.children = cast(List[EvNode], [_ast_to_ir(ast_node.cond), _ast_to_ir(ast_node.body)])
         return n
 
     if t == "BinOp" and ast_node.op in ("and", "or"):
         n = EvNode(kind=(NK.AND if ast_node.op == "and" else NK.OR))
-        n.children = [_ast_to_ir(ast_node.left), _ast_to_ir(ast_node.right)]
+        n.children = cast(List[EvNode], [_ast_to_ir(ast_node.left), _ast_to_ir(ast_node.right)])
         return n
 
     if t == "ZLit":
@@ -441,7 +441,7 @@ def _ast_to_ir(ast_node) -> Optional[EvNode]:
     if t == "Call":
         args = [_ast_to_ir(a) for a in ast_node.args]
         if all(a is not None for a in args):
-            return EvNode.fn_call(ast_node.name, args)
+            return EvNode.fn_call(ast_node.name, cast(List[EvNode], args))
 
     if t == "FnDef":
         body = _ast_to_ir(ast_node.body)

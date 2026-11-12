@@ -35,6 +35,7 @@ Three sections, because the examples are reached three ways:
 A new example with no entry in RUN or CORE LINEAGE fails this suite.
 That is deliberate -- an unchecked example is how the last set rotted.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -76,8 +77,8 @@ EVER_WRAPPER = ROOT / "ever"
 # So the suite gets its own HOME, seeded to a band that emits no
 # legend, which is the state every pin below was written against. It
 # also stops the suite writing to the real one.
-_SEEDED_SCORE = 146.0   # "Practitioner" (113-168); the fixed point these
-                        # programs converge to, so the run cannot drift out
+_SEEDED_SCORE = 146.0  # "Practitioner" (113-168); the fixed point these
+# programs converge to, so the run cannot drift out
 HOME = Path(tempfile.mkdtemp(prefix="ezr-examples-home-"))
 (HOME / ".ever").mkdir()
 (HOME / ".ever" / "profile.json").write_text(json.dumps({"score": _SEEDED_SCORE}))
@@ -115,8 +116,7 @@ def check(label: str, got, want) -> bool:
 
 
 def run(cmd: list[str], env: dict[str, str] | None = None) -> tuple[str, int]:
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
-                       env=env or ENV)
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env or ENV)
     return (p.stdout + p.stderr).strip(), p.returncode
 
 
@@ -209,15 +209,16 @@ def section_first_run() -> None:
     print("\nthe first run — a profile that has earned nothing yet")
     virgin = Path(tempfile.mkdtemp(prefix="ezr-virgin-home-"))
     try:
-        out, code = run([sys.executable, str(CLI), "run",
-                         str(EXAMPLES / "compound_interest.ever")],
-                        env={**os.environ, "HOME": str(virgin)})
+        out, code = run(
+            [sys.executable, str(CLI), "run", str(EXAMPLES / "compound_interest.ever")],
+            env={**os.environ, "HOME": str(virgin)},
+        )
         lines = out.splitlines()
         ok = check("first run exit 0", code, 0)
-        ok &= check("first run is scaffolded with the legend",
-                    lines[:2], [FIRST_RUN_LEGEND, ""])
-        ok &= check("and the values below it are unchanged",
-                    lines[2:], RUN_OUTPUT["compound_interest.ever"])
+        ok &= check("first run is scaffolded with the legend", lines[:2], [FIRST_RUN_LEGEND, ""])
+        ok &= check(
+            "and the values below it are unchanged", lines[2:], RUN_OUTPUT["compound_interest.ever"]
+        )
         if ok:
             print("  ok   a virgin profile is scaffolded, the values are not")
     finally:
@@ -232,39 +233,54 @@ CALL = ["--call", "growth(100, 3)"]
 
 #: (label, extra argv, expected stdout, expected exit)
 TRANSCRIPT = [
-    ("[DEF] a definition is a claim",
-     CALL, "133.1  @ 120/256", 0),
-    ("one witness is not enough",
-     CALL + ["-x", W0], "133.1  @ 120/256", 0),
-    ("two hold — 183 clears the floor",
-     CALL + ["-x", W0, "-x", W1], "133.1  @ 183/256", 0),
-    ("three hold",
-     CALL + ["-x", W0, "-x", W1, "-x", W2], "133.1  @ 217/256", 0),
-    ("two of three — 122 is back below",
-     CALL + ["-x", W0, "-x", W1, "-x", "growth(100, 2) = 999"],
-     "133.1  @ 122/256", 0),
-    ("one case thrice is one witness",
-     CALL + ["-x", W0, "-x", W0, "-x", W0], "133.1  @ 120/256", 0),
-    ("[APP] evidence does not launder the caller",
-     ["-x", W0, "-x", W1, "-x", W2], "133.1  @ 120/256", 0),
+    ("[DEF] a definition is a claim", CALL, "133.1  @ 120/256", 0),
+    ("one witness is not enough", CALL + ["-x", W0], "133.1  @ 120/256", 0),
+    ("two hold — 183 clears the floor", CALL + ["-x", W0, "-x", W1], "133.1  @ 183/256", 0),
+    ("three hold", CALL + ["-x", W0, "-x", W1, "-x", W2], "133.1  @ 217/256", 0),
+    (
+        "two of three — 122 is back below",
+        CALL + ["-x", W0, "-x", W1, "-x", "growth(100, 2) = 999"],
+        "133.1  @ 122/256",
+        0,
+    ),
+    (
+        "one case thrice is one witness",
+        CALL + ["-x", W0, "-x", W0, "-x", W0],
+        "133.1  @ 120/256",
+        0,
+    ),
+    (
+        "[APP] evidence does not launder the caller",
+        ["-x", W0, "-x", W1, "-x", W2],
+        "133.1  @ 120/256",
+        0,
+    ),
 ]
 
 #: These two assert on a prefix, because the message carries a long
 #: explanatory tail that is the point of the inversion work and is not
 #: worth pinning character-for-character.
 TRANSCRIPT_PREFIX = [
-    ("contradictory evidence is refused",
-     CALL + ["-x", W0, "-x", "growth(100, 0) = 999"],
-     "ezrun: --example 'growth(100, 0) = 999':", 2),
-    ("depth ceiling 3 stops 20 periods",
-     ["-d", "3", "--call", "growth(100, 20)"],
-     "Z(unbounded) — depth ceiling 3 exceeded", 1),
+    (
+        "contradictory evidence is refused",
+        CALL + ["-x", W0, "-x", "growth(100, 0) = 999"],
+        "ezrun: --example 'growth(100, 0) = 999':",
+        2,
+    ),
+    (
+        "depth ceiling 3 stops 20 periods",
+        ["-d", "3", "--call", "growth(100, 20)"],
+        "Z(unbounded) — depth ceiling 3 exceeded",
+        1,
+    ),
 ]
 
-ANCHORED = ("anchoring buys the depth",
-            ["-d", "3", "--call", "growth(100, 20)",
-             "-x", W0, "-x", W1, "-x", W2, "-a", "growth"],
-            "672.7499949325598  @ 217/256", 0)
+ANCHORED = (
+    "anchoring buys the depth",
+    ["-d", "3", "--call", "growth(100, 20)", "-x", W0, "-x", W1, "-x", W2, "-a", "growth"],
+    "672.7499949325598  @ 217/256",
+    0,
+)
 
 
 def section_transcript() -> None:
@@ -307,8 +323,9 @@ def section_counterfactual() -> None:
         tmp.write_text(filled)
         out, code = run([sys.executable, str(CLI), "run", str(tmp)])
         ok = check("filled-in Thursday exit 0", code, 0)
-        ok &= check("filled-in Thursday completes the sum",
-                    out.splitlines()[0], "total = 2615 [256/256]")
+        ok &= check(
+            "filled-in Thursday completes the sum", out.splitlines()[0], "total = 2615 [256/256]"
+        )
         if ok:
             print("  ok   thu = 500  ->  total = 2615 [256/256]")
             print("       (a counting-up sum_from returns z — the ceiling bites)")
@@ -391,19 +408,21 @@ def section_unified_wrapper() -> None:
     """
     print("\nthe unified `ever` wrapper — one command, either lineage")
 
-    out, code = run([sys.executable, str(EVER_WRAPPER),
-                     str(EXAMPLES / "weekly_sales.ever")])
+    out, code = run([sys.executable, str(EVER_WRAPPER), str(EXAMPLES / "weekly_sales.ever")])
     ok = check("ever picks ever_cli.py run for .ever", code, 0)
-    ok &= check("ever .ever output matches RUN_OUTPUT",
-               out.splitlines(), RUN_OUTPUT["weekly_sales.ever"])
+    ok &= check(
+        "ever .ever output matches RUN_OUTPUT", out.splitlines(), RUN_OUTPUT["weekly_sales.ever"]
+    )
     if ok:
         print("  ok   .ever -> ever_cli.py run")
 
-    out, code = run([sys.executable, str(EVER_WRAPPER),
-                     str(EXAMPLES / "trust.ezr")])
+    out, code = run([sys.executable, str(EVER_WRAPPER), str(EXAMPLES / "trust.ezr")])
     ok = check("ever picks ezrun.py for .ezr", code, 0)
-    ok &= check("ever .ezr output matches CORE_LINEAGE_OUTPUT",
-               out.splitlines(), CORE_LINEAGE_OUTPUT["trust.ezr"])
+    ok &= check(
+        "ever .ezr output matches CORE_LINEAGE_OUTPUT",
+        out.splitlines(),
+        CORE_LINEAGE_OUTPUT["trust.ezr"],
+    )
     if ok:
         print("  ok   .ezr -> ezrun.py")
 
@@ -412,17 +431,16 @@ def section_unified_wrapper() -> None:
     # grammar's) -- the one case that needs the fallback, which is why
     # it was picked as the flagship demo in the first place.
     out, code = run([sys.executable, str(EVER_WRAPPER), str(TRUST)])
-    ok = check("ever falls back to ezrun.py on empty ever_cli.py output",
-              code, 0)
-    ok &= check("ever earned_trust.ever output", out.strip(),
-               "133.1  @ 120/256")
+    ok = check("ever falls back to ezrun.py on empty ever_cli.py output", code, 0)
+    ok &= check("ever earned_trust.ever output", out.strip(), "133.1  @ 120/256")
     if ok:
         print("  ok   .ever with no top-level show -> falls back to ezrun.py")
 
     out, code = run([sys.executable, str(EVER_WRAPPER), "no_such.ever"])
     ok = check("ever: missing file exit", code, 1)
-    ok &= check("ever: missing file message names the file",
-               out.strip(), "ever: no such file: no_such.ever")
+    ok &= check(
+        "ever: missing file message names the file", out.strip(), "ever: no such file: no_such.ever"
+    )
     if ok:
         print("  ok   missing file -> exit 1, names the file")
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Set, Tuple
 
 from evalue import (
     EValue, EvType, EV_CERTAIN,
@@ -29,6 +29,9 @@ from evalue import (
     deserialise as ev_deserialise,
 )
 from ir import EvNode, NK
+
+if TYPE_CHECKING:
+    from ffi import ExternFn
 
 
 # ─────────────────────────────────────────────
@@ -70,7 +73,8 @@ class ScopeEntry:
     node:        Optional[EvNode] = None    # fn / class body
     params:      List[str]    = field(default_factory=list)
     measure:     Optional[str] = None        # anchored: decreasing param
-    extern_fn:   Optional[Any] = None        # SK.EXTERN: the loaded ctypes callable
+    extern_fn:   Optional["ExternFn"] = None  # SK.EXTERN: the loaded FFI function
+    module:      Optional["EvScope"] = None  # SK.MODULE: the child scope
 
     @property
     def is_fn(self)     -> bool: return self.kind == SK.FN
@@ -132,7 +136,7 @@ class EvScope:
         e = ScopeEntry(key=name, kind=SK.MODULE,
                        value=EValue.from_text(name),
                        lang=lang)
-        e.node = module          # re-use node slot for the scope ref
+        e.module = module
         self._map[name] = e
         return self
 
@@ -180,7 +184,7 @@ class EvScope:
     def get_module(self, name: str) -> Optional["EvScope"]:
         e = self.lookup(name)
         if e and e.kind == SK.MODULE:
-            return e.node   # stored in node field
+            return e.module
         return None
 
     # ── delete ──
@@ -441,17 +445,17 @@ def eval_node(node: EvNode, scope: EvScope,
         return result
 
     if k == NK.WHILE:
-        cond, body = node.children[0], node.children[1]
+        wcond, wbody = node.children[0], node.children[1]
         result = EValue.void()
         guard = 0
         while True:
             guard += 1
             if guard > E_LOOP_MAX_ITERATIONS:
                 return EValue.void()
-            c = eval_node(cond, scope, depth)
+            c = eval_node(wcond, scope, depth)
             if c.ev_tag != EvType.BOOL or not c.ev_bool:
                 break
-            result = eval_node(body, scope, depth)
+            result = eval_node(wbody, scope, depth)
         return result
 
     if k == NK.RECORD:
@@ -462,9 +466,9 @@ def eval_node(node: EvNode, scope: EvScope,
         # register the function in the current scope
         name   = node.str_val or ""
         params = node.params
-        body   = node.children[0] if node.children else None
-        if body:
-            scope.set_fn(name, body, params)
+        def_body = node.children[0] if node.children else None
+        if def_body:
+            scope.set_fn(name, def_body, params)
         return EValue.void()
 
     if k == NK.CALL:
@@ -481,12 +485,12 @@ def eval_node(node: EvNode, scope: EvScope,
             # `def sigmoid(x) = ...` in your own program shadows the
             # built-in one, same as any other language.
             from builtins_ml import BUILTINS
-            b = BUILTINS.get(name)
-            if b is not None:
+            builtin = BUILTINS.get(name)
+            if builtin is not None:
                 args = [eval_node(ch, scope, depth) for ch in node.children]
-                if len(args) != b.arity:
+                if len(args) != builtin.arity:
                     return EValue.void()
-                return b.call(args)
+                return builtin.call(args)
             return EValue.void()
 
         # Enforce the depth ceiling (floor(pi) = 3).
@@ -507,7 +511,9 @@ def eval_node(node: EvNode, scope: EvScope,
         # baselines this whole project was already built against.
         # Reverting to it, confirmed by full regression, not by a
         # second isolated probe.
-        body   = entry.node
+        fn_body = entry.node
+        if fn_body is None:
+            return EValue.void()
         params = entry.params
         args   = [eval_node(ch, scope, depth) for ch in node.children]
 
@@ -530,9 +536,11 @@ def eval_node(node: EvNode, scope: EvScope,
         # bearing here.
         own_depth = _own_recursion_depth(scope, name)
 
-        anchored = entry.measure is not None and entry.measure in params
+        measure = entry.measure
+        anchored = measure is not None and measure in params
         if anchored:
-            midx = params.index(entry.measure)
+            assert measure is not None  # anchored implies a measure
+            midx = params.index(measure)
             prev = scope.lookup(f"__anchor__{name}")
             cur  = args[midx] if midx < len(args) else EValue.void()
             cur_n = _measure_value(cur)
@@ -555,7 +563,7 @@ def eval_node(node: EvNode, scope: EvScope,
         if anchored:
             call_scope.set_var(f"__anchor__{name}", args[midx])
 
-        return eval_node(body, call_scope, depth + 1)
+        return eval_node(fn_body, call_scope, depth + 1)
 
     return EValue.void()
 
@@ -639,6 +647,8 @@ if __name__ == "__main__":
         r = parse_to_ir(src)
         if not r.ok:
             print(f"  ✗  PARSE: {src} — {r.error}"); continue
+        if r.root is None:
+            print(f"  ✗  PARSE: {src} — no root"); continue
         local = EvScope(parent=g, name="eval")
         result = eval_node(r.root, local)
         ok = (result.ev_int == expected if result.ev_tag == EvType.INT
@@ -648,7 +658,7 @@ if __name__ == "__main__":
     # Factorial through scope
     fact_src = "def fact(n) = if n <= 1 then 1 else n * fact(n - 1)"
     r2 = parse_to_ir(fact_src)
-    if r2.ok:
+    if r2.ok and r2.root is not None:
         local2 = EvScope(parent=g, name="fact-test")
         eval_node(r2.root, local2)   # registers fact in local2
         # now call it by building a CALL node

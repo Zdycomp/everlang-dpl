@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015
+# The ( ... ) && pass "X" || fail "X" pattern below is deliberate and safe
+# here: pass()/fail() only do arithmetic and an array append, so they cannot
+# fail — the SC2015 hazard (fail running when the test passed) cannot trigger.
 # Ever / Tapestry — build and verify every layer
 # pipefail is load bearing, not hygiene. Every layer below is run as
 #     ( cd DIR && test | tail -2 ) && pass || fail
@@ -9,7 +13,7 @@
 # pipe -- which is why a missing 3-dsl-ruby showed up and a failing
 # test never would have.
 set -u -o pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 P=0; S=0; F=0; declare -a N
 have(){ command -v "$1" >/dev/null 2>&1; }
 pass(){ P=$((P+1)); N+=("PASSED   $1"); }

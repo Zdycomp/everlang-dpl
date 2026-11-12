@@ -42,7 +42,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Callable, List, Optional
 
 from evalue import EValue, EvType
 
@@ -58,7 +58,7 @@ class ExternFn:
     name:    str
     libpath: str
     arity:   int
-    cfunc:   ctypes.CDLL
+    cfunc:   Callable[..., Any]
 
     def call(self, args: List[EValue]) -> EValue:
         if len(args) != self.arity:

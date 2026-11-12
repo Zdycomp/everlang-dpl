@@ -445,23 +445,23 @@ class Ever:
         m = re.match(r'^ascend\s+(\w+)\s+by\s+(-?\d+)$', line)
         if m:
             name = m.group(1)
-            p = self.threads.get(name)
-            if p is None:
+            entry = self.threads.get(name)
+            if entry is None:
                 raise EverError(f"{name} was never bound")
-            ev = e_val(f"{name}_evidence", p.value, int(m.group(2)))
-            self._record(a_ascend(p, ev))
+            ev = e_val(f"{name}_evidence", entry.value, int(m.group(2)))
+            self._record(a_ascend(entry, ev))
             return
 
         # assimilate NAME to LANG
         m = re.match(r'^assimilate\s+(\w+)\s+to\s+(\w+)$', line)
         if m:
             name, lang = m.group(1), m.group(2).upper()
-            p = self.threads.get(name)
-            if p is None:
+            entry = self.threads.get(name)
+            if entry is None:
                 raise EverError(f"{name} was never bound")
             if lang not in Lang.__members__:
                 raise EverError(f"unknown language {lang}")
-            self._record(a_assimilate(p, Lang[lang]))
+            self._record(a_assimilate(entry, Lang[lang]))
             return
 
         # expect NAME >= N
@@ -492,15 +492,15 @@ class Ever:
         m = re.match(r'^show\s+(\w+)$', line)
         if m:
             name = m.group(1)
-            p = self.threads.get(name)
-            if p is None:
+            entry = self.threads.get(name)
+            if entry is None:
                 self.output.append(f"  {name} was never bound")
-            elif p.is_z:
-                self.output.append(f"  {name} = Z  ({p.reason})")
-            elif not p.can_execute:
+            elif entry.is_z:
+                self.output.append(f"  {name} = Z  ({entry.reason})")
+            elif not entry.can_execute:
                 self.blocked += 1
                 self.output.append(
-                    f"  {name} withheld: {p.confidence}/256 is below the "
+                    f"  {name} withheld: {entry.confidence}/256 is below the "
                     f"execute floor of {E_EXECUTE_FLOOR}")
             else:
                 mark = " \u2693" if p.is_anchored else ""

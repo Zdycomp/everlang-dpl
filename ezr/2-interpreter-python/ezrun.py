@@ -64,18 +64,17 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
-from ever import E, E_CERTAIN, E_EXECUTE_FLOOR, E_INTAKE
-from syntax import (Call, E_HARD_DEPTH, FnDef, Program, Semantic, Trust,
-                    compile_ever, eval_ast)
+from ever import E_CERTAIN, E_EXECUTE_FLOOR, E_INTAKE, E
+from syntax import E_HARD_DEPTH, Call, FnDef, Program, Semantic, Trust, compile_ever, eval_ast
 
 EXIT_OK = 0
-EXIT_REFUSED = 1        # the program ran and produced Z
-EXIT_BAD_INPUT = 2      # could not read it, or it did not compile
+EXIT_REFUSED = 1  # the program ran and produced Z
+EXIT_BAD_INPUT = 2  # could not read it, or it did not compile
 
 
-def definitions(node) -> Dict[str, object]:
+def definitions(node) -> Dict[str, FnDef]:
     """The function table a program defines.
 
     v3.0's syntax.py exported this; v4.10's does not, so the runner
@@ -124,8 +123,7 @@ def _read(path: str) -> Optional[str]:
         with open(path) as fh:
             return fh.read()
     except IsADirectoryError:
-        print(f"ezrun: {path} is a directory, not a program",
-              file=sys.stderr)
+        print(f"ezrun: {path} is a directory, not a program", file=sys.stderr)
     except FileNotFoundError:
         print(f"ezrun: no such file: {path}", file=sys.stderr)
     except OSError as exc:
@@ -174,9 +172,9 @@ def confidence_from_examples(passed: int, total: int) -> int:
     return max(0, min(E_CERTAIN - 1, c))
 
 
-def witnesses_needed(passed: int, total: int,
-                     target: int = E_EXECUTE_FLOOR,
-                     cap: int = 64) -> Optional[int]:
+def witnesses_needed(
+    passed: int, total: int, target: int = E_EXECUTE_FLOOR, cap: int = 64
+) -> Optional[int]:
     """[EXAMPLE], solved for the missing evidence instead of the score.
 
     `confidence_from_examples` runs the rule forwards: given p of t
@@ -205,12 +203,13 @@ def _needs(passed: int, total: int) -> str:
     """The requirement clause for a thread short of the execute floor."""
     k = witnesses_needed(passed, total)
     if k is None:
-        return (f"no number of further witnesses within reason clears "
-                f"{E_EXECUTE_FLOOR} from {passed} of {total}")
+        return (
+            f"no number of further witnesses within reason clears "
+            f"{E_EXECUTE_FLOOR} from {passed} of {total}"
+        )
     if k == 0:
         return "nothing further is needed"
-    return (f"{k} more passing Example{'s' if k > 1 else ''} clears "
-            f"{E_EXECUTE_FLOOR}")
+    return f"{k} more passing Example{'s' if k > 1 else ''} clears " f"{E_EXECUTE_FLOOR}"
 
 
 def _why_no_measure(fn) -> str:
@@ -222,11 +221,14 @@ def _why_no_measure(fn) -> str:
     """
     moves = Semantic.movements(fn)
     if moves is None:
-        return (f"{fn.name} does not call itself, so it has no measure "
-                f"to prove and needs no anchor")
+        return (
+            f"{fn.name} does not call itself, so it has no measure " f"to prove and needs no anchor"
+        )
     parts = [f"{k} {', '.join(v)}" for k, v in moves.items()]
-    return ("anchoring needs one parameter that strictly decreases in "
-            "every self-call; here " + "; ".join(parts))
+    return (
+        "anchoring needs one parameter that strictly decreases in "
+        "every self-call; here " + "; ".join(parts)
+    )
 
 
 def _split_example(text: str) -> Optional[tuple]:
@@ -239,12 +241,11 @@ def _split_example(text: str) -> Optional[tuple]:
             continue
         if i and text[i - 1] in "=<>!":
             continue
-        return text[:i].strip(), text[i + 1:].strip()
+        return text[:i].strip(), text[i + 1 :].strip()  # noqa: E203
     return None
 
 
-def _earn(fns, examples: List[str], anchors: List[str], depth: int,
-          where: str) -> tuple:
+def _earn(fns, examples: List[str], anchors: List[str], depth: int, where: str) -> Tuple[Optional[Tuple[Trust, Dict[str, List[int]]]], int]:
     """Turn Examples into confidence and anchors into earned depth.
 
     Neither is source syntax. The forge settled the reserved words at
@@ -260,22 +261,20 @@ def _earn(fns, examples: List[str], anchors: List[str], depth: int,
     for spec in examples:
         parts = _split_example(spec)
         if parts is None:
-            print(f"ezrun: --example {spec!r}: expected 'call = value'",
-                  file=sys.stderr)
+            print(f"ezrun: --example {spec!r}: expected 'call = value'", file=sys.stderr)
             return None, EXIT_BAD_INPUT
         call_src, want_src = parts
         cc = compile_ever(call_src, {k: len(v.params) for k, v in fns.items()})
         wc = compile_ever(want_src)
         if not cc.ok or not wc.ok:
             bad = call_src if not cc.ok else want_src
-            print(f"ezrun: --example {spec!r}: {bad!r} does not compile",
-                  file=sys.stderr)
+            print(f"ezrun: --example {spec!r}: {bad!r} does not compile", file=sys.stderr)
             return None, EXIT_BAD_INPUT
+        assert cc.ast is not None and wc.ast is not None  # ok implies a tree
 
         name = _called_name(cc.ast)
         if name is None or name not in fns:
-            print(f"ezrun: --example {spec!r}: names no defined function",
-                  file=sys.stderr)
+            print(f"ezrun: --example {spec!r}: names no defined function", file=sys.stderr)
             return None, EXIT_BAD_INPUT
 
         # An Example is checked at the confidence earned so far, which is
@@ -298,10 +297,12 @@ def _earn(fns, examples: List[str], anchors: List[str], depth: int,
         key = str(cc.ast)
         if key in seen:
             if seen[key] != want.value:
-                print(f"ezrun: --example {spec!r}: {key} was already "
-                      f"given {seen[key]!r} as its answer. Evidence that "
-                      f"contradicts itself is not evidence.",
-                      file=sys.stderr)
+                print(
+                    f"ezrun: --example {spec!r}: {key} was already "
+                    f"given {seen[key]!r} as its answer. Evidence that "
+                    f"contradicts itself is not evidence.",
+                    file=sys.stderr,
+                )
                 return None, EXIT_BAD_INPUT
             continue
         seen[key] = want.value
@@ -313,8 +314,7 @@ def _earn(fns, examples: List[str], anchors: List[str], depth: int,
     for name in anchors:
         fn = fns.get(name)
         if fn is None:
-            print(f"ezrun: --anchor {name}: not defined in {where}",
-                  file=sys.stderr)
+            print(f"ezrun: --anchor {name}: not defined in {where}", file=sys.stderr)
             return None, EXIT_BAD_INPUT
         conf = trust.of(name)
         if conf < E_EXECUTE_FLOOR:
@@ -323,9 +323,12 @@ def _earn(fns, examples: List[str], anchors: List[str], depth: int,
             # The refusal carries the requirement: the same rule that
             # produced `conf` also answers how much more it would take.
             p_t = tally.get(name, [0, 0])
-            print(f"ezrun: --anchor {name}: refused, {conf}/256 is below "
-                  f"the execute floor ({E_EXECUTE_FLOOR}). "
-                  f"{_needs(p_t[0], p_t[1])}.", file=sys.stderr)
+            print(
+                f"ezrun: --anchor {name}: refused, {conf}/256 is below "
+                f"the execute floor ({E_EXECUTE_FLOOR}). "
+                f"{_needs(p_t[0], p_t[1])}.",
+                file=sys.stderr,
+            )
             return None, EXIT_REFUSED
         measure = Semantic._measure(fn) if _recursive(fn) else ""
         if measure is None:
@@ -334,9 +337,11 @@ def _earn(fns, examples: List[str], anchors: List[str], depth: int,
             # only that is the refusal at its least useful, though --
             # the search that just failed knows exactly which parameter
             # went the wrong way.
-            print(f"ezrun: --anchor {name}: refused, confidence proves "
-                  f"trust, not termination. {_why_no_measure(fn)}.",
-                  file=sys.stderr)
+            print(
+                f"ezrun: --anchor {name}: refused, confidence proves "
+                f"trust, not termination. {_why_no_measure(fn)}.",
+                file=sys.stderr,
+            )
             return None, EXIT_REFUSED
         trust.anchored.add(name)
 
@@ -359,22 +364,28 @@ def _lift(result: E, fns, trust: Trust, tally: Dict[str, List[int]]) -> str:
     if fn is None:
         return ""
     if result.ident in trust.anchored:
-        return (f"{result.ident} is anchored already and still ran out of "
-                f"depth at {E_HARD_DEPTH}; its measure decreases too slowly "
-                f"for this input")
+        return (
+            f"{result.ident} is anchored already and still ran out of "
+            f"depth at {E_HARD_DEPTH}; its measure decreases too slowly "
+            f"for this input"
+        )
     measure = Semantic._measure(fn)
     if measure is None:
         return _why_no_measure(fn)
     conf = trust.of(result.ident)
     if conf < E_EXECUTE_FLOOR:
         p_t = tally.get(result.ident, [0, 0])
-        return (f"{result.ident} decreases {measure} in every self-call, so "
-                f"it can be anchored -- but anchoring needs the execute "
-                f"floor first, and it sits at {conf}/256. "
-                f"{_needs(p_t[0], p_t[1])}, then pass -a {result.ident}")
-    return (f"{result.ident} decreases {measure} in every self-call and "
-            f"sits at {conf}/256, above the floor. Pass -a {result.ident} "
-            f"to buy the depth")
+        return (
+            f"{result.ident} decreases {measure} in every self-call, so "
+            f"it can be anchored -- but anchoring needs the execute "
+            f"floor first, and it sits at {conf}/256. "
+            f"{_needs(p_t[0], p_t[1])}, then pass -a {result.ident}"
+        )
+    return (
+        f"{result.ident} decreases {measure} in every self-call and "
+        f"sits at {conf}/256, above the floor. Pass -a {result.ident} "
+        f"to buy the depth"
+    )
 
 
 def _called_name(ast) -> Optional[str]:
@@ -387,13 +398,19 @@ def _recursive(fn) -> bool:
         if isinstance(n, Call) and n.name == fn.name:
             return True
         return any(walk(k) for k in n.children())
+
     return walk(fn.body)
 
 
-def run(src: str, call: Optional[str] = None, depth: int = 100,
-        quiet: bool = False, where: str = "<input>",
-        examples: Optional[List[str]] = None,
-        anchors: Optional[List[str]] = None) -> int:
+def run(
+    src: str,
+    call: Optional[str] = None,
+    depth: int = 100,
+    quiet: bool = False,
+    where: str = "<input>",
+    examples: Optional[List[str]] = None,
+    anchors: Optional[List[str]] = None,
+) -> int:
     c = compile_ever(src)
     if not c.ok:
         _report_compile(c, where)
@@ -428,15 +445,18 @@ def run(src: str, call: Optional[str] = None, depth: int = 100,
             entry = "main()"
         else:
             names = ", ".join(sorted(fns)) or "nothing"
-            print(f"ezrun: {where} defines {names} and does not say what to "
-                  f"run.\n       Define main(), or pass --call 'expr'.",
-                  file=sys.stderr)
+            print(
+                f"ezrun: {where} defines {names} and does not say what to "
+                f"run.\n       Define main(), or pass --call 'expr'.",
+                file=sys.stderr,
+            )
             return EXIT_BAD_INPUT
 
     cc = compile_ever(entry, arity)
     if not cc.ok:
         _report_compile(cc, f"--call {entry!r}")
         return EXIT_BAD_INPUT
+    assert cc.ast is not None  # ok implies a tree
 
     result = eval_ast(cc.ast, {}, dict(fns), 0, depth, trust)
     _show(result, quiet, _lift(result, fns, trust, tally))
@@ -445,42 +465,56 @@ def run(src: str, call: Optional[str] = None, depth: int = 100,
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(
-        prog="ezrun", description="Run an EZR program.",
-        epilog="A file of definitions needs an entry point: define "
-               "main(), or pass --call.")
+        prog="ezrun",
+        description="Run an EZR program.",
+        epilog="A file of definitions needs an entry point: define " "main(), or pass --call.",
+    )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("file", nargs="?", help="program to run, or - for stdin")
-    src.add_argument("-e", "--eval", metavar="EXPR",
-                     help="run one expression instead of a file")
-    ap.add_argument("-c", "--call", metavar="EXPR",
-                    help="what to evaluate once the definitions are loaded")
-    ap.add_argument("-d", "--depth", type=int, default=100,
-                    help="recursion ceiling (default 100; see the module "
-                         "docstring on why this is not 3)")
-    ap.add_argument("-q", "--quiet", action="store_true",
-                    help="print the value alone, without its confidence")
-    ap.add_argument("-x", "--example", metavar="CASE", action="append",
-                    default=[],
-                    help="evidence, as 'f(1) = 1'. Repeatable. Passing "
-                         "cases raise the function's confidence by "
-                         "[EXAMPLE]: 1/1 is 120, 2/2 clears the floor at "
-                         "183, 3/3 is 217")
-    ap.add_argument("-a", "--anchor", metavar="NAME", action="append",
-                    default=[],
-                    help="anchor a function, which buys depth. Refused "
-                         "unless it has cleared the execute floor and, if "
-                         "recursive, has a decreasing measure")
+    src.add_argument("-e", "--eval", metavar="EXPR", help="run one expression instead of a file")
+    ap.add_argument(
+        "-c", "--call", metavar="EXPR", help="what to evaluate once the definitions are loaded"
+    )
+    ap.add_argument(
+        "-d",
+        "--depth",
+        type=int,
+        default=100,
+        help="recursion ceiling (default 100; see the module " "docstring on why this is not 3)",
+    )
+    ap.add_argument(
+        "-q", "--quiet", action="store_true", help="print the value alone, without its confidence"
+    )
+    ap.add_argument(
+        "-x",
+        "--example",
+        metavar="CASE",
+        action="append",
+        default=[],
+        help="evidence, as 'f(1) = 1'. Repeatable. Passing "
+        "cases raise the function's confidence by "
+        "[EXAMPLE]: 1/1 is 120, 2/2 clears the floor at "
+        "183, 3/3 is 217",
+    )
+    ap.add_argument(
+        "-a",
+        "--anchor",
+        metavar="NAME",
+        action="append",
+        default=[],
+        help="anchor a function, which buys depth. Refused "
+        "unless it has cleared the execute floor and, if "
+        "recursive, has a decreasing measure",
+    )
     args = ap.parse_args(argv)
 
     if args.eval is not None:
-        return run(args.eval, args.call, args.depth, args.quiet, "-e",
-                   args.example, args.anchor)
+        return run(args.eval, args.call, args.depth, args.quiet, "-e", args.example, args.anchor)
 
     text = _read(args.file)
     if text is None:
         return EXIT_BAD_INPUT
-    return run(text, args.call, args.depth, args.quiet, args.file,
-               args.example, args.anchor)
+    return run(text, args.call, args.depth, args.quiet, args.file, args.example, args.anchor)
 
 
 if __name__ == "__main__":

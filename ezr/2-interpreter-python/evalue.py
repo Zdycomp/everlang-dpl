@@ -59,13 +59,13 @@ class EValue:
     The ev_tag drives serialisation and cross-language routing.
     """
     ev_tag:     EvType
-    ev_bool:    Optional[bool]           = None
-    ev_int:     Optional[int]            = None
-    ev_real:    Optional[float]          = None
-    ev_text:    Optional[str]            = None
-    ev_blob:    Optional[bytes]          = None
-    ev_list:    Optional[List["EValue"]] = None
-    ev_record:  Optional[Dict[str, "EValue"]] = None
+    ev_bool:    bool                = False
+    ev_int:     int                 = 0
+    ev_real:    float               = 0.0
+    ev_text:    str                 = ""
+    ev_blob:    bytes               = b""
+    ev_list:    List["EValue"]      = field(default_factory=list)
+    ev_record:  Dict[str, "EValue"] = field(default_factory=dict)
     confidence: int = EV_CERTAIN
 
     # ── constructors ──
@@ -158,7 +158,7 @@ class EValue:
 
     # ── access ──
 
-    def get(self, key: Union[str, int], default=None) -> Optional["EValue"]:
+    def get(self, key: Union[str, int], default: Optional["EValue"] = None) -> Optional["EValue"]:
         """Uniform field/index access regardless of tag."""
         if self.ev_tag == EvType.RECORD:
             return self.ev_record.get(str(key), default)
@@ -397,12 +397,20 @@ if __name__ == "__main__":
 
     row = lift_sql_row(["id","name","score"], ["1","Alice","98.6"])
     print(f"\n  SQL row  : {row.describe()}")
-    print(f"    name   : {row.get('name').describe()}")
-    print(f"    score  : {row.get('score').describe()}")
+    row_name = row.get("name")
+    assert row_name is not None
+    print(f"    name   : {row_name.describe()}")
+    row_score = row.get("score")
+    assert row_score is not None
+    print(f"    score  : {row_score.describe()}")
 
     elem = lift_html_element("h1", {"class":"header","id":"title"})
     print(f"\n  HTML <h1>: {elem.describe()}")
-    print(f"    class  : {elem.get('attrs').get('class').describe()}")
+    elem_attrs = elem.get("attrs")
+    assert elem_attrs is not None
+    elem_class = elem_attrs.get("class")
+    assert elem_class is not None
+    print(f"    class  : {elem_class.describe()}")
 
     lst = lift_python([10, 20, "Codric", True])
     print(f"\n  Python list: {lst.describe()}")
