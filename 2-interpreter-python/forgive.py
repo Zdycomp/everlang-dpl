@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from syntax import (T, Token, lex, KEYWORDS, Node, E as ParseErr,
-                    e_z, Defect)
+                    e_z, Defect, Unparsed)
 
 
 @dataclass
@@ -323,34 +323,11 @@ def heal(tokens: List[Token]) -> Tuple[List[Token], List[Correction]]:
     return out, corrections
 
 
-def parse_forgiving(src: str) -> Tuple[Optional[Node], Optional[ParseErr],
+def parse_forgiving(src: str) -> Tuple[Node, Optional[ParseErr],
                                        List[Correction]]:
-    """The forgiving front door. Heals what it safely can, then hands
-    the result to the same strict parser everything else uses. If the
-    program is still malformed after healing, the error is genuine —
-    reported plainly, nothing invented to make it go away."""
-    from syntax import Parser, ParseError
+    """The forgiving front door: (node, error, corrections). The rules live in
+    front_door.py; this adapter is the heal=True mode."""
+    from front_door import front_door  # lazy: front_door imports this module
+    r = front_door(src, heal=True)
+    return r.node, r.error, r.corrections
 
-    clean_src, semi_corr = _strip_semicolons(src)
-    toks, lerr = lex(clean_src)
-    if lerr is not None:
-        return None, lerr, semi_corr
-
-    healed, corrections = heal(toks)
-    corrections = semi_corr + corrections
-
-    try:
-        node = Parser(healed).program()
-        return node, None, corrections
-    except ParseError as exc:
-        return None, e_z("parse", str(exc), Defect.UNBOUNDED), corrections
-    except RecursionError:
-        # Same guard as syntax.parse(): the grammar descends
-        # recursively, so input nested past the Python stack limit
-        # raised RecursionError out of the forgiving front door — the
-        # one run_source() actually uses — and crashed the CLI with a
-        # traceback instead of reporting a parse failure.
-        return (None,
-                e_z("parse", "expression nested too deeply to parse",
-                    Defect.UNBOUNDED),
-                corrections)

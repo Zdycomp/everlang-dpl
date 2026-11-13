@@ -38,30 +38,49 @@ int32_t ev_pool_alloc(ev_pool *pool, ev_type type) {
     return ref;
 }
 
+/* Unknown composites: what a getter returns for a ref it did not issue as
+ * this type. Static, so the pointer is never NULL. Each one's storage is a
+ * single element, so a caller that reads through it stays in bounds. */
+static uint8_t  ev_unknown_bytes[1];
+static EValue   ev_unknown_items[1];
+static ev_field ev_unknown_fields[1];
+
+ev_blob   EV_UNKNOWN_BLOB   = {{0, EV_VOID, 0, 0}, ev_unknown_bytes};
+ev_list   EV_UNKNOWN_LIST   = {{0, EV_VOID, 0, 0}, ev_unknown_items, 0, 0};
+ev_record EV_UNKNOWN_RECORD = {{0, EV_VOID, 0, 0}, ev_unknown_fields, 0, 0};
+
+int ev_pool_is_unknown(const void *composite) {
+    if (!composite) return 1;   /* a NULL handed in is treated as unknown too */
+    return ((const ev_pool_header *)composite)->type == EV_VOID;
+}
+
 void *ev_pool_get(ev_pool *pool, int32_t ref) {
     pool = default_pool(pool);
-    if (ref <= 0 || ref >= pool->used) return NULL;
+    if (ref <= 0 || ref >= pool->used) return &EV_UNKNOWN_BLOB;
     return pool->slots[ref].raw;
 }
 
 ev_blob *ev_pool_blob(ev_pool *pool, int32_t ref) {
     pool = default_pool(pool);
-    if (ref <= 0 || ref >= pool->used) return NULL;
-    if (pool->types[ref] != EV_BLOB) return NULL;
+    if (ref <= 0 || ref >= pool->used) return &EV_UNKNOWN_BLOB;
+    if (pool->types[ref] != EV_BLOB) return &EV_UNKNOWN_BLOB;
+    if (!pool->slots[ref].blob) return &EV_UNKNOWN_BLOB;   /* allocated, never filled */
     return pool->slots[ref].blob;
 }
 
 ev_list *ev_pool_list(ev_pool *pool, int32_t ref) {
     pool = default_pool(pool);
-    if (ref <= 0 || ref >= pool->used) return NULL;
-    if (pool->types[ref] != EV_LIST) return NULL;
+    if (ref <= 0 || ref >= pool->used) return &EV_UNKNOWN_LIST;
+    if (pool->types[ref] != EV_LIST) return &EV_UNKNOWN_LIST;
+    if (!pool->slots[ref].list) return &EV_UNKNOWN_LIST;   /* allocated, never filled */
     return pool->slots[ref].list;
 }
 
 ev_record *ev_pool_record(ev_pool *pool, int32_t ref) {
     pool = default_pool(pool);
-    if (ref <= 0 || ref >= pool->used) return NULL;
-    if (pool->types[ref] != EV_RECORD) return NULL;
+    if (ref <= 0 || ref >= pool->used) return &EV_UNKNOWN_RECORD;
+    if (pool->types[ref] != EV_RECORD) return &EV_UNKNOWN_RECORD;
+    if (!pool->slots[ref].rec) return &EV_UNKNOWN_RECORD;   /* allocated, never filled */
     return pool->slots[ref].rec;
 }
 

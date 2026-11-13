@@ -403,6 +403,17 @@ class Extern(Node):
 
 
 @dataclass
+@dataclass
+class Unparsed(Node):
+    """A source that did not lex or parse. It is a node, never None: lowering
+    it gives a Z carrying the reason, and emitting it is refused. The caller
+    gets the error beside it, as before, so no path receives a null tree."""
+    stage: str    # "lex" or "parse"
+    reason: str
+    def shape(self) -> str: return "Unparsed"
+    def __str__(self) -> str: return f"unparsed({self.stage}: {self.reason})"
+
+
 class ZLit(Node):
     """The zero-absolute literal. Not the number zero — the explicit
     ABSENCE of a measurement. Kept as its own node, not folded into
@@ -918,27 +929,14 @@ class ParseError(Exception):
     pass
 
 
-def parse(src: str) -> Tuple[Optional[Node], Optional[E]]:
-    toks, err = lex(src)
-    if err:
-        return None, err
-    try:
-        p = Parser(toks)
-        node = p.program()
-        if node is not None:
-            node._recoveries = p.recoveries  # type: ignore[attr-defined]
-        return node, None
-    except ParseError as exc:
-        return None, e_z("parse", str(exc), Defect.UNBOUNDED)
-    except RecursionError:
-        # The grammar descends recursively, so deeply nested input runs
-        # the interpreter out of Python stack rather than failing the
-        # parse. parse() promises a (node, error) pair; letting a raw
-        # RecursionError escape crashed the CLI with a traceback for
-        # what is simply a program nested past what this parser can
-        # take. Report it as the parse failure it is.
-        return None, e_z("parse", "expression nested too deeply to parse",
-                         Defect.UNBOUNDED)
+def parse(src: str) -> Tuple[Node, Optional[E]]:
+    """Strict parse: a (node, error) pair. The rules live in front_door.py;
+    a failed source is an Unparsed node, never None."""
+    from front_door import front_door  # lazy: front_door imports this module
+    r = front_door(src, heal=False)
+    if r.error is None:
+        r.node._recoveries = r.recoveries  # type: ignore[attr-defined]
+    return r.node, r.error
 
 
 # ═════════════════════════════════════════════
@@ -1862,21 +1860,14 @@ class Compiled:
 
 def compile_ever(src: str,
                  known_fns: Optional[Dict[str, int]] = None) -> Compiled:
-    """1 -> 2 -> 3, stopping at the first stage that refuses."""
-    c = Compiled(src=src)
-
-    toks, err = lex(src)
-    c.tokens = toks
-    if err:
-        c.error, c.stage = err, "lex"
+    """1 -> 2 -> 3, stopping at the first stage that refuses. Stages 1 and 2
+    are front_door(); stage 3 is Semantic, which the front door never runs."""
+    from front_door import front_door  # lazy: front_door imports this module
+    r = front_door(src, heal=False)
+    c = Compiled(src=src, tokens=r.tokens, ast=r.node)
+    if r.error is not None:
+        c.error, c.stage = r.error, r.stage
         return c
-
-    try:
-        c.ast = Parser(toks).program()
-    except ParseError as exc:
-        c.error, c.stage = e_z("parse", str(exc), Defect.UNBOUNDED), "parse"
-        return c
-
     c.analysis = Semantic(known_fns).analyse(c.ast)
     c.stage = "semantic" if c.analysis.errors else "ready"
     return c
@@ -1931,7 +1922,7 @@ def distinct_skeletons(bodies: List[str]) -> Tuple[int, Dict[str, int]]:
     counts: Dict[str, int] = {}
     for b in bodies:
         node, err = parse(b)
-        if node is None:
+        if isinstance(node, Unparsed):
             continue
         k = skeleton(node)
         counts[k] = counts.get(k, 0) + 1

@@ -255,13 +255,17 @@ module Ever
     def closed? = @points.size == 3
 
     def evolve
-      return nil unless closed?
+      # No evolution is a Z with its reason, never nil: the loop has an answer
+      # ("not yet", "not aligned"), and the caller can see it.
+      return Particle.z(@ident, "loop has #{@points.size} of 3 points") unless closed?
 
       mean = @points.sum(&:confidence) / 3
       spread = @points.map(&:confidence).max - @points.map(&:confidence).min
 
       # Aligned means the three points agree within the pi-squared band.
-      return nil if spread > PI_WIDTH_ENUMERATE
+      if spread > PI_WIDTH_ENUMERATE
+        return Particle.z(@ident, "points not aligned: spread #{spread} exceeds #{PI_WIDTH_ENUMERATE}")
+      end
 
       generation = @points.map(&:generation).max + 1
       Particle.new(ident: @ident, state: :evolved, confidence: mean,
@@ -360,10 +364,11 @@ module Ever
     end
 
     def evolve(ident)
-      p = @particles[ident] or return nil
+      p = @particles[ident]
+      return Particle.z(ident, "no particle named #{ident}") unless p
       @loops[ident] << p
       evolved = @loops[ident].evolve
-      @particles[ident] = evolved if evolved
+      @particles[ident] = evolved unless evolved.z?
       evolved
     end
 

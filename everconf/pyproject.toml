@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "everconf"
-version = "0.1.0"
+version = "0.2.0"
 description = "A value that carries how much you can trust it — confidence-tracked numbers for Python, extracted from the Ever language."
 readme = "README.md"
 requires-python = ">=3.8"

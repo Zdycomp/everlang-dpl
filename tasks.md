@@ -45,6 +45,107 @@ fast in this repo — cite the symbol, and the file, and let the number be a hin
 
 ## Action items
 
+### Front door: one deep module, behaviour preserved (2026-11-13)
+
+Candidate from the architecture review, decided in the grilling loop (Q1–Q9).
+Design: `2-interpreter-python/front_door.py`, `front_door(src, heal: bool)` with no
+default, returning `FrontResult`. The six public entries are adapters over it.
+Semantic analysis stays with callers. `compile_ever` is deleted in a later change.
+
+- [x] Characterization snapshot recorded before any code moved: `tests/front_door_snapshot.py`,
+      baseline `tests/front_door/baseline.json` (40 sources x 7 entries: 13 integration
+      programs, 27 edge sources; exceptions recorded as results). Deterministic across
+      separate processes once wall-clock fields (`born_ms`, `run_id`, `ts_ms`, ...) are masked.
+- [x] Mutation check: a one-string change to the lex-stage name fails the snapshot
+      (18 differences); restored, it passes.
+- [x] `front_door.py` written. Deviation from the approved Q6 shape: `FrontResult` also
+      carries `tokens` and `recoveries`. Without them `compile_ever` and `parse` can't
+      reproduce today's output exactly. Approved shape kept: `node`, `error`, `corrections`, `stage`.
+- [x] `syntax.parse`, `syntax.compile_ever`, `forgive.parse_forgiving`,
+      `architecture.front_end` are adapters over the front door. `ir.parse_to_ir` and
+      `runtime.run_source` contain no parsing of their own: they reach the front door
+      through `parse` and `parse_forgiving`, so they are unchanged.
+- [x] Snapshot reproduces exactly after the refactor (40 sources x 7 entries).
+- [x] Affected suites green: Pipeline 80/0, Interpreter 83/0, EvScope 72/0, Parser 75/0,
+      Lexer 91/0, Architecture 18/0, ParseLexExecutor 12/0, no-null parse, ceiling, anchor, healing, registry.
+- [x] Full gate (`tests/run_all.py`) with the snapshot suite registered: 70 passed, 0 skipped, 0 failed, exit 0 (2026-11-13).
+- [ ] Deferred (Q9): delete `compile_ever` and its `syntax_test.py` inputs, in a later change.
+
+Findings, not fixed (Q2: behaviour preserved; each needs its own decision):
+- [ ] **Recoveries are dropped on the forgiving path.** `parse_forgiving` never sets
+      `node._recoveries`, so `run_source` (which reads it at `runtime.py` ~456) reports
+      none. Verified: `let x = [1,]` and `show x` gives the strict parser's `trailing comma
+      in a list` recovery, and `run_source(...).recoveries == []`. Pre-existing: the
+      original `parse_forgiving` also did not attach recoveries.
+- [ ] **Forgiving and strict ASTs differ on three valid programs** with zero corrections
+      recorded: `tests/integration/09_zero_confidence.ever`, `11_kitchen_sink.ever`,
+      `12_logic_loops.ever`. Cause not yet found. Preserved by the snapshot.
+
+### Sprint: Ever x ClauseShield — No-Null, Financial Continuity, everconf (2026-11-13)
+
+Worktree `~/Downloads/4ever.worktrees/clauseshield`, branch `sprint/clauseshield-noll`
+from `fae24e8`. The main checkout is not touched: its working tree has 135 tracked
+paths missing from disk (`0-atom-c/` … `8-finality/` among them) and 27 uncommitted
+changes that belong to Ricky.
+
+Decisions (mine, for Rick to redirect):
+- **Unknown is Ever's z made explicit.** Confidence 0, a reason code from the
+  registry, a human reason, and the chain of reasons it carried. Null is banned at
+  every boundary: no Python `None`, no C `NULL`, no JSON `null`.
+- **Reason registry is one file**, `spec/reason_codes.tsv`. The six codes from the
+  brief, plus `MALFORMED` (added: lex and parse failures had no code, and none of
+  the six fits them). Every layer's table is checked against the file by a test.
+- **`everconf` changes shape.** `UNKNOWN` (a singleton with no reason) becomes
+  `Unknown(code, reason, chain)`. `unwrap(default=None)` goes, because it returns
+  a null. Breaking for 0.1.0 (Beta); the README says so.
+- **JSON result shape.** `value` is always present and never null. An unknown
+  result carries `"value": {"unknown": true}`, `score` 0, `percent` 0,
+  `label` "can't tell", and at least one reason.
+- **Label bands** (score on 0–256): 224+ "very sure", 160–223 "pretty sure",
+  1–159 "not sure", 0 "can't tell". Gemini's read is third-party (INTAKE 120), so
+  "very sure" is reachable only from a non-model source.
+- **Clause-read score** = min(grounding, source, corroboration). Grounding: the
+  quoted phrase appears verbatim in the document (256), else Unknown
+  `UNVERIFIED_SOURCE`. Source: 120. Corroboration: 192 when a local trap rule
+  (ported from `ClauseShield/src/utils/clauseAudit.ts`) matches the same passage
+  and its category agrees, else 120.
+- **Financial profile** is a strict mode in `everconf`: any Unknown is a hard stop
+  for an action and still returns the full explanation. The audit log is
+  append-only JSONL with a hash chain. Replay is checked by running the same
+  inputs twice.
+- **Commits.** Nothing is committed or pushed. The brief says "publishes to GitHub",
+  and the commit rule says commit only when asked. The changes stay in the worktree.
+
+Action items (checked as they close, each with the test that proves it):
+- [x] Baseline on `fae24e8`: `run_all.py`, `run.sh`, `tests/gold_check.py`, ASan/UBSan
+      kitchen sink. Recorded in `tests/health-log.md`.
+- [x] `spec/reason_codes.tsv`, and a parity test that reads it against the C enum,
+      `2-interpreter-python`, `everconf`, and the C++ phase layer.
+- [x] `everconf`: `Unknown`, `require(min_confidence)`, poisoning through nested math,
+      chain survives serialisation, no `None` in any `value`. Tests in
+      `everconf/tests/`, run by the gate.
+- [x] `everconf`: JSON shape (`value`, `score`, `percent`, `label`, `reasons`,
+      `evidence`), label bands, and the clause-read scorer. Examples in
+      `everconf/docs/JSON.md`, asserted by tests.
+- [x] `everconf`: financial profile (strict mode, provenance, append-only audit
+      log with hash chain, deterministic replay). Spec: `docs/FINANCIAL_CONTINUITY.md`.
+- [x] Adapter for the Express server: stdlib HTTP service in `everconf`, plus a
+      zero-dependency Node client. Round-trip test over real localhost HTTP.
+- [~] Lexers and parsers (Python `syntax.py`, `forgive.py`, `parse_lex_executor.py`, `ir.py`, `emit.py` done and tested by `tests/test_no_null_parse.py`). Open: Ruby `3-dsl-ruby/ever.rb` `evolve` returns nil (lines ~258, ~264, ~363) and Java `EverRuntime.java:301-302`, `EverRepair.java:79-132` return null. Neither has a lexer or parser. Python `syntax.py` and `forgive.py`
+      return `None` on parse failure (lines 932 and 346) and are fixed to return
+      a Unknown. Ruby `ever.rb` and Java `5-runtime-java` checked the same way.
+- [~] C ABI: `0-atom-c/reason.h` added with its C test. Open: `ev_pool_get/blob/list/record` (`evalue.c:41-60`) return NULL for an invalid ref, with 4 callers. The rest of the 112 `return NULL` sites are not audited. that can return `NULL` return an Unknown instead.
+      Test: ASan/UBSan kitchen sink plus a boundary check that no path yields NULL.
+- [~] C++ `1-phase-cpp`: grep finds no `nullptr`/`NULL` returns in `phase.cpp`/`phase.hpp`. No test added yet for the boundary.: no null or empty value across its boundary. Test in
+      `phase_test.cpp`.
+- [~] Consolidation: see `tests/health-log.md`. Local `main` does not exist (`master` at 1f6ea44 is an ancestor). `everlang/main` contains `everlang_standalone/`. One Downloads file is not in the repo (`benchmarks/ez_biocomputing_444_test.py`). of every language version and the branches they
+      live on, and anything that could not be merged, with its reason.
+- [~] `tests/health-log.md`: the final summary (written, updated at the end of the run), with what changed and what needs
+      Rick's decision.
+
+Open for Rick: commit policy above; whether clause reads should ever reach
+"very sure" by a route other than a non-model source.
+
 ### Evaluate an AI proposer (2026-11-10): design only, `docs/EVALUATION.md`
 
 The harness is not blocked. Wiring any model in is blocked on Evaluation
