@@ -1,7 +1,7 @@
 # health log — Ever x ClauseShield sprint (partial; work stopped at the end of this run)
 
 Branch `sprint/clauseshield-noll`, worktree `~/Downloads/4ever.worktrees/clauseshield`, from `fae24e8`.
-Nothing is committed or pushed.
+Committed as e4934b7, rebased as b22d6fd, pushed as PR #18 (draft, now ready).
 
 ## Baseline (fae24e8, before any change)
 
@@ -58,9 +58,9 @@ Nothing is committed or pushed.
 ## Open items
 
 - `forgive.py`, `syntax.py`, `parse_lex_executor.py`, `ir.py`, `emit.py`: done.
-- C pool getters (`ev_pool_get`, `ev_pool_blob`, `ev_pool_list`, `ev_pool_record`, 4 callers) return NULL for an invalid ref. Not changed.
+- C pool getters now return a typed Unknown composite (done in run 4), and the mutators, equality and serialise refuse it. The other `return NULL` sites (112 in total) are not audited: open.
 - The rest of the 112 C `return NULL` sites: not audited.
-- `3-dsl-ruby/ever.rb` `evolve` returns nil in three places, and `5-runtime-java` `EverRuntime.java:301-302` and `EverRepair.java:79-132` return null. Not changed.
+- Ruby `evolve` (3 sites) now returns a Z: done in run 4. Java `EverRuntime.java:301-302` and `EverRepair.java:79-132` still return null: open.
 - C++ phase layer: no null returns found by grep. No boundary test added.
 - `run.sh` TAC IR (C) failure from the baseline.
 - `/doctor` request (separate, from the same turn): not started.
@@ -68,7 +68,7 @@ Nothing is committed or pushed.
 
 ## Decisions for Rick
 
-- Commit policy: nothing is committed.
+- Commit policy: the sprint is committed and pushed as PR #18. Later fixes are uncommitted until Rick approves.
 - `corroborate` may lift a value to 180 when two independent sources agree. Confirm this exception.
 - Clause "very sure" is reachable only from a non-model source.
 - Financial threshold default is 224.

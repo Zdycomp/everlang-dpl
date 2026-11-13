@@ -403,7 +403,6 @@ class Extern(Node):
 
 
 @dataclass
-@dataclass
 class Unparsed(Node):
     """A source that did not lex or parse. It is a node, never None: lowering
     it gives a Z carrying the reason, and emitting it is refused. The caller
@@ -414,6 +413,7 @@ class Unparsed(Node):
     def __str__(self) -> str: return f"unparsed({self.stage}: {self.reason})"
 
 
+@dataclass
 class ZLit(Node):
     """The zero-absolute literal. Not the number zero — the explicit
     ABSENCE of a measurement. Kept as its own node, not folded into
@@ -1933,7 +1933,7 @@ def distinct_shapes(bodies: List[str]) -> Tuple[int, Dict[str, int]]:
     asts: List[Node] = []
     for b in bodies:
         node, err = parse(b)
-        if node is not None:
+        if not isinstance(node, Unparsed):
             asts.append(node)
     counts = shapes_of(asts)
     return len(counts), counts

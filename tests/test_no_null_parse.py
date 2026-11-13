@@ -56,6 +56,10 @@ def main() -> int:
         check(result is not None, f"compile_ever returned None for {src!r}")
         if result.error is not None:
             check(result.error.reason != "", f"compile_ever error without reason for {src!r}")
+    # Consumers that count parses must skip failed sources, not count them as shapes.
+    from syntax import distinct_shapes
+    n_shapes, _ = distinct_shapes(["n + 1", "let x = ((", '"bad'])
+    check(n_shapes == 1, f"distinct_shapes counted a failed parse: {n_shapes} shapes, expected 1")
     if FAILS:
         for f in FAILS[:20]:
             print("FAIL", f)

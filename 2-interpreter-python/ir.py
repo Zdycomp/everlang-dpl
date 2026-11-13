@@ -326,11 +326,11 @@ class ParseResult:
         Now works through EvNodes so 'if n < 1 ...' and 'if n <= 0 ...'
         correctly count as one idea.
         """
-        from .syntax import parse
+        from .syntax import parse, Unparsed
         counts: Dict[str, int] = {}
         for b in bodies:
             node, err = parse(b)
-            if node is None:
+            if isinstance(node, Unparsed):
                 continue
             ir = _ast_to_ir(node)
             if ir:

@@ -229,7 +229,7 @@ EValue ev_record_new(ev_pool *pool) {
 int ev_list_push(EValue *list, EValue item, ev_pool *pool) {
     if (list->tag != EV_LIST) return 0;
     ev_list *l = ev_pool_list(pool, list->body.pool_ref);
-    if (!l) return 0;
+    if (ev_pool_is_unknown(l)) return 0;   /* unissued ref: never realloc the sentinel */
     if (l->h.len >= l->h.capacity) {
         int32_t newcap = l->h.capacity * 2;
         EValue *newbuf = (EValue*)realloc(l->items, newcap * sizeof(EValue));
@@ -258,7 +258,7 @@ int ev_record_set(EValue *rec, const char *name, EValue val,
     if (rec->tag != EV_RECORD || !name) return 0;
     if (strlen(name) >= EV_FIELD_NAME_MAX) return 0;
     ev_record *r = ev_pool_record(pool, rec->body.pool_ref);
-    if (!r) return 0;
+    if (ev_pool_is_unknown(r)) return 0;   /* unissued ref: never realloc the sentinel */
     /* update existing field */
     for (int i = 0; i < r->h.len; i++) {
         if (strcmp(r->fields[i].name, name) == 0) {
@@ -329,14 +329,15 @@ int ev_equal(const EValue *a, const EValue *b, ev_pool *pool) {
         case EV_BLOB: {
             ev_blob *ba = ev_pool_blob(pool, a->body.pool_ref);
             ev_blob *bb = ev_pool_blob(pool, b->body.pool_ref);
-            if (!ba || !bb) return 0;
+            if (ev_pool_is_unknown(ba) || ev_pool_is_unknown(bb)) return 0;
             return ba->h.len == bb->h.len &&
                    memcmp(ba->data, bb->data, ba->h.len) == 0;
         }
         case EV_LIST: {
             ev_list *la = ev_pool_list(pool, a->body.pool_ref);
             ev_list *lb = ev_pool_list(pool, b->body.pool_ref);
-            if (!la || !lb || la->h.len != lb->h.len) return 0;
+            if (ev_pool_is_unknown(la) || ev_pool_is_unknown(lb)) return 0;
+            if (la->h.len != lb->h.len) return 0;
             for (int i = 0; i < la->h.len; i++)
                 if (!ev_equal(&la->items[i], &lb->items[i], pool)) return 0;
             return 1;
@@ -344,7 +345,8 @@ int ev_equal(const EValue *a, const EValue *b, ev_pool *pool) {
         case EV_RECORD: {
             ev_record *ra = ev_pool_record(pool, a->body.pool_ref);
             ev_record *rb = ev_pool_record(pool, b->body.pool_ref);
-            if (!ra || !rb || ra->h.len != rb->h.len) return 0;
+            if (ev_pool_is_unknown(ra) || ev_pool_is_unknown(rb)) return 0;
+            if (ra->h.len != rb->h.len) return 0;
             for (int i = 0; i < ra->h.len; i++) {
                 ev_field *f = &ra->fields[i];
                 EValue bval = ev_record_get(b, f->name, pool);
@@ -416,14 +418,14 @@ int32_t ev_serialise(const EValue *v, uint8_t *buf, int32_t cap, ev_pool *pool) 
         }
         case EV_BLOB: {
             ev_blob *b = ev_pool_blob(pool, v->body.pool_ref);
-            if (!b) return -1;
+            if (ev_pool_is_unknown(b)) return -1;
             p = write_i32le(buf,cap,p,b->h.len);
             if (p < 0 || p + b->h.len > cap) return -1;
             memcpy(buf+p, b->data, b->h.len); p += b->h.len; break;
         }
         case EV_LIST: {
             ev_list *l = ev_pool_list(pool, v->body.pool_ref);
-            if (!l) return -1;
+            if (ev_pool_is_unknown(l)) return -1;
             p = write_i32le(buf,cap,p,l->h.len);
             if (p < 0) return -1;
             for (int i = 0; i < l->h.len; i++) {
@@ -435,7 +437,7 @@ int32_t ev_serialise(const EValue *v, uint8_t *buf, int32_t cap, ev_pool *pool) 
         }
         case EV_RECORD: {
             ev_record *r = ev_pool_record(pool, v->body.pool_ref);
-            if (!r) return -1;
+            if (ev_pool_is_unknown(r)) return -1;
             p = write_i32le(buf,cap,p,r->h.len);
             if (p < 0) return -1;
             for (int i = 0; i < r->h.len; i++) {

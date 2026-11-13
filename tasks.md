@@ -113,35 +113,43 @@ Decisions (mine, for Rick to redirect):
   for an action and still returns the full explanation. The audit log is
   append-only JSONL with a hash chain. Replay is checked by running the same
   inputs twice.
-- **Commits.** Nothing is committed or pushed. The brief says "publishes to GitHub",
-  and the commit rule says commit only when asked. The changes stay in the worktree.
+- **Commits.** Committed as `e4934b7`, rebased onto `everlang/feature/heal-repair-order`
+  as `b22d6fd`, pushed to `everlang` as PR #18 (based on PR #17's branch). Later fixes are
+  uncommitted until Rick approves.
 
 Action items (checked as they close, each with the test that proves it):
-- [x] Baseline on `fae24e8`: `run_all.py`, `run.sh`, `tests/gold_check.py`, ASan/UBSan
-      kitchen sink. Recorded in `tests/health-log.md`.
-- [x] `spec/reason_codes.tsv`, and a parity test that reads it against the C enum,
-      `2-interpreter-python`, `everconf`, and the C++ phase layer.
-- [x] `everconf`: `Unknown`, `require(min_confidence)`, poisoning through nested math,
-      chain survives serialisation, no `None` in any `value`. Tests in
-      `everconf/tests/`, run by the gate.
-- [x] `everconf`: JSON shape (`value`, `score`, `percent`, `label`, `reasons`,
-      `evidence`), label bands, and the clause-read scorer. Examples in
-      `everconf/docs/JSON.md`, asserted by tests.
-- [x] `everconf`: financial profile (strict mode, provenance, append-only audit
-      log with hash chain, deterministic replay). Spec: `docs/FINANCIAL_CONTINUITY.md`.
-- [x] Adapter for the Express server: stdlib HTTP service in `everconf`, plus a
-      zero-dependency Node client. Round-trip test over real localhost HTTP.
-- [~] Lexers and parsers (Python `syntax.py`, `forgive.py`, `parse_lex_executor.py`, `ir.py`, `emit.py` done and tested by `tests/test_no_null_parse.py`). Open: Ruby `3-dsl-ruby/ever.rb` `evolve` returns nil (lines ~258, ~264, ~363) and Java `EverRuntime.java:301-302`, `EverRepair.java:79-132` return null. Neither has a lexer or parser. Python `syntax.py` and `forgive.py`
-      return `None` on parse failure (lines 932 and 346) and are fixed to return
-      a Unknown. Ruby `ever.rb` and Java `5-runtime-java` checked the same way.
-- [~] C ABI: `0-atom-c/reason.h` added with its C test. Open: `ev_pool_get/blob/list/record` (`evalue.c:41-60`) return NULL for an invalid ref, with 4 callers. The rest of the 112 `return NULL` sites are not audited. that can return `NULL` return an Unknown instead.
-      Test: ASan/UBSan kitchen sink plus a boundary check that no path yields NULL.
-- [~] C++ `1-phase-cpp`: grep finds no `nullptr`/`NULL` returns in `phase.cpp`/`phase.hpp`. No test added yet for the boundary.: no null or empty value across its boundary. Test in
-      `phase_test.cpp`.
-- [~] Consolidation: see `tests/health-log.md`. Local `main` does not exist (`master` at 1f6ea44 is an ancestor). `everlang/main` contains `everlang_standalone/`. One Downloads file is not in the repo (`benchmarks/ez_biocomputing_444_test.py`). of every language version and the branches they
-      live on, and anything that could not be merged, with its reason.
-- [~] `tests/health-log.md`: the final summary (written, updated at the end of the run), with what changed and what needs
-      Rick's decision.
+- [x] Baseline on `fae24e8`: `run_all.py` and the ASan/UBSan kitchen sink, recorded in
+      `tests/health-log.md`. `run.sh` failed `TAC IR (C)` at baseline; fixed by the
+      archive-path change in `0-atom-c/tac_test.c`.
+- [x] `spec/reason_codes.tsv`, with `tests/test_reason_registry.py` checking the C table,
+      `everconf` and the spec against each other. The C++ and Ruby layers have no reason
+      table, so the parity test does not cover them.
+- [x] `everconf` 0.2.0: `Unknown`, `require(min_confidence)`, poisoning, serialisation,
+      no `None` in any value (`everconf/tests/`, run by the gate).
+- [x] `everconf`: JSON shape, plain-words labels, clause-read scorer. Examples in
+      `everconf/docs/JSON.md`, checked by `everconf/tests/test_docs.py`.
+- [x] `everconf`: financial profile (strict mode, provenance, hash-chained audit log,
+      replay). Spec: `docs/FINANCIAL_CONTINUITY.md`.
+- [x] Adapter for the Express server: loopback HTTP service and Node client, tested end
+      to end (`everconf/adapters/express/wrap.test.mjs`).
+- [x] Python lexer and parser: `parse`, `parse_forgiving`, `compile_ever` and `front_end`
+      return `Unparsed` instead of `None`. `distinct_shapes` and `ir.distinct_skeletons`
+      skip failed parses. Regression check in `tests/test_no_null_parse.py`.
+- [x] C pool getters (`ev_pool_get/blob/list/record`) return a typed Unknown composite,
+      never NULL. `ev_list_push`, `ev_record_set`, `ev_equal` and `ev_serialise` refuse
+      unknown composites. Checked by `0-atom-c/unknown_composite_test.c`.
+- [~] Ruby `3-dsl-ruby/ever.rb`: `evolve` returns a Z with a reason, not nil. Checked
+      with `ruby ever.rb` only; Ruby is not in the gate.
+- [ ] Java: `5-runtime-java/com/codric/ever/EverRuntime.java:301-302` and
+      `EverRepair.java:79-132` still return null. Open.
+- [ ] C ABI beyond the pool getters: the other `return NULL` sites in `0-atom-c` (112 in
+      total) are not audited. Open.
+- [ ] C++ `1-phase-cpp`: grep finds no `nullptr`/`NULL` returns in `phase.cpp` or
+      `phase.hpp`. No boundary test yet. Open.
+- [~] Consolidation: see `tests/health-log.md`. Local `main` does not exist; `master` is an
+      ancestor of `feature/heal-repair-order`. One Downloads file is not in the repo
+      (`benchmarks/ez_biocomputing_444_test.py`). Open: decide whether to merge it.
+- [~] `tests/health-log.md`: final summary, updated as the last step of each run.
 
 Open for Rick: commit policy above; whether clause reads should ever reach
 "very sure" by a route other than a non-model source.
