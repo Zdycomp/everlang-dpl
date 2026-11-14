@@ -138,8 +138,8 @@ Action items (checked as they close, each with the test that proves it):
 - [x] C pool getters (`ev_pool_get/blob/list/record`) return a typed Unknown composite,
       never NULL. `ev_list_push`, `ev_record_set`, `ev_equal` and `ev_serialise` refuse
       unknown composites. Checked by `0-atom-c/unknown_composite_test.c`.
-- [~] Ruby `3-dsl-ruby/ever.rb`: `evolve` returns a Z with a reason, not nil. Checked
-      with `ruby ever.rb` only; Ruby is not in the gate.
+- [~] Ruby `3-dsl-ruby/ever.rb`: `evolve` returns a Z with a reason, not nil. Checked by the
+      gate's Ruby DSL suite (`ruby 3-dsl-ruby/ever.rb`).
 - [ ] Java: `5-runtime-java/com/codric/ever/EverRuntime.java:301-302` and
       `EverRepair.java:79-132` still return null. Open.
 - [ ] C ABI beyond the pool getters: the other `return NULL` sites in `0-atom-c` (112 in

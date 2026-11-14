@@ -1,9 +1,12 @@
 """Core arithmetic, comparison, aggregates and the module's own examples.
 
 Stdlib only (unittest), so the library's tests need no install. Replaces the
-pytest file of 0.1.0: `UNKNOWN` (a singleton with no reason) is gone, and
-`unwrap(default=None)` is gone because it returned a null. Each old test's
-intent is kept here with the new API.
+pytest file of 0.1.0. `UNKNOWN` (a singleton with no reason) and
+`unwrap(default=None)` (it returned a null) are gone, and the tests that used
+them are ported to `Unknown(code, reason)`. The class `Restored` holds the
+0.1.0 checks that the first rewrite dropped by mistake: the default require
+floor, negation of an Unknown, the comparison methods called on an Unknown,
+and reflected power with an Unknown.
 """
 
 import doctest
@@ -230,6 +233,33 @@ class Aggregates(unittest.TestCase):
         r = mse([], [])
         self.assertIsInstance(r, Unknown)
         self.assertEqual(r.code, MISSING_INPUT)
+
+
+class Restored(unittest.TestCase):
+    """0.1.0 checks dropped by the first rewrite, restored against the new API."""
+
+    def test_default_require_floor_is_the_module_constant(self):
+        self.assertEqual(C(7, FLOOR).require(), 7)
+        with self.assertRaises(LowConfidenceError):
+            C(7, FLOOR - 1).require()
+
+    def test_negation_of_unknown_is_unknown(self):
+        r = -Unknown(MISSING_INPUT, "gap")
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, MISSING_INPUT)
+
+    def test_comparison_methods_on_an_unknown_are_unknown(self):
+        u = Unknown(MISSING_INPUT, "gap")
+        for m in ("lt", "gt", "le", "ge", "eq", "ne"):
+            with self.subTest(method=m):
+                self.assertIsInstance(getattr(u, m)(C(1)), Unknown)
+                self.assertIsInstance(getattr(C(1), m)(u), Unknown)
+
+    def test_reflected_pow_with_unknown_matches_the_other_operators(self):
+        u = Unknown(MISSING_INPUT, "gap")
+        self.assertIsInstance(2 ** u, Unknown)
+        self.assertIsInstance(u ** 2, Unknown)
+        self.assertEqual((2 ** C(3)).value, 8)
 
 
 class ModuleExamples(unittest.TestCase):

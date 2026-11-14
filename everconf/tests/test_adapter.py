@@ -119,6 +119,8 @@ class Http(unittest.TestCase):
     def test_only_loopback_is_allowed(self):
         with self.assertRaises(ValueError):
             make_server("0.0.0.0", 0)
+        with self.assertRaises(ValueError):
+            make_server("::1", 0)
 
 
 if __name__ == "__main__":

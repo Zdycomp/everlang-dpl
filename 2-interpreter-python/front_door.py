@@ -11,8 +11,9 @@ Two modes, chosen by the caller and never by a default:
 * heal=True   the forgiving front door: strip semicolons, heal the tokens,
               then parse the healed tokens.
 
-The six public entries in syntax.py, forgive.py and architecture.py are thin
-adapters over front_door(). Their output is pinned by
+Four public entries are thin adapters over it: syntax.parse, syntax.compile_ever,
+forgive.parse_forgiving and architecture.front_end. ir.parse_to_ir and runtime.run_source
+reach it through parse and parse_forgiving. Their output is pinned by
 tests/front_door_snapshot.py.
 """
 

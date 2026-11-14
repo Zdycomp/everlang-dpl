@@ -57,7 +57,8 @@ int ev_pool_is_unknown(const void *composite) {
 void *ev_pool_get(ev_pool *pool, int32_t ref) {
     pool = default_pool(pool);
     if (ref <= 0 || ref >= pool->used) return &EV_UNKNOWN_BLOB;
-    return pool->slots[ref].raw;
+    void *raw = pool->slots[ref].raw;
+    return raw ? raw : &EV_UNKNOWN_BLOB;   /* allocated, never filled */
 }
 
 ev_blob *ev_pool_blob(ev_pool *pool, int32_t ref) {

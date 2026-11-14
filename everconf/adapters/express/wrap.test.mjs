@@ -105,6 +105,21 @@ test('a reply that is not JSON is UNVERIFIED_SOURCE', async () => {
   }
 });
 
+test('a timeout while the body is still arriving is TIMEOUT, not not-JSON', async () => {
+  const server = await listen((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.write('{"kind"');   // headers and part of the body, then silence
+  });
+  try {
+    const env = await wrapRead({ kind: 'clause', document: DOC, answer: ANSWER, timeoutMs: 300,
+                                 baseUrl: `http://127.0.0.1:${server.address().port}` });
+    assert.equal(env.overall.reasons[0].code, 'TIMEOUT');
+  } finally {
+    server.closeAllConnections?.();
+    server.close();
+  }
+});
+
 test('end to end: the Python adapter scores a Gemini answer', async (t) => {
   const port = 18000 + Math.floor(Math.random() * 20000);
   const proc = spawn('python3', ['-m', 'everconf.adapter', '--port', String(port)],

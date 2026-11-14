@@ -91,7 +91,11 @@ export async function wrapRead({
     let body;
     try {
       body = await res.json();
-    } catch {
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        return unknownEnvelope(kind, 'TIMEOUT',
+          `the confidence service did not answer within ${timeoutMs} ms`);
+      }
       return unknownEnvelope(kind, 'UNVERIFIED_SOURCE',
         'the confidence service replied with something other than JSON, so the answer is unverified');
     }

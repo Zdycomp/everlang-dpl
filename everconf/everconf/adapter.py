@@ -99,7 +99,8 @@ def handle(payload: Any) -> Tuple[int, dict]:
 
 
 def make_server(host: str = "127.0.0.1", port: int = 8787) -> ThreadingHTTPServer:
-    if host not in ("127.0.0.1", "::1", "localhost"):
+    # IPv4 loopback only: the server is an AF_INET ThreadingHTTPServer, which cannot bind ::1.
+    if host not in ("127.0.0.1", "localhost"):
         raise ValueError("the adapter listens on loopback only")
 
     class Handler(BaseHTTPRequestHandler):

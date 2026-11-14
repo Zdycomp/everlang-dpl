@@ -25,6 +25,10 @@ int main(void) {
     CHECK(ev_pool_blob(&pool, 0)->h.len == 0, "unknown composite has length 0");
     CHECK(ev_pool_record(&pool, 0)->h.ref == 0, "unknown composite has ref 0");
 
+    /* the untyped getter must not return NULL either, for an issued but empty ref */
+    int32_t raw_empty = ev_pool_alloc(&pool, EV_BLOB);
+    CHECK(ev_pool_get(&pool, raw_empty) != NULL, "ev_pool_get on an empty issued ref is not NULL");
+
     /* a real record (built by its constructor) is known */
     EValue rec = ev_record_new(&pool);
     CHECK(rec.body.pool_ref > 0, "built a record");
@@ -67,6 +71,7 @@ int main(void) {
     /* a NULL handed to the check is unknown too */
     CHECK(ev_pool_is_unknown(NULL), "NULL is treated as unknown");
 
+    ev_pool_clear(&pool);   /* bulk teardown: the blob, record and list allocated above */
     if (fails) { printf("unknown composites: %d failure(s)\n", fails); return 1; }
     printf("unknown composites: no NULL from any getter, all checks pass\n");
     return 0;

@@ -12,7 +12,7 @@ Committed as e4934b7, rebased as b22d6fd, pushed as PR #18 (draft, now ready).
 - `tests/gold_check.py` (the "Gold standard" suite): passes inside the gate.
 - `run.sh` on `fae24e8`: exit 1. Layers 0–2 and Layer 3 (Ruby), Layer 4 (SQL), Research passed. **TAC IR (C) failed** with `heal(1/0) recovers to 1 (not fallback 99)`, 86 passed and 1 failed in `0-atom-c/tac_test.c`. This failure predates the sprint, and the gate's own C tests do not run this assertion.
 
-## Changes so far (uncommitted)
+## Changes (committed in e4934b7; review fixes in 30011b1)
 
 - `spec/reason_codes.tsv`: the reason-code registry (7 Unknown codes, 6 note codes).
 - `everconf/`: rewritten to 0.2.0 (`Unknown(code, reason)`; no `None` in any value; `require(min_confidence)`;
