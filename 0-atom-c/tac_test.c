@@ -72,6 +72,19 @@ static EvNode *heal_call(EvArena *a, int64_t arg, int64_t fb) {
     return heal_with(a, call, "plain", dead);
 }
 
+/* The ReFix archive, found from either the repo root (run_all.py) or
+   0-atom-c/ (run.sh). The path used to be fixed to the root, so run.sh
+   opened a missing file, got an empty registry, and failed this check. */
+static const char *refix_archive_path(void) {
+    static const char *candidates[] = {"7-refix-node/repairs.jsonl",
+                                       "../7-refix-node/repairs.jsonl"};
+    for (size_t i = 0; i < sizeof candidates / sizeof candidates[0]; i++) {
+        FILE *f = fopen(candidates[i], "r");
+        if (f) { fclose(f); return candidates[i]; }
+    }
+    return candidates[0];
+}
+
 /* append a repair to an in-memory registry; strat NULL makes a wildcard */
 static void add_test_repair(EvRepairRegistry *reg, const char *fail, const char *fix,
                             int32_t kind, const char *strat) {
@@ -357,7 +370,7 @@ int main(void){
     printf("\nHEAL\n");
     {
         int lw = 0;
-        g_repair_registry = ev_repair_registry_new("7-refix-node/repairs.jsonl");
+        g_repair_registry = ev_repair_registry_new(refix_archive_path());
         EvArena *ha = ev_arena_new("heal-test");
 
 

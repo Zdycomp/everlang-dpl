@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from forgive import _strip_semicolons, parse_forgiving
 from runtime import run_source
-from syntax import Semantic, Program, lex
+from syntax import Semantic, Program, lex, Unparsed
 
 
 @dataclass
@@ -61,7 +61,7 @@ class ParseLexExecutor:
 
         node, parse_error, corrections = parse_forgiving(source)
         recoveries = [correction.line1() for correction in corrections]
-        if parse_error is not None or node is None:
+        if parse_error is not None or isinstance(node, Unparsed):
             detail = str(parse_error) if parse_error is not None else "parser returned no AST"
             stages.append(Stage("parse", "failed", detail))
             return PipelineResult(stages, errors=[detail], recoveries=recoveries)

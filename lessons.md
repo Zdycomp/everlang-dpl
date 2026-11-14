@@ -9,6 +9,29 @@ lesson hardens into a rule every agent must follow, promote it into
 
 ---
 
+## Changing a failure convention from NULL to a sentinel left dead guards that crashed, and the gate could not see it
+
+**What broke.** The pool getters in `0-atom-c/evalue.c` stopped returning NULL for a bad
+ref and started returning a static Unknown composite, so the callers' `if (!l) return 0`
+guards became dead code. `ev_list_push` and `ev_record_set` then called `realloc` on the
+static sentinel and aborted, and `ev_equal` reported two dangling refs as equal.
+`distinct_shapes` and `ir.distinct_skeletons` still tested `is not None`, so a failed parse
+was counted as a shape. The same change had also left a doubled `@dataclass` on `Unparsed`
+and dropped one from `ZLit`. A reviewer found all of it; the suites were green throughout.
+
+**Why it wasn't caught.** The new tests checked the getters, not the callers, so the one
+caller that was updated (`scope.c`) passed and the others were never exercised. The
+fuzz test for no-null parsing checked `None` only in the functions it called directly.
+`run.sh` also failed `TAC IR (C)` at baseline while the gate was green, because the gate
+did not run that assertion.
+
+**The rule now.** When a function's failure convention changes (NULL to a sentinel, `None`
+to a node), grep every caller for the old test and convert it in the same change, and add a
+regression case that calls each mutator on a bad ref. Consumers of a parse result check
+`isinstance(node, Unparsed)`, never `is None`. Run `run.sh` as well as the gate before
+calling a change done. Test: `0-atom-c/unknown_composite_test.c` (mutators, equality,
+serialise) and `tests/test_no_null_parse.py` (`distinct_shapes`). — 2026-11-13
+
 ## A branch switch in the shared checkout erased a day of uncommitted work
 
 **What broke.** On 2026-11-10 at 08:56 something on the Mac switched

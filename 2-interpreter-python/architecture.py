@@ -176,15 +176,16 @@ def _ir_from_ast(node: Optional[Node], path: str = "0") -> Optional[IRNode]:
 
 
 def front_end(source: str) -> Tuple[CSTNode, Optional[Node], List[Diagnostic]]:
-    tokens, lex_error = lex(source)
-    if lex_error:
+    from front_door import front_door  # lazy: front_door imports syntax
+    r = front_door(source, heal=False)
+    if r.stage == "lex":
         return _cst_from_source(source), None, [Diagnostic(
-            "error", "LEX", str(lex_error))]
-    ast, parse_error = parse(source)
-    if parse_error:
+            "error", "LEX", str(r.error))]
+    if r.stage == "parse":
         return _cst_from_source(source), None, [Diagnostic(
-            "error", "PARSE", str(parse_error))]
-    return CSTNode("SOURCE", source, 0, len(source)), ast, []
+            "error", "PARSE", str(r.error))]
+    r.node._recoveries = r.recoveries  # type: ignore[attr-defined]
+    return CSTNode("SOURCE", source, 0, len(source)), r.node, []
 
 
 def _vlq(value: int) -> str:

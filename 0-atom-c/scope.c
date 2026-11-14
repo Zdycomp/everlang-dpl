@@ -293,7 +293,7 @@ int ev_scope_from_record(EvScope *scope, const EValue *rec,
                           ev_pool *pool, int16_t lang) {
     if (!scope || !rec || rec->tag != EV_RECORD) return 0;
     ev_record *r = ev_pool_record(pool, rec->body.pool_ref);
-    if (!r) return 0;
+    if (ev_pool_is_unknown(r)) return 0;   /* no such record: nothing to bind */
     for (int i = 0; i < r->h.len; i++) {
         ev_field *f = &r->fields[i];
         ev_scope_set_var(scope, f->name, f->value, f->confidence, lang);

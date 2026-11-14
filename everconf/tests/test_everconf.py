@@ -1,292 +1,279 @@
-"""Tests for everconf. Every claim in the README and docstrings must
-be provable here — nothing shipped on the strength of it "looking
-right"."""
-
-import math
-import pytest
-from everconf import (C, UNKNOWN, LowConfidenceError, csum, cmean,
-                      cmin_conf, sigmoid, mse, CERTAIN, INTAKE, FLOOR)
-
-
-# ── construction ──
-
-def test_literal_is_certain():
-    assert C(42).confidence == CERTAIN
-
-def test_confidence_clamped_to_range():
-    assert C(1, confidence=999).confidence == CERTAIN
-    assert C(1, confidence=-50).confidence == 0
-
-def test_unknown_is_a_singleton():
-    assert C(None, confidence=0).is_unknown
-    assert UNKNOWN is UNKNOWN
-    from everconf import _UnknownType
-    # not required to be the same object — every _UnknownType delegates
-    # to a fresh C(None, confidence=0), so two instances are simply
-    # equal, the same way two separately-built C(None) values are
-    assert _UnknownType() == UNKNOWN
-    assert (_UnknownType() + 1).is_unknown
-
-def test_unknown_repr():
-    assert repr(UNKNOWN) == "UNKNOWN"
-    assert repr(C(None, confidence=0)) == "UNKNOWN"
-
-def test_unknown_has_no_truth_value():
-    with pytest.raises(TypeError):
-        bool(UNKNOWN)
-    with pytest.raises(TypeError):
-        if UNKNOWN:
-            pass
-
-
-# ── arithmetic: value ──
-
-def test_add_values():
-    assert (C(2) + C(3)).value == 5
-
-def test_sub_mul_div():
-    assert (C(10) - C(3)).value == 7
-    assert (C(4) * C(5)).value == 20
-    assert (C(10) / C(4)).value == 2.5
-
-def test_div_by_zero_is_unknown_not_an_exception():
-    r = C(1) / C(0)
-    assert r.is_unknown
-
-def test_pow():
-    assert (C(2) ** C(10)).value == 1024
-
-def test_neg():
-    assert (-C(5)).value == -5
-    assert (-UNKNOWN).is_unknown
-
-def test_coerces_plain_numbers():
-    assert (C(5) + 3).value == 8
-    assert (3 + C(5)).value == 8
-    assert (2 * C(5)).value == 10
-
-def test_coerces_unknown_sentinel_directly():
-    assert (C(5) + UNKNOWN).is_unknown
-    assert (UNKNOWN + C(5)).is_unknown
-
-def test_unknown_is_symmetric_with_bare_numbers_too():
-    # UNKNOWN + 5 must work exactly as reliably as 5 + UNKNOWN — both
-    # sides of every operator, not just the side that happens to be a
-    # C instance already.
-    assert (UNKNOWN + 5).is_unknown
-    assert (5 + UNKNOWN).is_unknown
-    assert (UNKNOWN - 5).is_unknown
-    assert (5 - UNKNOWN).is_unknown
-    assert (UNKNOWN * 5).is_unknown
-    assert (5 * UNKNOWN).is_unknown
-    assert (UNKNOWN / 5).is_unknown
-    assert (5 / UNKNOWN).is_unknown
-    assert (-UNKNOWN).is_unknown
-
-def test_unknown_supports_methods_directly_not_just_as_an_operand():
-    # UNKNOWN.unwrap(), UNKNOWN.require(), UNKNOWN.eq(...) — called ON
-    # UNKNOWN itself, not passed as an argument to a C method — must
-    # behave identically to calling them on C(None, confidence=0).
-    assert UNKNOWN.unwrap() is None
-    assert UNKNOWN.unwrap(default=-1) == -1
-    with pytest.raises(LowConfidenceError):
-        UNKNOWN.require()
-    assert UNKNOWN.eq(C(5)).is_unknown
-    assert UNKNOWN.gt(C(5)).is_unknown
-    assert UNKNOWN.is_unknown
-
-def test_rejects_uncoercible_types():
-    with pytest.raises(TypeError):
-        C(5) + [1, 2, 3]
-
-def test_mismatched_operands_raise_rather_than_report_unknown():
-    with pytest.raises(TypeError):
-        C("a") + C(1)
-    with pytest.raises(TypeError):
-        "a" - C(1)
-
-def test_reflected_pow_matches_the_other_operators():
-    assert (2 ** C(3)).value == 8
-    assert (2 ** C(3)).confidence == CERTAIN
-    assert (2 ** UNKNOWN).is_unknown
-
-
-# ── arithmetic: confidence ──
-
-def test_confidence_is_min_of_operands():
-    a = C(10, confidence=256)
-    b = C(20, confidence=120)
-    assert (a + b).confidence == 120
-    assert (a * b).confidence == 120
-    assert (a - b).confidence == 120
-
-def test_confidence_never_increases():
-    low = C(1, confidence=50)
-    high = C(1, confidence=256)
-    for _ in range(5):
-        low = low + high
-    assert low.confidence == 50
-
-def test_one_unknown_poisons_a_long_chain():
-    total = C(1) + C(2) + C(3) + UNKNOWN + C(4) + C(5)
-    assert total.is_unknown
-    assert total.confidence == 0
-
-def test_unknown_poisons_regardless_of_position():
-    assert (UNKNOWN + C(1) + C(1)).is_unknown
-    assert (C(1) + UNKNOWN + C(1)).is_unknown
-    assert (C(1) + C(1) + UNKNOWN).is_unknown
-
-
-# ── comparisons (explicit methods, not operator overload) ──
-
-def test_explicit_comparisons():
-    assert C(5).gt(C(3)).value is True
-    assert C(5).lt(C(3)).value is False
-    assert C(5).ge(C(5)).value is True
-    assert C(5).eq(C(5)).value is True
-    assert C(5).ne(C(3)).value is True
-
-def test_comparison_confidence_propagates():
-    a = C(5, confidence=200)
-    b = C(3, confidence=90)
-    assert a.gt(b).confidence == 90
-
-def test_comparison_with_unknown_is_unknown():
-    assert C(5).gt(UNKNOWN).is_unknown
-    assert UNKNOWN.eq(C(5)).is_unknown
-
-def test_python_equality_is_left_alone():
-    # C(5) == C(5) must behave like ordinary Python equality
-    # (needed for hashing/dict/set use), NOT confidence-tracked —
-    # that's what .eq() is for.
-    assert C(5, confidence=256) == C(5, confidence=1)
-    assert C(5) != C(6)
-
-
-# ── escape hatches ──
-
-def test_unwrap_default():
-    assert C(5).unwrap() == 5
-
-def test_require_passes_above_floor():
-    assert C(5, confidence=200).require(floor=128) == 5
-
-def test_require_raises_below_floor():
-    with pytest.raises(LowConfidenceError):
-        C(5, confidence=50).require(floor=128)
-
-def test_require_default_floor_is_the_module_constant():
-    assert C(5, confidence=FLOOR).require() == 5
-    with pytest.raises(LowConfidenceError):
-        C(5, confidence=FLOOR - 1).require()
-
-
-# ── aggregates ──
-
-def test_csum_all_present():
-    assert csum([C(1), C(2), C(3)]).value == 6
-
-def test_csum_one_unknown_poisons_total():
-    r = csum([C(1), C(2), UNKNOWN, C(3)])
-    assert r.is_unknown
-
-def test_csum_coerces_plain_numbers_and_sentinel():
-    assert csum([1, 2, 3]).value == 6
-    assert csum([1, UNKNOWN, 3]).is_unknown
-
-def test_cmean():
-    r = cmean([C(2), C(4), C(6)])
-    assert r.value == 4
-    assert r.confidence == CERTAIN
-
-def test_cmean_empty_is_unknown():
-    assert cmean([]).is_unknown
-
-def test_cmean_one_unknown_poisons_it():
-    assert cmean([C(1), UNKNOWN]).is_unknown
-
-def test_cmin_conf():
-    items = [C(1, confidence=200), C(2, confidence=90), C(3, confidence=256)]
-    assert cmin_conf(items) == 90
-
-def test_cmin_conf_empty():
-    assert cmin_conf([]) == 0
-
-
-# ── sigmoid ──
-
-def test_sigmoid_zero_is_half():
-    assert sigmoid(0).value == pytest.approx(0.5)
-
-def test_sigmoid_large_positive_saturates_near_one():
-    assert sigmoid(100).value == pytest.approx(1.0, abs=1e-6)
-
-def test_sigmoid_large_negative_saturates_near_zero():
-    assert sigmoid(-100).value == pytest.approx(0.0, abs=1e-6)
-
-def test_sigmoid_never_overflows():
-    # must not raise even at extreme magnitude
-    r = sigmoid(-10000)
-    assert r.value == 0.0
-
-def test_sigmoid_preserves_input_confidence():
-    r = sigmoid(C(2, confidence=140))
-    assert r.confidence == 140
-
-def test_sigmoid_of_unknown_is_unknown():
-    assert sigmoid(UNKNOWN).is_unknown
-
-
-# ── mse — the headline demo, verified precisely ──
-
-def test_mse_matches_hand_computation():
-    preds   = [C(0.9), C(0.2), C(0.6)]
-    actuals = [C(1),   C(0),   C(1)]
-    expect  = ((0.9-1)**2 + (0.2-0)**2 + (0.6-1)**2) / 3
-    r = mse(preds, actuals)
-    assert r.value == pytest.approx(expect)
-
-def test_mse_one_unmeasured_label_voids_the_whole_metric():
-    preds   = [C(0.9), C(0.2), C(0.6)]
-    actuals = [C(1), C(0), UNKNOWN]
-    r = mse(preds, actuals)
-    assert r.is_unknown, (
-        "the one claim this library exists to prove: a metric "
-        "computed over partly-missing data must not silently "
-        "become a metric over the data you happened to have")
-
-def test_mse_confidence_is_min_across_both_lists():
-    preds   = [C(0.9, confidence=256), C(0.2, confidence=90)]
-    actuals = [C(1.0, confidence=256), C(0.0, confidence=256)]
-    r = mse(preds, actuals)
-    assert r.confidence == 90
-
-def test_mse_length_mismatch_is_unknown_not_a_crash():
-    assert mse([C(1), C(2)], [C(1)]).is_unknown
-
-def test_mse_empty_is_unknown():
-    assert mse([], []).is_unknown
-
-
-# ── module constants match what the README will claim ──
-
-def test_constants():
-    assert CERTAIN == 256
-    assert 0 < INTAKE < FLOOR < CERTAIN
-
-
-# ── the README's headline results, as written there ──
-
-def test_readme_headline_results():
-    assert (C(88) + C(76) + UNKNOWN + C(91)).is_unknown
-    r = mse([C(0.9), C(0.2), C(0.6)], [C(1), C(0), C(1)])
-    assert r.value == pytest.approx(0.07)
-    assert r.confidence == CERTAIN
-    assert mse([C(0.9), C(0.2), C(0.6)], [C(1), C(0), UNKNOWN]).is_unknown
-    assert (C(10, confidence=256) + C(20, confidence=120)).confidence == 120
-
-def test_module_docstring_examples_run():
-    import doctest
-    import everconf
-    assert doctest.testmod(everconf).failed == 0
+"""Core arithmetic, comparison, aggregates and the module's own examples.
+
+Stdlib only (unittest), so the library's tests need no install. Replaces the
+pytest file of 0.1.0. `UNKNOWN` (a singleton with no reason) and
+`unwrap(default=None)` (it returned a null) are gone, and the tests that used
+them are ported to `Unknown(code, reason)`. The class `Restored` holds the
+0.1.0 checks that the first rewrite dropped by mistake: the default require
+floor, negation of an Unknown, the comparison methods called on an Unknown,
+and reflected power with an Unknown.
+"""
+
+import doctest
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
+import everconf  # noqa: E402
+from everconf import (C, Unknown, LowConfidenceError, csum, cmean, cmin_conf,  # noqa: E402
+                      sigmoid, mse, CERTAIN, INTAKE, FLOOR, MISSING_INPUT,
+                      OUT_OF_RANGE, MALFORMED, BELOW_THRESHOLD)
+
+
+class Construction(unittest.TestCase):
+    def test_literal_is_certain(self):
+        self.assertEqual(C(42).confidence, CERTAIN)
+
+    def test_confidence_clamped_to_range(self):
+        self.assertEqual(C(1, confidence=999).confidence, CERTAIN)
+        self.assertEqual(C(1, confidence=-50).confidence, 0)
+
+    def test_null_is_not_a_value(self):
+        with self.assertRaises(TypeError) as cm:
+            C(None)
+        self.assertIn("Unknown(code, reason)", str(cm.exception))
+
+    def test_nan_and_infinity_are_not_values(self):
+        with self.assertRaises(ValueError):
+            C(float("nan"))
+        with self.assertRaises(ValueError):
+            C(float("inf"))
+
+    def test_booleans_are_not_confidence(self):
+        with self.assertRaises(TypeError):
+            C(1, confidence=True)
+
+    def test_constants(self):
+        self.assertEqual((CERTAIN, INTAKE, FLOOR), (256, 120, 128))
+        self.assertEqual(everconf.AGREE, 180)
+
+
+class Arithmetic(unittest.TestCase):
+    def test_add_values(self):
+        self.assertEqual((C(2) + C(3)).value, 5)
+
+    def test_sub_mul_div(self):
+        self.assertEqual((C(10) - C(4)).value, 6)
+        self.assertEqual((C(3) * C(4)).value, 12)
+        self.assertEqual((C(9) / C(2)).value, 4.5)
+
+    def test_division_by_zero_is_out_of_range_not_an_exception(self):
+        r = C(1) / C(0)
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, OUT_OF_RANGE)
+        self.assertIn("division by zero", r.reason)
+
+    def test_overflow_is_out_of_range(self):
+        r = C(10.0) ** C(400)
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, OUT_OF_RANGE)
+
+    def test_pow_and_neg(self):
+        self.assertEqual((C(2) ** C(10)).value, 1024)
+        self.assertEqual((-C(5)).value, -5)
+
+    def test_coerces_plain_numbers(self):
+        self.assertEqual((C(2) + 3).value, 5)
+        self.assertEqual((3 + C(2)).value, 5)
+        self.assertEqual((10 - C(4)).value, 6)
+        self.assertEqual((2 * C(4)).value, 8)
+        self.assertEqual((8 / C(4)).value, 2)
+        self.assertEqual((2 ** C(3)).value, 8)
+
+    def test_uncoercible_types_raise(self):
+        with self.assertRaises(TypeError):
+            C(1) + object()
+
+    def test_text_and_number_is_malformed_not_a_crash(self):
+        r = C("a") + C(1)
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, MALFORMED)
+
+    def test_confidence_is_min_of_operands(self):
+        self.assertEqual((C(1, 120) + C(1, 200)).confidence, 120)
+        self.assertEqual((C(1, 256) * C(2, 100)).confidence, 100)
+
+    def test_confidence_never_increases_through_arithmetic(self):
+        x = C(3, 90)
+        for other in (C(1), C(1, 256), 7):
+            self.assertLessEqual((x + other).confidence, 90)
+
+    def test_one_unknown_poisons_a_long_chain(self):
+        total = C(1)
+        for i in range(50):
+            total = total + C(i)
+        total = total + Unknown(MISSING_INPUT, "late input")
+        for _ in range(50):
+            total = total * C(2)
+        self.assertIsInstance(total, Unknown)
+        self.assertEqual(total.code, MISSING_INPUT)
+
+    def test_unknown_poisons_regardless_of_position(self):
+        u = Unknown(MISSING_INPUT, "gap")
+        self.assertIsInstance(C(5) + u, Unknown)
+        self.assertIsInstance(u + C(5), Unknown)
+        self.assertIsInstance(5 - u, Unknown)
+
+
+class Comparison(unittest.TestCase):
+    def test_explicit_comparisons_return_c_bool(self):
+        self.assertEqual(C(3).lt(C(5)).value, True)
+        self.assertEqual(C(3).gt(C(5)).value, False)
+        self.assertEqual(C(3).le(3).value, True)
+        self.assertEqual(C(3).ge(4).value, False)
+        self.assertEqual(C(3).eq(3).value, True)
+        self.assertEqual(C(3).ne(3).value, False)
+
+    def test_comparison_confidence_propagates(self):
+        self.assertEqual(C(3, 100).lt(C(5, 200)).confidence, 100)
+
+    def test_comparison_with_unknown_is_unknown(self):
+        self.assertIsInstance(C(3).lt(Unknown(MISSING_INPUT, "x")), Unknown)
+
+    def test_python_equality_compares_value_only(self):
+        self.assertEqual(C(5, 10), C(5, 256))
+        self.assertNotEqual(C(5), C(6))
+
+    def test_unknown_has_no_truth_value(self):
+        with self.assertRaises(TypeError):
+            bool(Unknown(MISSING_INPUT, "x"))
+        self.assertTrue(bool(C(1)))
+
+
+class Requirement(unittest.TestCase):
+    def test_require_returns_value_at_or_above_threshold(self):
+        self.assertEqual(C(7, 128).require(128), 7)
+        self.assertEqual(C(7).require(), 7)
+
+    def test_require_raises_below_threshold_with_reason(self):
+        with self.assertRaises(LowConfidenceError) as cm:
+            C(7, 120).require(min_confidence=128)
+        self.assertEqual(cm.exception.code, BELOW_THRESHOLD)
+        self.assertEqual(cm.exception.confidence, 120)
+        self.assertEqual(cm.exception.threshold, 128)
+
+    def test_require_on_unknown_raises_with_its_code(self):
+        with self.assertRaises(LowConfidenceError) as cm:
+            Unknown(MISSING_INPUT, "no label").require(0)
+        self.assertEqual(cm.exception.code, MISSING_INPUT)
+        self.assertEqual(cm.exception.confidence, 0)
+
+    def test_threshold_is_validated(self):
+        with self.assertRaises(ValueError):
+            C(1).require(300)
+        with self.assertRaises(TypeError):
+            C(1).require(0.5)
+
+
+class Aggregates(unittest.TestCase):
+    def test_csum_all_present(self):
+        self.assertEqual(csum([C(1), C(2, 120), 3]).value, 6)
+        self.assertEqual(csum([C(1), C(2, 120), 3]).confidence, 120)
+
+    def test_csum_one_unknown_poisons_total_and_keeps_reason(self):
+        r = csum([C(1), Unknown(MISSING_INPUT, "gap"), C(3)])
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.reason, "gap")
+
+    def test_csum_empty_is_zero(self):
+        self.assertEqual(csum([]).value, 0)
+
+    def test_cmean(self):
+        self.assertEqual(cmean([C(1), C(2), C(3)]).value, 2)
+
+    def test_cmean_empty_is_missing_input(self):
+        r = cmean([])
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, MISSING_INPUT)
+
+    def test_cmean_one_unknown_poisons_it(self):
+        self.assertIsInstance(cmean([C(1), Unknown(MISSING_INPUT, "x")]), Unknown)
+
+    def test_cmin_conf(self):
+        self.assertEqual(cmin_conf([C(1, 200), C(2, 120)]), 120)
+        self.assertEqual(cmin_conf([]), 0)
+        self.assertEqual(cmin_conf([C(1), Unknown(MISSING_INPUT, "x")]), 0)
+
+    def test_sigmoid_zero_is_half(self):
+        self.assertAlmostEqual(sigmoid(0).value, 0.5)
+
+    def test_sigmoid_saturates_without_overflow(self):
+        self.assertAlmostEqual(sigmoid(1000).value, 1.0)
+        self.assertAlmostEqual(sigmoid(-1000).value, 0.0)
+
+    def test_sigmoid_preserves_confidence(self):
+        self.assertEqual(sigmoid(C(0, 99)).confidence, 99)
+
+    def test_sigmoid_of_unknown_is_unknown(self):
+        self.assertIsInstance(sigmoid(Unknown(MISSING_INPUT, "x")), Unknown)
+
+    def test_mse_matches_hand_computation(self):
+        r = mse([C(0.9), C(0.2), C(0.6)], [C(1), C(0), C(1)])
+        self.assertAlmostEqual(r.value, (0.01 + 0.04 + 0.16) / 3)
+        self.assertEqual(r.confidence, CERTAIN)
+
+    def test_mse_one_unmeasured_label_voids_the_metric(self):
+        r = mse([C(0.9), C(0.2), C(0.6)],
+                [C(1), C(0), Unknown(MISSING_INPUT, "label 3 never recorded")])
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.reason, "label 3 never recorded")
+
+    def test_mse_confidence_is_min_across_both_lists(self):
+        r = mse([C(1, 200), C(2, 256)], [C(1, 256), C(2, 90)])
+        self.assertEqual(r.confidence, 90)
+
+    def test_mse_length_mismatch_is_malformed_not_a_crash(self):
+        r = mse([C(1)], [C(1), C(2)])
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, MALFORMED)
+
+    def test_mse_empty_is_missing_input(self):
+        r = mse([], [])
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, MISSING_INPUT)
+
+
+class Restored(unittest.TestCase):
+    """0.1.0 checks dropped by the first rewrite, restored against the new API."""
+
+    def test_default_require_floor_is_the_module_constant(self):
+        self.assertEqual(C(7, FLOOR).require(), 7)
+        with self.assertRaises(LowConfidenceError):
+            C(7, FLOOR - 1).require()
+
+    def test_negation_of_unknown_is_unknown(self):
+        r = -Unknown(MISSING_INPUT, "gap")
+        self.assertIsInstance(r, Unknown)
+        self.assertEqual(r.code, MISSING_INPUT)
+
+    def test_comparison_methods_on_an_unknown_are_unknown(self):
+        u = Unknown(MISSING_INPUT, "gap")
+        for m in ("lt", "gt", "le", "ge", "eq", "ne"):
+            with self.subTest(method=m):
+                self.assertIsInstance(getattr(u, m)(C(1)), Unknown)
+                self.assertIsInstance(getattr(C(1), m)(u), Unknown)
+
+    def test_reflected_pow_with_unknown_matches_the_other_operators(self):
+        u = Unknown(MISSING_INPUT, "gap")
+        self.assertIsInstance(2 ** u, Unknown)
+        self.assertIsInstance(u ** 2, Unknown)
+        self.assertEqual((2 ** C(3)).value, 8)
+
+
+class ModuleExamples(unittest.TestCase):
+    def test_module_docstring_examples_run(self):
+        failures, _ = doctest.testmod(everconf, verbose=False)
+        self.assertEqual(failures, 0)
+
+    def test_submodule_docstring_examples_run(self):
+        import everconf.reads as reads
+        import everconf.result as result
+        for mod in (reads, result):
+            failures, _ = doctest.testmod(mod, verbose=False)
+            self.assertEqual(failures, 0, mod.__name__)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)

@@ -171,6 +171,8 @@ class Emitter:
         node, err = parse(src)
         if err is not None:
             raise ValueError(f"parse error: {err}")
+        if type(node).__name__ == "Unparsed":
+            raise ValueError("a source that did not parse cannot be emitted")
         prog = node if isinstance(node, Program) else Program([node])
 
         # FFI is a Python-runtime capability (ctypes calling a real

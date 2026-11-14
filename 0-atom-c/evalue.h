@@ -188,6 +188,13 @@ extern ev_pool g_pool;
 
 void       ev_pool_init(ev_pool *pool);
 int32_t    ev_pool_alloc(ev_pool *pool, ev_type type);
+/* Getters never return NULL. A ref the pool did not issue as this type
+ * returns a defined Unknown composite instead: a static object whose header
+ * has type EV_VOID and ref 0, with len 0. Test with ev_pool_is_unknown(). */
+extern ev_blob   EV_UNKNOWN_BLOB;
+extern ev_list   EV_UNKNOWN_LIST;
+extern ev_record EV_UNKNOWN_RECORD;
+int        ev_pool_is_unknown(const void *composite);
 void      *ev_pool_get(ev_pool *pool, int32_t ref);
 ev_blob   *ev_pool_blob(ev_pool *pool, int32_t ref);
 ev_list   *ev_pool_list(ev_pool *pool, int32_t ref);

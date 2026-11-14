@@ -45,6 +45,115 @@ fast in this repo — cite the symbol, and the file, and let the number be a hin
 
 ## Action items
 
+### Front door: one deep module, behaviour preserved (2026-11-13)
+
+Candidate from the architecture review, decided in the grilling loop (Q1–Q9).
+Design: `2-interpreter-python/front_door.py`, `front_door(src, heal: bool)` with no
+default, returning `FrontResult`. The six public entries are adapters over it.
+Semantic analysis stays with callers. `compile_ever` is deleted in a later change.
+
+- [x] Characterization snapshot recorded before any code moved: `tests/front_door_snapshot.py`,
+      baseline `tests/front_door/baseline.json` (40 sources x 7 entries: 13 integration
+      programs, 27 edge sources; exceptions recorded as results). Deterministic across
+      separate processes once wall-clock fields (`born_ms`, `run_id`, `ts_ms`, ...) are masked.
+- [x] Mutation check: a one-string change to the lex-stage name fails the snapshot
+      (18 differences); restored, it passes.
+- [x] `front_door.py` written. Deviation from the approved Q6 shape: `FrontResult` also
+      carries `tokens` and `recoveries`. Without them `compile_ever` and `parse` can't
+      reproduce today's output exactly. Approved shape kept: `node`, `error`, `corrections`, `stage`.
+- [x] `syntax.parse`, `syntax.compile_ever`, `forgive.parse_forgiving`,
+      `architecture.front_end` are adapters over the front door. `ir.parse_to_ir` and
+      `runtime.run_source` contain no parsing of their own: they reach the front door
+      through `parse` and `parse_forgiving`, so they are unchanged.
+- [x] Snapshot reproduces exactly after the refactor (40 sources x 7 entries).
+- [x] Affected suites green: Pipeline 80/0, Interpreter 83/0, EvScope 72/0, Parser 75/0,
+      Lexer 91/0, Architecture 18/0, ParseLexExecutor 12/0, no-null parse, ceiling, anchor, healing, registry.
+- [x] Full gate (`tests/run_all.py`) with the snapshot suite registered: 70 passed, 0 skipped, 0 failed, exit 0 (2026-11-13).
+- [ ] Deferred (Q9): delete `compile_ever` and its `syntax_test.py` inputs, in a later change.
+
+Findings, not fixed (Q2: behaviour preserved; each needs its own decision):
+- [ ] **Recoveries are dropped on the forgiving path.** `parse_forgiving` never sets
+      `node._recoveries`, so `run_source` (which reads it at `runtime.py` ~456) reports
+      none. Verified: `let x = [1,]` and `show x` gives the strict parser's `trailing comma
+      in a list` recovery, and `run_source(...).recoveries == []`. Pre-existing: the
+      original `parse_forgiving` also did not attach recoveries.
+- [ ] **Forgiving and strict ASTs differ on three valid programs** with zero corrections
+      recorded: `tests/integration/09_zero_confidence.ever`, `11_kitchen_sink.ever`,
+      `12_logic_loops.ever`. Cause not yet found. Preserved by the snapshot.
+
+### Sprint: Ever x ClauseShield — No-Null, Financial Continuity, everconf (2026-11-13)
+
+Worktree `~/Downloads/4ever.worktrees/clauseshield`, branch `sprint/clauseshield-noll`
+from `fae24e8`. The main checkout is not touched: its working tree has 135 tracked
+paths missing from disk (`0-atom-c/` … `8-finality/` among them) and 27 uncommitted
+changes that belong to Ricky.
+
+Decisions (mine, for Rick to redirect):
+- **Unknown is Ever's z made explicit.** Confidence 0, a reason code from the
+  registry, a human reason, and the chain of reasons it carried. Null is banned at
+  every boundary: no Python `None`, no C `NULL`, no JSON `null`.
+- **Reason registry is one file**, `spec/reason_codes.tsv`. The six codes from the
+  brief, plus `MALFORMED` (added: lex and parse failures had no code, and none of
+  the six fits them). Every layer's table is checked against the file by a test.
+- **`everconf` changes shape.** `UNKNOWN` (a singleton with no reason) becomes
+  `Unknown(code, reason, chain)`. `unwrap(default=None)` goes, because it returns
+  a null. Breaking for 0.1.0 (Beta); the README says so.
+- **JSON result shape.** `value` is always present and never null. An unknown
+  result carries `"value": {"unknown": true}`, `score` 0, `percent` 0,
+  `label` "can't tell", and at least one reason.
+- **Label bands** (score on 0–256): 224+ "very sure", 160–223 "pretty sure",
+  1–159 "not sure", 0 "can't tell". Gemini's read is third-party (INTAKE 120), so
+  "very sure" is reachable only from a non-model source.
+- **Clause-read score** = min(grounding, source, corroboration). Grounding: the
+  quoted phrase appears verbatim in the document (256), else Unknown
+  `UNVERIFIED_SOURCE`. Source: 120. Corroboration: 180 (AGREE) when a local trap rule
+  (ported from `ClauseShield/src/utils/clauseAudit.ts`) matches the same passage
+  and its category agrees, else 120.
+- **Financial profile** is a strict mode in `everconf`: any Unknown is a hard stop
+  for an action and still returns the full explanation. The audit log is
+  append-only JSONL with a hash chain. Replay is checked by running the same
+  inputs twice.
+- **Commits.** Committed as `e4934b7`, rebased onto `everlang/feature/heal-repair-order`
+  as `b22d6fd`, pushed to `everlang` as PR #18 (based on PR #17's branch). Later fixes are
+  uncommitted until Rick approves.
+
+Action items (checked as they close, each with the test that proves it):
+- [x] Baseline on `fae24e8`: `run_all.py` and the ASan/UBSan kitchen sink, recorded in
+      `tests/health-log.md`. `run.sh` failed `TAC IR (C)` at baseline; fixed by the
+      archive-path change in `0-atom-c/tac_test.c`.
+- [x] `spec/reason_codes.tsv`, with `tests/test_reason_registry.py` checking the C table,
+      `everconf` and the spec against each other. The C++ and Ruby layers have no reason
+      table, so the parity test does not cover them.
+- [x] `everconf` 0.2.0: `Unknown`, `require(min_confidence)`, poisoning, serialisation,
+      no `None` in any value (`everconf/tests/`, run by the gate).
+- [x] `everconf`: JSON shape, plain-words labels, clause-read scorer. Examples in
+      `everconf/docs/JSON.md`, checked by `everconf/tests/test_docs.py`.
+- [x] `everconf`: financial profile (strict mode, provenance, hash-chained audit log,
+      replay). Spec: `docs/FINANCIAL_CONTINUITY.md`.
+- [x] Adapter for the Express server: loopback HTTP service and Node client, tested end
+      to end (`everconf/adapters/express/wrap.test.mjs`).
+- [x] Python lexer and parser: `parse`, `parse_forgiving`, `compile_ever` and `front_end`
+      return `Unparsed` instead of `None`. `distinct_shapes` and `ir.distinct_skeletons`
+      skip failed parses. Regression check in `tests/test_no_null_parse.py`.
+- [x] C pool getters (`ev_pool_get/blob/list/record`) return a typed Unknown composite,
+      never NULL. `ev_list_push`, `ev_record_set`, `ev_equal` and `ev_serialise` refuse
+      unknown composites. Checked by `0-atom-c/unknown_composite_test.c`.
+- [~] Ruby `3-dsl-ruby/ever.rb`: `evolve` returns a Z with a reason, not nil. Checked by the
+      gate's Ruby DSL suite (`ruby 3-dsl-ruby/ever.rb`).
+- [ ] Java: `5-runtime-java/com/codric/ever/EverRuntime.java:301-302` and
+      `EverRepair.java:79-132` still return null. Open.
+- [ ] C ABI beyond the pool getters: the other `return NULL` sites in `0-atom-c` (112 in
+      total) are not audited. Open.
+- [ ] C++ `1-phase-cpp`: grep finds no `nullptr`/`NULL` returns in `phase.cpp` or
+      `phase.hpp`. No boundary test yet. Open.
+- [~] Consolidation: see `tests/health-log.md`. Local `main` does not exist; `master` is an
+      ancestor of `feature/heal-repair-order`. One Downloads file is not in the repo
+      (`benchmarks/ez_biocomputing_444_test.py`). Open: decide whether to merge it.
+- [~] `tests/health-log.md`: final summary, updated as the last step of each run.
+
+Open for Rick: commit policy above; whether clause reads should ever reach
+"very sure" by a route other than a non-model source.
+
 ### Evaluate an AI proposer (2026-11-10): design only, `docs/EVALUATION.md`
 
 The harness is not blocked. Wiring any model in is blocked on Evaluation
