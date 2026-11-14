@@ -405,7 +405,7 @@ class Extern(Node):
 @dataclass
 class Unparsed(Node):
     """A source that did not lex or parse. It is a node, never None: lowering
-    it gives a Z carrying the reason, and emitting it is refused. The caller
+    and emitting it are refused, so a failed source never becomes a valid program. The caller
     gets the error beside it, as before, so no path receives a null tree."""
     stage: str    # "lex" or "parse"
     reason: str

@@ -106,7 +106,7 @@ Decisions (mine, for Rick to redirect):
   "very sure" is reachable only from a non-model source.
 - **Clause-read score** = min(grounding, source, corroboration). Grounding: the
   quoted phrase appears verbatim in the document (256), else Unknown
-  `UNVERIFIED_SOURCE`. Source: 120. Corroboration: 192 when a local trap rule
+  `UNVERIFIED_SOURCE`. Source: 120. Corroboration: 180 (AGREE) when a local trap rule
   (ported from `ClauseShield/src/utils/clauseAudit.ts`) matches the same passage
   and its category agrees, else 120.
 - **Financial profile** is a strict mode in `everconf`: any Unknown is a hard stop

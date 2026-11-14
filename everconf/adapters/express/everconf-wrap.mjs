@@ -34,6 +34,13 @@ export function unknownEnvelope(kind, code, reason) {
   return { kind, overall: unknownResult(code, reason), reads: [], unchecked: [] };
 }
 
+function hasNull(v) {
+  if (v === null) return true;
+  if (Array.isArray(v)) return v.some(hasNull);
+  if (typeof v === 'object') return Object.values(v).some(hasNull);
+  return false;
+}
+
 function isEnvelope(body) {
   return (
     body !== null &&
@@ -98,6 +105,10 @@ export async function wrapRead({
       }
       return unknownEnvelope(kind, 'UNVERIFIED_SOURCE',
         'the confidence service replied with something other than JSON, so the answer is unverified');
+    }
+    if (hasNull(body)) {
+      return unknownEnvelope(kind, 'UNVERIFIED_SOURCE',
+        'the confidence service replied with a null, which the result shape does not allow');
     }
     if (!isEnvelope(body)) {
       return unknownEnvelope(kind, 'UNVERIFIED_SOURCE',

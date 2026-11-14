@@ -179,11 +179,7 @@ class FuzzNoNullEscapes(unittest.TestCase):
             a = a if isinstance(a, (C, Unknown)) else C(a)
             b = b if isinstance(b, (C, Unknown)) else C(b)
             op = rng.choice(ops)
-            try:
-                r = op(a, b)
-            except TypeError:
-                # only the documented refusal: a non-number operand, not a value
-                continue
+            r = op(a, b)   # operands are always C or Unknown here: no TypeError may escape
             self.assertIsNotNone(r)
             if isinstance(r, C):
                 self.assertIsNotNone(r.value)

@@ -79,6 +79,7 @@ SUITES = [
     ("everconf profile", f"{sys.executable} everconf/tests/test_profile.py", ()),
     ("everconf adapter", f"{sys.executable} everconf/tests/test_adapter.py", ()),
     ("everconf docs",  f"{sys.executable} everconf/tests/test_docs.py", ()),
+    ("everconf review fixes", f"{sys.executable} everconf/tests/test_review_fixes.py", ()),
     ("everconf Express (Node)", "node --test everconf/adapters/express/wrap.test.mjs", ("node",)),
     ("Notebook",       f"{sys.executable} 2-interpreter-python/notebook.py", ()),
     ("Research",       f"{sys.executable} research.py", ()),

@@ -121,7 +121,7 @@ def _passthrough(value: Any, where: str = "model") -> Any:
 
 def _score_finding(index: int, finding: Dict[str, Any], document: str,
                    doc_norm: str, rules: Tuple[Rule, ...], at: str) -> Tuple[dict, List[Tuple[int, int]]]:
-    """Score one model finding. Returns its result and the (start, end) spans
+    """Score one model finding. Returns its result and the (start, end, category) spans
     of the quote in the normalised document, so coverage can be checked."""
     quote = finding.get("quote")
     category = finding.get("category")
@@ -138,7 +138,7 @@ def _score_finding(index: int, finding: Dict[str, Any], document: str,
         return ({"index": index, "quote": quote_norm, "ever": to_result(
             Unknown(UNVERIFIED_SOURCE,
                     f"finding {index + 1}: the quoted text was not found verbatim in the document"))}, [])
-    span = (start, start + len(quote_norm))
+    span = (start, start + len(quote_norm), _lower_category(category))
 
     # The model's own claim, at the third-party ceiling.
     model_claim = C(_normalise(category), INTAKE, source="model answer", at=at)
@@ -200,7 +200,7 @@ def wrap_read(kind: Any, document: Any, answer: Any, *, at: Optional[str] = None
     doc_norm = _normalise(document)
 
     reads: List[dict] = []
-    spans: List[Tuple[int, int]] = []
+    spans: List[Tuple[int, int, str]] = []
     for i, f in enumerate(findings):
         if not isinstance(f, dict):
             reads.append({"index": i, "ever": to_result(
@@ -215,7 +215,8 @@ def wrap_read(kind: Any, document: Any, answer: Any, *, at: Optional[str] = None
     unchecked: List[dict] = []
     for rule in rules:
         for m in rule.pattern.finditer(doc_norm):
-            covered = any(s <= m.start() and m.end() <= e for s, e in spans)
+            covered = any(s <= m.start() and m.end() <= e and c == _lower_category(rule.category)
+                          for s, e, c in spans)
             if covered:
                 continue
             u = Unknown(CONFLICTING_SOURCES,

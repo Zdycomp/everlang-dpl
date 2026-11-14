@@ -18,9 +18,15 @@ reports any line that no longer matches what was recorded.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
+
+try:  # POSIX file lock for appends; absent on Windows
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
@@ -58,18 +64,21 @@ PROFILES: Dict[str, Profile] = {p.name: p for p in (DEFAULT, FINANCIAL)}
 def record_of(x: Union[C, Unknown]) -> dict:
     """A value as plain JSON, enough to rebuild it exactly."""
     if isinstance(x, Unknown):
-        return {"state": "unknown", "code": x.code, "reason": x.reason}
+        return {"state": "unknown", "code": x.code, "reason": x.reason,
+                "chain": list(x.chain)}
     if isinstance(x, C):
         return {"state": "known", "value": x.value, "confidence": x.confidence,
-                "source": x.source, "at": x.at}
+                "source": x.source, "at": x.at, "op": x._op}
     raise TypeError("record_of takes a C or an Unknown")
 
 
 def from_record(r: Mapping[str, Any]) -> Union[C, Unknown]:
     if r.get("state") == "unknown":
-        return Unknown(r["code"], r["reason"])
+        return Unknown(r["code"], r["reason"], chain=r.get("chain", []))
     if r.get("state") == "known":
-        return C(r["value"], r["confidence"], source=r["source"], at=r["at"])
+        value = C(r["value"], r["confidence"], source=r["source"], at=r["at"])
+        value._op = r.get("op", "input")  # a derived value keeps its operation
+        return value
     raise ValueError("a record must say whether it is known or unknown")
 
 
@@ -155,7 +164,7 @@ def decide(profile: Profile, action: str, *, at: str, computation: str,
             reason = f"confidence {confidence} meets the {profile.threshold} that {action} needs"
 
     return Decision(profile=profile.name, strict=profile.strict, action=action,
-                    at=at, computation=computation, inputs=dict(inputs),
+                    at=at, computation=computation, inputs=copy.deepcopy(dict(inputs)),
                     confidence=confidence, threshold=profile.threshold,
                     outcome=outcome, reason=reason, result=result)
 
@@ -183,7 +192,19 @@ def _read_lines(path: str) -> List[str]:
         return []
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
-    return text.split("\n")[:-1] if text else []
+    parts = text.split("\n")
+    if parts and parts[-1] == "":   # the file ends with a newline (or is empty)
+        parts = parts[:-1]
+    return parts
+
+
+def _unterminated(path: str) -> bool:
+    """True when the file has content but its last byte is not a newline."""
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return False
+    with open(path, "rb") as f:
+        f.seek(-1, os.SEEK_END)
+        return f.read(1) != b"\n"
 
 
 class AuditLog:
@@ -193,19 +214,28 @@ class AuditLog:
         self.path = path
 
     def append(self, decision: Decision) -> dict:
-        report = self.verify()
-        if not report["ok"]:
-            raise AuditError(f"the log is broken at line {report['problems'][0][0]}; "
-                             "refusing to append to it")
-        entries = [json.loads(line) for line in _read_lines(self.path)]
-        prev = entries[-1]["hash"] if entries else GENESIS
-        entry = dict(decision.to_record())
-        entry["seq"] = len(entries) + 1
-        entry["prev_hash"] = prev
-        entry["hash"] = _hash_of(entry)
-        with open(self.path, "a", encoding="utf-8") as f:
-            f.write(_canon(entry) + "\n")
-        return entry
+        if fcntl is None:
+            raise AuditError("this platform has no file lock, so appends are not safe here")
+        # Verify, read the tail and write under one exclusive lock, so two appenders
+        # cannot both write the same seq and prev_hash.
+        with open(self.path + ".lock", "a") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                report = self.verify()
+                if not report["ok"]:
+                    raise AuditError(f"the log is broken at line {report['problems'][0][0]}; "
+                                     "refusing to append to it")
+                entries = [json.loads(line) for line in _read_lines(self.path)]
+                prev = entries[-1]["hash"] if entries else GENESIS
+                entry = dict(decision.to_record())
+                entry["seq"] = len(entries) + 1
+                entry["prev_hash"] = prev
+                entry["hash"] = _hash_of(entry)
+                with open(self.path, "a", encoding="utf-8") as f:
+                    f.write(_canon(entry) + "\n")
+                return entry
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
     def entries(self) -> List[dict]:
         return [json.loads(line) for line in _read_lines(self.path)]
@@ -216,6 +246,8 @@ class AuditLog:
         problems = []
         prev = GENESIS
         lines = _read_lines(self.path)
+        if _unterminated(self.path):
+            problems.append((len(lines), "the last record is not terminated: an interrupted write"))
         for i, line in enumerate(lines, start=1):
             try:
                 entry = json.loads(line)

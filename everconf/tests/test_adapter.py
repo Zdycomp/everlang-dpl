@@ -106,15 +106,17 @@ class Http(unittest.TestCase):
         self.assertEqual(reply["overall"]["state"], "unknown")
 
     def test_oversize_body_is_refused_before_it_is_read(self):
-        req = urllib.request.Request(self.base + "/wrap", data=b"{}", method="POST")
-        req.add_header("Content-Length", str(MAX_BODY_BYTES + 1))
-        # The handler answers from the header alone; the body is never read.
-        try:
-            urllib.request.urlopen(req, timeout=5)
-        except urllib.error.HTTPError as e:
-            self.assertEqual(e.code, 413)
-        except (urllib.error.URLError, ConnectionError, OSError):
-            pass  # the server may close the connection after refusing
+        import http.client
+        host, port = self.server.server_address
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.putrequest("POST", "/wrap")
+        conn.putheader("Content-Type", "application/json")
+        conn.putheader("Content-Length", str(MAX_BODY_BYTES + 1))
+        conn.endheaders()                       # headers only: the body is never sent
+        resp = conn.getresponse()
+        self.assertEqual(resp.status, 413)
+        resp.read()
+        conn.close()
 
     def test_only_loopback_is_allowed(self):
         with self.assertRaises(ValueError):

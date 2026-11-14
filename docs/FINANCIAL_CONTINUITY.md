@@ -38,6 +38,10 @@ Each value keeps its history: each step that produced it, where that step's inpu
 - **One line per decision.** Each line contains the decision's time stamp (supplied by the caller, never read from the system clock), the action, the inputs, the confidence, the threshold, the outcome, the reasons, and the full explanation.
 - **Append-only.** New decisions are added to the end. Existing lines are never rewritten. The program refuses to add to a log that has already been altered.
 - **Chained.** Each line carries a fingerprint (a SHA-256 hash) of the line before it. Editing, deleting, or reordering any line breaks the chain from that point on. A verification step reports the first broken line.
+- **What the chain does not catch.** Deleting the last line leaves every remaining fingerprint valid, so an
+  empty tail cannot be detected from the file alone. Keep the latest fingerprint somewhere else (for
+  example, in the institution's own records) and compare against it. An editor who recalculates
+  fingerprints is caught by replay, not by the chain.
 
 ## Deterministic replay
 

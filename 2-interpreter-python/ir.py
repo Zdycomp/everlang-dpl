@@ -443,7 +443,9 @@ def _ast_to_ir(ast_node) -> Optional[EvNode]:
         n.children = [_ast_to_ir(ast_node.left), _ast_to_ir(ast_node.right)]
         return n
 
-    if t == "ZLit" or t == "Unparsed":
+    if t == "Unparsed":
+        raise ValueError("a source that did not parse has no IR; refusing to lower it")
+    if t == "ZLit":
         n = EvNode.void_lit()
         n.kind = NK.Z
         return n

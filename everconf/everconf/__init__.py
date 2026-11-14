@@ -434,7 +434,10 @@ def mse(predicted: Iterable[Union[C, Unknown, int, float]],
         return Unknown(OUT_OF_RANGE, "mse: a squared error is too large to represent")
     except TypeError as exc:
         return Unknown(MALFORMED, f"mse: these values cannot be combined ({exc})")
-    mean = sum(sq) / len(sq)
+    try:
+        mean = sum(sq) / len(sq)
+    except OverflowError:
+        return Unknown(OUT_OF_RANGE, "mse: the mean is too large to represent")
     if not math.isfinite(mean):
         return Unknown(OUT_OF_RANGE, "mse: the result is not a finite number")
     return C._derived(mean, cmin_conf(p + a), "mse", p + a)

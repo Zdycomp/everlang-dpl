@@ -120,6 +120,22 @@ test('a timeout while the body is still arriving is TIMEOUT, not not-JSON', asyn
   }
 });
 
+test('a reply with a null anywhere is UNVERIFIED_SOURCE, not passed through', async () => {
+  const bad = { kind: 'clause', overall: { value: null, state: 'known' }, reads: [], unchecked: [] };
+  const server = await listen((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(bad));
+  });
+  try {
+    const env = await wrapRead({ kind: 'clause', document: DOC, answer: ANSWER,
+                                 baseUrl: `http://127.0.0.1:${server.address().port}` });
+    assert.equal(env.overall.reasons[0].code, 'UNVERIFIED_SOURCE');
+    assertNoNull(env);
+  } finally {
+    server.close();
+  }
+});
+
 test('end to end: the Python adapter scores a Gemini answer', async (t) => {
   const port = 18000 + Math.floor(Math.random() * 20000);
   const proc = spawn('python3', ['-m', 'everconf.adapter', '--port', String(port)],
